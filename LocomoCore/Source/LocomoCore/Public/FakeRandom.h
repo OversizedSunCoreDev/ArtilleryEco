@@ -20,7 +20,7 @@ UCLASS()
 class LOCOMOCORE_API UFakeRandom : public UObject
 {
 	GENERATED_BODY()
-	public:
+public:
 	template<typename T, std::size_t LL, std::size_t RL>
 	constexpr static std::array<T, LL+RL> t_join(std::array<T, LL> rhs, std::array<T, RL> lhs)
 	{
@@ -60,19 +60,19 @@ class LOCOMOCORE_API UFakeRandom : public UObject
 	constexpr static uint8 NudgeTable = 48;
 	constexpr static std::array<char, NudgeTable>  NudgeBy =
 		{
-		 0, 0, 0, 0,
-		 0, 1, 0, 0,
-		 0, 0, 0, 0,
-		 0, 0, 1, 0,
-		 0,-1, 0, 0,
-		 0, 0, 0,-1,
-		 1, 1, 1, 1,
-		 0, 1, 1, 1,
-		 1, 1, 1, 1,
-		-1,-1,-1,-1,
-		-1,-1,-1,-1,
-		-1,-1, 0,-1
-		};
+		0, 0, 0, 0,
+		0, 1, 0, 0,
+		0, 0, 0, 0,
+		0, 0, 1, 0,
+		0,-1, 0, 0,
+		0, 0, 0,-1,
+		1, 1, 1, 1,
+		0, 1, 1, 1,
+		1, 1, 1, 1,
+	   -1,-1,-1,-1,
+	   -1,-1,-1,-1,
+	   -1,-1, 0,-1
+	   };
 	constexpr static std::array<float, 12> x =
 	{
 		15, 12,  7,  0,
@@ -81,10 +81,27 @@ class LOCOMOCORE_API UFakeRandom : public UObject
 	};
 	constexpr static std::array<float, 12> y =
 	{
-		  0,   7,  12, 15,
-		 12,   7,   0, -7,
-		-12, -15, -12, -7
-	};
+		0,   7,  12, 15,
+	   12,   7,   0, -7,
+	  -12, -15, -12, -7
+  };
+
+	constexpr static std::array<float, 12> z =
+	{
+		0,   7,  12, 15,
+	   12,   7,   0, -7,
+	  -12, -15, -12, -7
+	 };
+
+	//3d cube, used for laying down surrounding fire. centroid is 1/17 weighted, rather than 1/8.
+	constexpr static uint32_t CubeBoxingLen = 17;
+	constexpr static std::array<float, 8> CubeX = {1,-1,1,1,-1,-1,1,-1};
+	constexpr static std::array<float, 8> CubeY = {1,-1,-1,1,-1,1,-1,1};
+	constexpr static std::array<float, 8> CubeZ = {1,-1,-1,-1,1,1,1,-1};
+	constexpr static std::array<float, 1> Zero = {0};
+	constexpr static auto BoxingX =  t_join( t_join(CubeX, CubeX), Zero);
+	constexpr static auto BoxingY =  t_join( t_join(CubeY, CubeY), Zero);
+	constexpr static auto BoxingZ =  t_join( t_join(CubeZ, CubeZ), Zero);
 	
 	constexpr static uint32_t RingHRL = 12;
 	constexpr static auto XInnerRing = t_mult<RingHRL, .7f>(x);
@@ -106,6 +123,18 @@ class LOCOMOCORE_API UFakeRandom : public UObject
 		const auto initial = FMMM::FastHash32(Now);
 		const auto finalXY = (initial + Cycle) % len;
 		return Type == Ring ? FVector2D(RingX[finalXY], RingY[finalXY]) : FVector2D(ConeX[finalXY], ConeY[finalXY]);
+	}
+
+	//do not use the pointer or the skeleton key for the me value.
+	static FVector GetBoxingDispersion(uint32_t Now, uint8 Cycle, uint16_t me)
+	{
+		//this means that as long as each caller is uniquely identified,
+		//it will be a little like having a seed per caller while still basically just picking a point in the cube
+		//and then walking the distribution in cycles. This produces the distinctive "fixed cluster" pattern of bungie guns.
+		//adding and removing a little bit of mush here and there completes it, but this is just the basic round-robin fixed pseudo-pseudo random.
+		const auto initial = FMMM::FastHash32(Now+me);	
+		const auto finalXYZ = (initial + 7*Cycle) % CubeBoxingLen; //the seven hides the fact that we just step along the cube.
+		return {BoxingX[finalXYZ], BoxingY[finalXYZ], BoxingZ[finalXYZ]};
 	}
 
 	static FVector2D GetNudge(uint32_t Now, uint8 Cycle)
