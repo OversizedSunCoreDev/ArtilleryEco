@@ -10,13 +10,11 @@ void UArtilleryProjectileDispatch::ArtilleryTick()
 {
 	//On Tick, we see if anybody needs to go.
 	++ExpirationCounter;
-	if (ExpirationDeadliner->Contains(ExpirationCounter))
+	auto Ref = Deadliner.UpdateAndConsume();
+
+	for (FSkeletonKey Goner : Ref)
 	{
-		TArray<FSkeletonKey> AnyToExpire = ExpirationDeadliner->FindAndRemoveChecked(ExpirationCounter);
-		for (FSkeletonKey Goner : AnyToExpire)
-		{
-			UArtilleryLibrary::TombstonePrimitive(Goner);
-		}
+		UArtilleryLibrary::TombstonePrimitive(Goner);
 	}
 }
 
@@ -111,7 +109,7 @@ void UArtilleryProjectileDispatch::Deinitialize()
 	ManagerKeyToMeshManagerMapping->Empty();
 	ProjectileNameToMeshManagerMapping->Empty();
 	ProjectileToGunMapping->clear();
-	ExpirationDeadliner->Empty();
+	Deadliner.Reset();
 	ExpirationCounter = 0;
 	if (HoldOpen)
 	{
@@ -151,7 +149,6 @@ UArtilleryProjectileDispatch::UArtilleryProjectileDispatch(): ProjectileDefiniti
 	ExpirationCounter = 0; //just to make it clear.
 	ManagerKeyToMeshManagerMapping = MakeShareable(new TMap<FSkeletonKey, TWeakObjectPtr<AInstancedMeshManager>>());
 	ProjectileKeyToMeshManagerMapping = MakeShareable(new KeyToItemCuckooMap());
-	ExpirationDeadliner = MakeShareable(new TSortedMap<int, TArray<FSkeletonKey>>());
 	ProjectileNameToMeshManagerMapping = MakeShareable(new TMap<FName, TWeakObjectPtr<AInstancedMeshManager>>());
 	MeshAssetToMeshManagerMapping = MakeShareable(new TMap<FString, TWeakObjectPtr<AInstancedMeshManager>>());
 	ProjectileToGunMapping = MakeShareable(new KeyToGunMap());
@@ -235,15 +232,7 @@ FSkeletonKey UArtilleryProjectileDispatch::CreateProjectileInstance(FSkeletonKey
 				{
 					//TODO: revisit to provide rollback support. it'll be exactly like tombstones.
 					int ExpireTicks = LifeInTicks == -1 ? DEFAULT_LIFE_OF_PROJECTILE : LifeInTicks;
-					TArray<FSkeletonKey>* ArrayIfAny = ExpirationDeadliner->Find(ExpirationCounter + ExpireTicks);
-					if (ArrayIfAny != nullptr)
-					{
-						ArrayIfAny->Add(NewProjectileKey);
-					}
-					else
-					{
-						ExpirationDeadliner->Add(ExpirationCounter + ExpireTicks, {NewProjectileKey});
-					}
+					Deadliner.Add(ExpirationCounter+ExpireTicks, NewProjectileKey);
 				}
 				return NewProjectileKey;
 			}

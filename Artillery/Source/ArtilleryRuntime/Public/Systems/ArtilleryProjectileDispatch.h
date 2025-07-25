@@ -6,6 +6,7 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "AInstancedMeshManager.h"
 #include "FProjectileDefinitionRow.h"
+#include "Structures/ParallelFixedDeadliner.h"
 //look, it's important that you wrap both your typedefs and your lib include in these, and that the lib include always be explicit.
 //lbc is a header only lib. this has some pretty stark implications. we probably need to move ALL type defs and ALL
 //includes into a Lbc module, isolate them, and compile them.
@@ -72,6 +73,7 @@ protected:
 	virtual ~UArtilleryProjectileDispatch() override;
 	UDataTable* ProjectileDefinitions;
 	TSharedPtr<TSortedMap<int, TArray<FSkeletonKey>>> ExpirationDeadliner;
+	FParallelFixedSequencingQueue Deadliner;
 	TSharedPtr<TMap<FSkeletonKey, TWeakObjectPtr<AInstancedMeshManager>>> ManagerKeyToMeshManagerMapping;
 	TSharedPtr<KeyToItemCuckooMap> ProjectileKeyToMeshManagerMapping;
 	TSharedPtr<TMap<FName, TWeakObjectPtr<AInstancedMeshManager>>> ProjectileNameToMeshManagerMapping;

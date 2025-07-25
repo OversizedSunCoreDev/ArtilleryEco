@@ -177,6 +177,7 @@ void UNiagaraParticleDispatch::DeregisterNiagaraParticleComponent(UNiagaraCompon
 		if(ParticleBoneKey)
 		{
 			BoneKeyToParticleIDMapping->Remove(*ParticleBoneKey);
+			KeyToParticleParamMapping->Remove(*ParticleBoneKey);
 		}
 	} 
 }

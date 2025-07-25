@@ -1,4 +1,4 @@
-#include "ThistleBehavioralist.h"
+	#include "ThistleBehavioralist.h"
 #include "ArtilleryDispatch.h"
 #include "ThistleStateTreeCore.h"
 #include "NativeGameplayTags.h"
@@ -19,10 +19,10 @@ UThistleBehavioralist::UThistleBehavioralist(): MyDispatch(nullptr), SmartObject
 bool UThistleBehavioralist::RegistrationImplementation()
 {
 	FalseActorKey = MAKE_ACTORKEY(this);
+	MyDispatch = GetWorld()->GetSubsystem<UArtilleryDispatch>();
 	CurrentEnemies.Reserve(MAX_ENEMY_COUNT);
 	// TODO - Add debug option to toggle messages as these are starting to impact perf
 	//UE_LOG(LogTemp, Warning, TEXT("ThistleBehavioralist:Subsystem: Inbound and Outbound Queues set to null."));
-	MyDispatch = GetWorld()->GetSubsystem<UArtilleryDispatch>();
 	FArtilleryUpdateEnemyControllerSubsystem Callback;
 	Callback.BindUObject(this, &UThistleBehavioralist::Update);
 	FArtilleryAddEnemyToControllerSubsystem Register;
@@ -378,12 +378,7 @@ void UThistleBehavioralist::ProcessRallyPoint()
 void UThistleBehavioralist::DeregisterEnemy(const ActorKey& KeyToRemove)
 {
 	EntityToArtilleryBehavior->Remove(KeyToRemove);
-	// TODO - Validate this is what we want to do. To note: This is a perf concern as 'remove' causes a reshuffling
-	//		  of elements in a TArray<T>, which could lead to perf issues if done often
-	//		  It may be more efficient to cache off a number of keys we want to remove or simply set to invalid
-	//		  (currently 0 internally) and shuffle all at once.
-	//		  After all, how many enemies could we possibly have in a single map? Haha.
-	//I'm not sure that's true --J
+	// TODO: replace this with something less rancid if it ever shows up in perf profiling.
 	ActorToAILocomotionMapping->Remove(KeyToRemove);
 	CurrentEnemies.Remove(KeyToRemove);
 	//this is a strong tobject ptr, so we actually won't kill the actor til this is released.

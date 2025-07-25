@@ -29,20 +29,22 @@ USTRUCT()
 struct ARTILLERYRUNTIME_API FRequestThing
 {
 	GENERATED_BODY()
-	FRequestThing(): Stamp(0)
+	FRequestThing(): Stamp(0), ThingVector(), ThingVector2(), ThingVector3(), ThingRotator(), Relationship(), Layer(),
+	                 Type()
 	{
 	}
-	
-	FRequestThing(ArtilleryRequestType MyType): Stamp(0)
+
+	FRequestThing(ArtilleryRequestType MyType): Stamp(0), ThingVector(), ThingVector2(), ThingVector3(), ThingRotator(),
+	                                            Relationship(), Layer()
 	{
-		if(MyType == FireAGun || MyType == GetABullet)
+		if (MyType == FireAGun || MyType == GetABullet)
 		{
 			throw; // these requests MUST be made with the inheritor type FRequestGameThreadThing
 			//if it didn't crash here, it'd crash when the request was run.
 		}
 		Type = MyType;
 	}
-	
+
 	ArtilleryRequestType GetType()
 	{
 		return Type;

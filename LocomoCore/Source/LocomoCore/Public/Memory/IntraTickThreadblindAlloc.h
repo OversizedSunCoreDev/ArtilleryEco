@@ -1,7 +1,7 @@
 ﻿#pragma once
 #include "Structures/flat_hash_map.hpp"
 #include "Structures/PascalCircularBuffer.h"
-
+#include "SkeletonTypes.h"
 //This allocator relies on both an arena AND a pool. Each arena is bound to the TICK that created it. Each arena
 //is retained as long as that tick remains relevant. this is SPECIFICALLY useful for things that have a dynamic memory
 //load unsuitable for a strict linear allocator but that can be deallocated in a single operation at a known safe time.
@@ -205,6 +205,7 @@ public:
 //THIS ALLOCATOR IS NOT FULLY GENERAL. GOOD LUCK.
 template class IntraTickThreadblindAlloc<uint32_t>;
 
+using FStampedKeyPair = std::pair<uint32_t, FSkeletonKey>;
 template class IntraTickThreadblindAlloc<uint64_t>;
 template class IntraTickThreadblindAlloc<std::vector<uint32_t, IntraTickThreadblindAlloc<uint32_t>>>;
 template class IntraTickThreadblindAlloc<std::pair<const uint32_t, uint32_t>>;
@@ -219,6 +220,14 @@ template class DefaultAwareIntraTickAlloc<FPascally_31>;
 template class IntraTickThreadblindAlloc<FPascally_31>;
 template class IntraTickThreadblindAlloc<std::vector<FPascally_15, IntraTickThreadblindAlloc<FPascally_15>>>;
 template class DefaultAwareIntraTickAlloc<std::vector<FPascally_15, IntraTickThreadblindAlloc<FPascally_15>>>;
+
+template class IntraTickThreadblindAlloc<std::vector<FSkeletonKey, IntraTickThreadblindAlloc<FSkeletonKey>>>;
+template class DefaultAwareIntraTickAlloc<std::vector<FSkeletonKey, IntraTickThreadblindAlloc<FSkeletonKey>>>;
+template class IntraTickThreadblindAlloc<std::vector<FStampedKeyPair, IntraTickThreadblindAlloc<FStampedKeyPair>>>;
+template class DefaultAwareIntraTickAlloc<std::vector<FStampedKeyPair, IntraTickThreadblindAlloc<FStampedKeyPair>>>;
+using DATAlloc_StampedKeyVector = DefaultAwareIntraTickAlloc<std::vector<FStampedKeyPair, IntraTickThreadblindAlloc<FStampedKeyPair>>>;
+
+
 template class IntraTickThreadblindAlloc<std::vector<FPascally_31, IntraTickThreadblindAlloc<FPascally_31>>>;
 template class DefaultAwareIntraTickAlloc<std::vector<FPascally_31, IntraTickThreadblindAlloc<FPascally_31>>>;
 template class DefaultAwareIntraTickAlloc<std::pair<uint32_t, uint32_t>>;
