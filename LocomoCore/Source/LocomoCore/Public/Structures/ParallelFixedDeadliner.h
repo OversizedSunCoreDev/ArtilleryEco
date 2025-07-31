@@ -4,6 +4,7 @@
 
 #pragma once
 #include <array>
+#include <mutex>
 
 #include "CompileTimeStrings.h"
 #include "SkeletonTypes.h"

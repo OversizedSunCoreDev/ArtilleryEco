@@ -1,6 +1,6 @@
 ﻿#include "Structures/ParallelFixedDeadliner.h"
 //this is all a hodgepodge variation on a https://en.wikibooks.org/wiki/More_C%2B%2B_Idioms/Nifty_Counter
-
+#include <mutex>
 
 std::vector<FSkeletonKey> FParallelFixedSequencingQueue::UpdateAndConsume()
 {

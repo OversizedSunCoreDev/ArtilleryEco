@@ -12,6 +12,7 @@
 #include <iterator>
 #include <utility>
 #include <type_traits>
+#include <stdexcept>
 
 
 #ifdef _MSC_VER
