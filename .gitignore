@@ -77,3 +77,6 @@ Intermediate/*
 DerivedDataCache/*
 NiagaraUIRenderer/Binaries/**/*
 NiagaraUIRenderer/Intermediate/**/*
+
+# New Stuff
+VisualStudioTools

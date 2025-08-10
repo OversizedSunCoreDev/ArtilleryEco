@@ -41,7 +41,7 @@ void FWorldSimOwnerTests::Define ()
 			const JPH::BodyFilter GivenBodyFilter;
 
 			// Create a body that will cause a hit with the test
-			FBSphereParams GivenSphereParams{ GivenDirection * (GivenDirection * GivenDistance * 0.75), GivenRadius * 2 };
+			FBSphereParams GivenSphereParams{ (GivenDirection * GivenDistance * 0.75), GivenRadius * 2 };
 			FBarrageKey SimpleSpherePrimitive = ClassUnderTest->CreatePrimitive (GivenSphereParams, Layers::NON_MOVING);
 			// TODO: This test fails in isolation because of indexing errors into the ThreadAcc for Barrage
 
@@ -57,6 +57,38 @@ void FWorldSimOwnerTests::Define ()
 				GivenBodyFilter
 			);
 			
+			TestTrue ("A hit occurs", ActualHitResult->bBlockingHit);
+		});
+
+		It("should perform ray casts against a character", [this, ClassUnderTest]()
+		{
+			// Define the box test parameters and out params
+			const FVector3d GivenCastFrom = FVector3d::ZeroVector;
+			const FVector3d GivenDirection = FVector3d::XAxisVector;
+			TSharedPtr<FHitResult> ActualHitResult = MakeShared<FHitResult>();
+			const FastExcludeBroadphaseLayerFilter GivenBroadPhaseFilter;
+			const FastExcludeObjectLayerFilter GivenObjectLayerFilter;
+			const JPH::BodyFilter GivenBodyFilter;
+
+			FBCharParams CharacterParams
+			{
+				/*Position=*/ GivenDirection * 8.,
+				/*Height=*/ 180.,
+				/*Radius=*/ 40.,
+				/*Speed*/ 0.
+			};
+			FBarrageKey CharacterKey = ClassUnderTest->CreatePrimitive (CharacterParams, Layers::MOVING);
+			ClassUnderTest->StepSimulation ();
+
+			ClassUnderTest->CastRay (
+				GivenCastFrom,
+				GivenDirection,
+				GivenBroadPhaseFilter,
+				GivenObjectLayerFilter,
+				GivenBodyFilter,
+				ActualHitResult
+			);
+
 			TestTrue ("A hit occurs", ActualHitResult->bBlockingHit);
 		});
 	});
