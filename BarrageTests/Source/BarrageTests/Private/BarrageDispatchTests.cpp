@@ -109,7 +109,7 @@ void FBarrageDispatchTests::Define()
 
         Describe("Physics Queries", [this]()
         {
-            It("Should perform sphere casts", [this]()
+            It("Should perform sphere casts against a box", [this]()
             {
                 const double Radius = 50.0;
                 const double Distance = 100.0;
@@ -150,8 +150,49 @@ void FBarrageDispatchTests::Define()
                 );
                 
                 // Note: Actual hit testing would require setting up the physics world properly
-                TestTrue("SphereCast operation should complete", OutHit->bBlockingHit);
+                TestTrue("SphereCast operation should return a blocking hit", OutHit->bBlockingHit);
             });
+
+            It("Should perform ray casts against a box", [this]()
+            {
+                const FVector3d RayStart(0, 0, 0);
+                const FVector3d RayEnd(100, 0, 0);
+                TSharedPtr<FHitResult> OutHit = MakeShared<FHitResult>();
+                
+                // Create an object to hit first
+                FSkeletonKey BoxKey;
+                FBBoxParams BoxParams = FBarrageBounder::GenerateBoxBounds(
+                    FVector3d(90, 0, 0), 
+                    50.0, 
+                    50.0, 
+                    50.0
+                );
+                FBLet Box = BarrageDispatch->CreatePrimitive(BoxParams, BoxKey, Layers::MOVING);
+                // Create filters using the object we just created
+                auto BroadPhaseFilter = BarrageDispatch->GetDefaultBroadPhaseLayerFilter(Layers::MOVING);
+                auto ObjectFilter = BarrageDispatch->GetDefaultLayerFilter(Layers::MOVING);
+                auto BodiesFilter = BarrageDispatch->GetFilterToIgnoreSingleBody (FBarrageKey ());
+                BarrageDispatch->StackUp ();
+                BarrageDispatch->StepWorld (0, 0);
+                BarrageDispatch->StepWorld (0, 1);
+                BarrageDispatch->StepWorld (1, 0);
+                BarrageDispatch->StepWorld (1, 1);
+                BarrageDispatch->CastRay(
+                    RayStart, 
+                    RayEnd - RayStart, 
+                    BroadPhaseFilter, 
+                    ObjectFilter, 
+                    BodiesFilter, 
+                    OutHit
+				);
+                
+                // Note: Actual hit testing would require setting up the physics world properly
+                TestTrue("RayCast operation should return a blocking hit", OutHit->bBlockingHit);
+
+				// 65 is correct, box is at 90, the 50 diam given is in UE coordinates CONVERTED to Jolt half extents e.g. 90 - (50 / 2) = 65
+				TestEqual ("RayCast hit distance should be correct", OutHit->Distance, 65.0f);
+				TestEqual ("RayCast hit location should be correct", OutHit->Location, FVector (65.0f, 0.0f, 0.0f));
+			});
         });
     });
 
