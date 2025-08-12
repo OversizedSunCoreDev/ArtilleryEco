@@ -6,15 +6,29 @@
 #include "Jolt/Physics/Body/BodyFilter.h"
 
 BEGIN_DEFINE_SPEC (FWorldSimOwnerTests, "Artillery.Barrage.World Sim Owner Tests", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+TSharedPtr<FWorldSimOwner> ClassUnderTest;
 END_DEFINE_SPEC (FWorldSimOwnerTests)
 void FWorldSimOwnerTests::Define ()
 {
+	BeforeEach([this]()
+	{
+		auto TestInitExitFunction = [this](int _)
+		{
+			if (ClassUnderTest.IsValid())
+			{
+				ClassUnderTest->WorkerAcc[0] = FBOutputFeed(std::this_thread::get_id(), 8);
+				MyWORKERIndex = 0;
+
+				ClassUnderTest->ThreadAcc[0] = FWorldSimOwner::FBInputFeed(std::this_thread::get_id(), 8);
+				MyBARRAGEIndex = 0;
+			}
+		};
+		ClassUnderTest = MakeShared<FWorldSimOwner>(0.016f, TestInitExitFunction);
+	});
+
 	Describe("A World Sim Owner", [this]()
 	{
-		auto TestInitExitFunction = [](int _) { };
-		TSharedPtr<FWorldSimOwner> ClassUnderTest = MakeShared<FWorldSimOwner>(0.333f, TestInitExitFunction);
-
-		It("should initialize with the expected member variables", [this, ClassUnderTest]()
+		It("should initialize with the expected member variables", [this]()
 		{
 			TestTrue ("Barrage To Jolt Mapping is valid", ClassUnderTest->BarrageToJoltMapping.IsValid ());
 			TestTrue ("Box Cache is valid", ClassUnderTest->BoxCache.IsValid ());
@@ -24,72 +38,148 @@ void FWorldSimOwnerTests::Define ()
 			TestTrue ("Job System is Valid", ClassUnderTest->job_system.IsValid ());
 			TestTrue ("Contact listener is valid", ClassUnderTest->contact_listener.IsValid ());
 			TestTrue ("Physics System is valid", ClassUnderTest->physics_system.IsValid ());
-			TestNearlyEqual ("Delta Time is assigned using given value", ClassUnderTest->DeltaTime, 0.333f);
+			TestNearlyEqual ("Delta Time is assigned using given value", ClassUnderTest->DeltaTime, 0.016f);
 			TestEqual ("Body Interface is assigned cached pointer to physics system", ClassUnderTest->body_interface, &ClassUnderTest->physics_system->GetBodyInterface ());
 		});
 
-		It ("should perform simple sphere tests", [this, ClassUnderTest] ()
+		Describe("when creating primitives", [this]()
 		{
-			// Define the sphere test parameters and out params
-			const double GivenRadius = 2.;
-			const double GivenDistance = 10.;
-			const FVector3d GivenCastFrom = FVector3d::ZeroVector;
-			const FVector3d GivenDirection = FVector3d::XAxisVector;
-			TSharedPtr<FHitResult> ActualHitResult = MakeShared<FHitResult> ();
-			const FastExcludeBroadphaseLayerFilter GivenBroadPhaseFilter;
-			const FastExcludeObjectLayerFilter GivenObjectLayerFilter;
-			const JPH::BodyFilter GivenBodyFilter;
+			FBarrageKey ActualKey;
+			AfterEach([this, &ActualKey]()
+			{
+				ClassUnderTest->FinalizeReleasePrimitive(ActualKey);
+				// Clear the thread accumulator after each test
+				ClassUnderTest->ThreadAcc[0].Queue->Empty();
+				ClassUnderTest->WorkerAcc[0].Queue->Empty();
+			});
 
-			// Create a body that will cause a hit with the test
-			FBSphereParams GivenSphereParams{ (GivenDirection * GivenDistance * 0.75), GivenRadius * 2 };
-			FBarrageKey SimpleSpherePrimitive = ClassUnderTest->CreatePrimitive (GivenSphereParams, Layers::NON_MOVING);
-			// TODO: This test fails in isolation because of indexing errors into the ThreadAcc for Barrage
+			It("should enqueue an event to create a box", [this, &ActualKey]()
+			{
+				FBBoxParams GivenBoxParams{ FVector3d::ZeroVector, 10.f, 10.f, 10.f, FVector3f::ZeroVector, FMassByCategory::BMassCategories::MostScenery};
+				ActualKey = ClassUnderTest->CreatePrimitive(GivenBoxParams, Layers::NON_MOVING);
+				TestTrue ("The returned key is valid", ActualKey.KeyIntoBarrage != 0);
 
-			ClassUnderTest->SphereCast
-			(
-				GivenRadius,
-				GivenDistance,
-				GivenCastFrom,
-				GivenDirection,
-				ActualHitResult,
-				GivenBroadPhaseFilter,
-				GivenObjectLayerFilter,
-				GivenBodyFilter
-			);
-			
-			TestTrue ("A hit occurs", ActualHitResult->bBlockingHit);
+				FBPhysicsInput ActualUpdate;
+				TestTrue("There is an event in the queue", ClassUnderTest->ThreadAcc[0].Queue->Dequeue(ActualUpdate));
+				TestEqual("The event is an add", ActualUpdate.Action, PhysicsInputType::ADD);
+				TestEqual("The event target is the expected key", ActualUpdate.Target, ActualKey);
+			});
+
+			It("should enqueue an event to create a sphere", [this, &ActualKey]()
+			{
+				FBSphereParams GivenSphereParams{ FVector3d::ZeroVector, 10.f };
+				ActualKey = ClassUnderTest->CreatePrimitive(GivenSphereParams, Layers::NON_MOVING);
+				TestTrue("The returned key is valid", ActualKey.KeyIntoBarrage != 0);
+
+				FBPhysicsInput ActualUpdate;
+				TestTrue("There is an event in the queue", ClassUnderTest->ThreadAcc[0].Queue->Dequeue(ActualUpdate));
+				TestEqual("The event is an add", ActualUpdate.Action, PhysicsInputType::ADD);
+				TestEqual("The event target is the expected key", ActualUpdate.Target, ActualKey);
+			});
+
+			It("should enqueue an event to create a cap", [this, &ActualKey]()
+			{
+				FBCapParams GivenCapParams{ FVector3d::ZeroVector, 10.f, 5.f };
+				ActualKey = ClassUnderTest->CreatePrimitive(GivenCapParams, Layers::NON_MOVING);
+				TestTrue("The returned key is valid", ActualKey.KeyIntoBarrage != 0);
+
+				FBPhysicsInput ActualUpdate;
+				TestTrue("There is an event in the queue", ClassUnderTest->ThreadAcc[0].Queue->Dequeue(ActualUpdate));
+				TestEqual("The event is an add", ActualUpdate.Action, PhysicsInputType::ADD);
+				TestEqual("The event target is the expected key", ActualUpdate.Target, ActualKey);
+			});
+
+			It("should enqueue an event to create a character", [this, &ActualKey]()
+			{
+				FBCharParams GivenCharacterParams{ FVector3d::ZeroVector, 180.f, 40.f, 0.f };
+				ActualKey = ClassUnderTest->CreatePrimitive(GivenCharacterParams, Layers::MOVING);
+				TestTrue("The returned key is valid", ActualKey.KeyIntoBarrage != 0);
+
+				FBPhysicsInput ActualUpdate;
+				TestTrue("There is an event in the queue", ClassUnderTest->ThreadAcc[0].Queue->Dequeue(ActualUpdate));
+				TestEqual("The event is an add", ActualUpdate.Action, PhysicsInputType::ADD);
+				TestEqual("The event target is the expected key", ActualUpdate.Target, ActualKey);
+			});
 		});
 
-		It("should perform ray casts against a character", [this, ClassUnderTest]()
+		Describe("when performing casts", [this]()
 		{
-			// Define the box test parameters and out params
-			const FVector3d GivenCastFrom = FVector3d::ZeroVector;
-			const FVector3d GivenDirection = FVector3d::XAxisVector;
-			TSharedPtr<FHitResult> ActualHitResult = MakeShared<FHitResult>();
-			const FastExcludeBroadphaseLayerFilter GivenBroadPhaseFilter;
-			const FastExcludeObjectLayerFilter GivenObjectLayerFilter;
-			const JPH::BodyFilter GivenBodyFilter;
-
-			FBCharParams CharacterParams
+			FBarrageKey BoxPrimitiveKey;
+			BeforeEach([this, &BoxPrimitiveKey]()
 			{
-				/*Position=*/ GivenDirection * 8.,
-				/*Height=*/ 180.,
-				/*Radius=*/ 40.,
-				/*Speed*/ 0.
-			};
-			FBarrageKey CharacterKey = ClassUnderTest->CreatePrimitive (CharacterParams, Layers::MOVING);
-			ClassUnderTest->StepSimulation ();
+				// Create a sphere primitive to test against
+				FBSphereParams GivenSphereParams{ FVector3d::XAxisVector * 50., 10.f };
+				BoxPrimitiveKey = ClassUnderTest->CreatePrimitive(GivenSphereParams, Layers::NON_MOVING);
 
-			ClassUnderTest->CastRay (
-				GivenCastFrom,
-				GivenDirection,
-				GivenBroadPhaseFilter,
-				GivenObjectLayerFilter,
-				GivenBodyFilter,
-				ActualHitResult
-			);
+				// Take the event from the queue and process it
+				FBPhysicsInput ActualUpdate;
+				TestTrue("There is an event in the queue", ClassUnderTest->ThreadAcc[0].Queue->Dequeue(ActualUpdate));
 
-			TestTrue ("A hit occurs", ActualHitResult->bBlockingHit);
+				JPH::BodyID BoxBodyID = JPH::BodyID(ActualUpdate.Target.KeyIntoBarrage);
+				ClassUnderTest->body_interface->AddBodiesFinalize(&BoxBodyID, 1,
+					ClassUnderTest->body_interface->AddBodiesPrepare(&BoxBodyID, 1),
+					JPH::EActivation::Activate);
+
+				ClassUnderTest->OptimizeBroadPhase();
+				ClassUnderTest->StepSimulation();
+			});
+
+			AfterEach([this, &BoxPrimitiveKey]()
+			{
+				ClassUnderTest->FinalizeReleasePrimitive(BoxPrimitiveKey);
+				// Clear the thread accumulator after each test
+				ClassUnderTest->ThreadAcc[0].Queue->Empty();
+				ClassUnderTest->WorkerAcc[0].Queue->Empty();
+			});
+
+			It("should perform simple sphere tests", [this]()
+			{
+				// Define the sphere test parameters and out params
+				const double GivenRadius = 2.;
+				const double GivenDistance = 100.;
+				const FVector3d GivenCastFrom = FVector3d::ZeroVector;
+				const FVector3d GivenDirection = FVector3d::XAxisVector;
+				TSharedPtr<FHitResult> ActualHitResult = MakeShared<FHitResult>();
+				const FastExcludeBroadphaseLayerFilter GivenBroadPhaseFilter;
+				const FastExcludeObjectLayerFilter GivenObjectLayerFilter;
+				const JPH::BodyFilter GivenBodyFilter;
+
+				ClassUnderTest->SphereCast
+				(
+					GivenRadius,
+					GivenDistance,
+					GivenCastFrom,
+					GivenDirection,
+					ActualHitResult,
+					GivenBroadPhaseFilter,
+					GivenObjectLayerFilter,
+					GivenBodyFilter
+				);
+
+				TestTrue("A hit occurs", ActualHitResult->bBlockingHit);
+			});
+
+			It("should perform simple ray tests", [this]()
+			{
+				// Define the box test parameters and out params
+				const FVector3d GivenCastFrom = FVector3d::ZeroVector;
+				const FVector3d GivenDirection = FVector3d::XAxisVector;
+				TSharedPtr<FHitResult> ActualHitResult = MakeShared<FHitResult>();
+				const FastExcludeBroadphaseLayerFilter GivenBroadPhaseFilter;
+				const FastExcludeObjectLayerFilter GivenObjectLayerFilter;
+				const JPH::BodyFilter GivenBodyFilter;
+
+				ClassUnderTest->CastRay(
+					GivenCastFrom,
+					GivenDirection,
+					GivenBroadPhaseFilter,
+					GivenObjectLayerFilter,
+					GivenBodyFilter,
+					ActualHitResult
+				);
+
+				TestTrue("A hit occurs", ActualHitResult->bBlockingHit);
+			});
 		});
 	});
 }
