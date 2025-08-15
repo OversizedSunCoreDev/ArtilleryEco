@@ -13,6 +13,7 @@
 #include "SkeletonTypes.h"
 #include "EPhysicsLayer.h"
 //#include "Experimental/CollisionGroupUnaware_FleshBroadPhase.h"
+#include "BarrageContactListener.h"
 #include "IsolatedJoltIncludes.h"
 
 // All Jolt symbols are in the JPH namespace
@@ -58,7 +59,7 @@ public:
 	JPH::Quat mCapsuleRotationUpdate = JPH::Quat::sIdentity();
 	JPH::Ref<JPH::CharacterVirtual> mCharacter = JPH::Ref<JPH::CharacterVirtual>();
 	float mDeltaTime = 0.01; //set this yourself or have a bad time.
-
+	TSharedPtr<BarrageContactListener> mListener;
 	// Calculated effective velocity after a step
 	JPH::Vec3 mEffectiveVelocity = JPH::Vec3::sZero();
 	virtual void IngestUpdate(FBPhysicsInput& input) = 0;
@@ -67,7 +68,6 @@ public:
 	TSharedPtr<JPH::PhysicsSystem, ESPMode::ThreadSafe> World;
 protected:
 	friend class FWorldSimOwner;
-	TWeakPtr<FWorldSimOwner> Machine;
 };
 
 class BARRAGE_API FWorldSimOwner
@@ -126,7 +126,7 @@ public:
 			case Layers::NON_MOVING:
 				return inObject2 != Layers::NON_MOVING && inObject2 != Layers::HITBOX; // Non-moving collides with all moving stuff EXCEPT hitbox
 			case Layers::MOVING:
-				return inObject2 == Layers::NON_MOVING || inObject2 == Layers::BONKFREEENEMY || inObject2 == Layers::MOVING || inObject2 == Layers::ENEMY || inObject2 == Layers::PROJECTILE || inObject2 == Layers::ENEMYPROJECTILE || inObject2 == Layers::CAST_QUERY; // Moving collides with everything but hitboxes and debris
+				return inObject2 == Layers::NON_MOVING || inObject2 == Layers::BONKFREEENEMY || inObject2 == Layers::MOVING || inObject2 == Layers::ENEMY || inObject2 == Layers::ENEMYPROJECTILE || inObject2 == Layers::CAST_QUERY; // Moving collides with everything but hitboxes and debris
 			case Layers::ENEMY:
 				return inObject2 == Layers::NON_MOVING || inObject2 == Layers::MOVING || inObject2 == Layers::ENEMY || inObject2 == Layers::PROJECTILE || inObject2 == Layers::CAST_QUERY;
 			case Layers::BONKFREEENEMY: //bonkfree is an emergency option that causes enemies to freely collide. It can be used in conjunction with other layers to create variable hitboxing for enemies for pathing, players, environment, and other enemies.
@@ -134,9 +134,9 @@ public:
 			case Layers::HITBOX:
 				return inObject2 == Layers::PROJECTILE || inObject2 == Layers::ENEMYPROJECTILE || inObject2 == Layers::CAST_QUERY; // Hitboxes only collide with projectiles and cast_queries
 			case Layers::PROJECTILE:
-				return inObject2 == Layers::NON_MOVING || inObject2 == Layers::MOVING  || inObject2 == Layers::BONKFREEENEMY || inObject2 == Layers::ENEMY || inObject2 == Layers::HITBOX || inObject2 == Layers::CAST_QUERY;
+				return inObject2 == Layers::NON_MOVING || inObject2 == Layers::BONKFREEENEMY || inObject2 == Layers::ENEMY || inObject2 == Layers::HITBOX || inObject2 == Layers::CAST_QUERY;
 			case Layers::ENEMYPROJECTILE:
-				return (inObject2 != Layers::ENEMYPROJECTILE) && (inObject2 == Layers::NON_MOVING || inObject2 == Layers::MOVING || inObject2 == Layers::HITBOX || inObject2 == Layers::CAST_QUERY);
+				return (inObject2 != Layers::ENEMYPROJECTILE) && (inObject2 == Layers::NON_MOVING || inObject2 == Layers::MOVING || inObject2 == Layers::HITBOX);
 			case Layers::CAST_QUERY:
 				return inObject2 == Layers::NON_MOVING || inObject2 == Layers::MOVING || inObject2 == Layers::ENEMY || inObject2 == Layers::BONKFREEENEMY || inObject2 == Layers::HITBOX || inObject2 == Layers::PROJECTILE  || inObject2 == Layers::ENEMYPROJECTILE;
 			case Layers::CAST_QUERY_LEVEL_GEOMETRY_ONLY:
@@ -266,8 +266,11 @@ public:
 
 	// A contact listener gets notified when bodies (are about to) collide, and when they separate again.
 	// Note that this is called from a job so whatever you do here needs to be thread safe.
-	// Registering one is entirely optional.
+	//normally, the contact listener and the bcontact listener will be the same. the character contact listener is used
+	//ONLY for characters, which may not be a shock. these are split as you might want to give it unique behavior.
 	TSharedPtr<JPH::ContactListener> contact_listener;
+	
+	TSharedPtr<BarrageContactListener> character_contact_listener;
 
 	float DeltaTime = 0.01; //You should set this or pass it in.
 

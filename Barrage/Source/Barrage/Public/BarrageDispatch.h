@@ -4,6 +4,7 @@
 #include "SkeletonTypes.h"
 
 #include "CoreMinimal.h"
+#include "BarrageContactEvent.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "FBarrageKey.h"
 #include "Chaos/Particles.h"
@@ -146,6 +147,8 @@ public:
 	FOnBarrageContactAdded OnBarrageContactAddedDelegate;
 	void HandleContactAdded(const JPH::Body& inBody1, const JPH::Body& inBody2, const JPH::ContactManifold& inManifold,
 	                        JPH::ContactSettings& ioSettings);
+	void HandleContactAdded(BarrageContactEntity Ent1, BarrageContactEntity Ent2);
+	void HandleContactAdded(const JPH::Body& inBody1, const JPH::Body& inBody2, JPH::ContactSettings& ioSettings);
 	FOnBarrageContactPersisted OnBarrageContactPersistedDelegate;
 	void HandleContactPersisted(const JPH::Body& inBody1, const JPH::Body& inBody2, const JPH::ContactManifold& inManifold,
 	                            JPH::ContactSettings& ioSettings);

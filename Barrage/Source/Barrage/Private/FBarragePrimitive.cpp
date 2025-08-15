@@ -264,6 +264,29 @@ void FBarragePrimitive::SpeedLimit(FBLet Target, float TargetSpeed)
 	}
 }
 
+bool FBarragePrimitive::GetSpeedLimitIfAny(FBLet Target, float& OldSpeedLimit)
+{
+	if (GlobalBarrage && IsNotNull(Target))
+	{
+		TSharedPtr<FWorldSimOwner> GameSimHoldOpen = GlobalBarrage->JoltGameSim;
+		if (GameSimHoldOpen)
+		{
+			JPH::BodyID result;
+			// if they exist... we proceed. this replaces the older faulty check.				  curry for safety.
+			if (GameSimHoldOpen->BarrageToJoltMapping->find(Target->KeyIntoBarrage, result) && Target->Me == FBShape::Character) 
+			{
+				TSharedPtr<FBCharacterBase>* CharacterActual = GameSimHoldOpen->CharacterToJoltMapping->Find(Target->KeyIntoBarrage);
+				if (CharacterActual && *CharacterActual)
+				{
+					OldSpeedLimit = CharacterActual->Get()->mMaxSpeed;
+					return true;
+				}
+			}
+		}
+	}
+	return false;
+}
+
 FBarragePrimitive::FBGroundState FBarragePrimitive::GetCharacterGroundState(FBLet Target)
 {
 	if (GlobalBarrage && IsNotNull(Target))

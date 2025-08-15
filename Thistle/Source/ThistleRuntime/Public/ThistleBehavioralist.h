@@ -18,7 +18,7 @@
 class UThistleStateTreeLease;
 
 DECLARE_DELEGATE_OneParam(AwakenTagQueryDecorator, TWeakObjectPtr<UBehaviorTreeComponent>)
-static constexpr int32 MAX_ENEMY_COUNT = 500;
+static constexpr int32 MAX_ENEMY_COUNT = 2000;
 /**
  * This tickable system manages providing faction information, group labels, enemies, and assigning behavior or state trees.
  * It also provides a shim from our ECS to blackboards as needed, though the ECS tooling mostly makes blackboards unnecessary complexity.

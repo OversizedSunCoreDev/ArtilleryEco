@@ -1,4 +1,5 @@
-﻿#pragma once
+﻿// ReSharper disable CppRedundantParentheses
+#pragma once
 
 #include <GunOwner.h>
 
@@ -130,6 +131,31 @@ public:
 		}
 	}
 
+	//TODO: This takes a key, gets the location from the ATTRIBUTE, and then shifts it up to represent a good centroid target point
+	static FVector GetPlayerLocationAsEstTarget(E_PlayerKEY Player)
+	{
+		UArtilleryDispatch* ptr = UArtilleryDispatch::SelfPtr;
+		if(ptr)
+		{
+			bool bFound  = false;
+			FVector Value = FVector::ZeroVector;
+			GetAnyPlayerVector(ptr->GetWorld(), E_VectorAttrib::Location, Player, bFound, Value);
+			
+			if (bFound && !Value.IsNearlyZero())
+			{
+				float height = 0.0;
+				GetAnyPlayerAttrib(ptr->GetWorld(), E_AttribKey::Height, Player, bFound, height);
+				if (bFound)
+				{
+					FVector Dir = FVector();
+					K2_GetPlayerDirectionEstimator(Dir);
+					return Value + Dir + (FVector::UpVector * height);
+				}
+			}
+		}
+		return FVector();
+	}
+
 	static float implK2_GetAttrib(FSkeletonKey Owner, E_AttribKey Attrib)
 	{
 		if(UArtilleryDispatch::SelfPtr)
@@ -249,6 +275,27 @@ public:
 		return false;
 	}
 
+	static bool GetAnyPlayerAttrib(UWorld* ZWorld, E_AttribKey Attrib, E_PlayerKEY Player, bool& bFound, float& Value)
+	{
+		if (ZWorld)
+		{
+			UCanonicalInputStreamECS* ptr = ZWorld->GetSubsystem<UCanonicalInputStreamECS>();
+			if(ptr)
+			{
+				InputStreamKey streamkey = ptr->GetStreamForPlayer(Player);
+				ActorKey key = ptr->ActorByStream(streamkey);
+				if(key)
+				{
+					Value = implK2_GetAttrib(key, Attrib, bFound);
+					return true;
+					}
+				}
+			}
+		bFound = false;
+		Value = NAN;
+		return false;
+	}
+	
 	UFUNCTION(BlueprintCallable, meta = (ScriptName = "GetAnyPlayerVector", DisplayName = "Get Any Player's Vector Attribute", WorldContext = "WorldContextObject", HidePin = "WorldContextObject", ExpandBoolAsExecs="bFound"),  Category="Artillery|Attributes")
 	static FVector K2_GetAnyPlayerVector(UObject* WorldContextObject, E_VectorAttrib Attrib, E_PlayerKEY Player, bool& bFound)
 	{

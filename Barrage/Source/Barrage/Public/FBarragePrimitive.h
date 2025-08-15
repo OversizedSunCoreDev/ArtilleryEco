@@ -126,6 +126,7 @@ public:
 	}
 
 	static void SpeedLimit(FBLet Target, float TargetSpeed);
+	static bool GetSpeedLimitIfAny(FBLet Target, float& OldSpeedLimit);
 
 	// If you call these with a non-character FBLet, they will always return false-y values.
 	static FBGroundState GetCharacterGroundState(FBLet Target);

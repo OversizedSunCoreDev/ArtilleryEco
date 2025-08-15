@@ -127,6 +127,7 @@ public:
 	void REGISTER_PROJECTILE_FINAL_TICK_RESOLVER(uint32 MaximumLifespanInTicks, const FSkeletonKey& Self);
 	void REGISTER_GUN_FINAL_TICK_RESOLVER(const FGunKey& Self, const FArtilleryGun* ExistCheck);
 	void INITIATE_JUMP_TIMER(const FSkeletonKey& Self);
+	void Bop(FSkeletonKey Target, uint16 TicksFromNow, FVector ForceAppliedOnce);
 
 	//Forwarding for the TickliteThread.
 	TOptional<FTransform> GetTransformShadowByObjectKey(const FSkeletonKey& Target, ArtilleryTime Now) const

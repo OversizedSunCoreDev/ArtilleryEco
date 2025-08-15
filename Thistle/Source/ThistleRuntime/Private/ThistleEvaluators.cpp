@@ -43,11 +43,15 @@ void FThistleSphereCast::Tick(FStateTreeExecutionContext& Context, const float D
 		if (InstanceData.SourceBodyKey_SetOrRegret.IsValid()
 			&& UArtilleryDispatch::SelfPtr->IsLiveKey(InstanceData.SourceBodyKey_SetOrRegret) != DEAD)
 		{
-			JPH::IgnoreSingleBodyFilter StopHittingYourself = UBarrageDispatch::SelfPtr->GetFilterToIgnoreSingleBody(
-				UBarrageDispatch::SelfPtr->GetShapeRef(InstanceData.SourceBodyKey_SetOrRegret)->KeyIntoBarrage);
-			UBarrageDispatch::SelfPtr->SphereCast(InstanceData.Radius, Length, Source, ToFrom.GetSafeNormal(),
-			                                      InstanceData.HitResultCache, BroadPhaseFilter,
-			                                      ObjectLayerFilter, StopHittingYourself);
+			auto Bind = 	UBarrageDispatch::SelfPtr->GetShapeRef(InstanceData.SourceBodyKey_SetOrRegret);
+			if (Bind)
+			{
+				JPH::IgnoreSingleBodyFilter StopHittingYourself = UBarrageDispatch::SelfPtr->GetFilterToIgnoreSingleBody(
+					Bind->KeyIntoBarrage);
+				UBarrageDispatch::SelfPtr->SphereCast(InstanceData.Radius, Length, Source, ToFrom.GetSafeNormal(),
+													  InstanceData.HitResultCache, BroadPhaseFilter,
+													  ObjectLayerFilter, StopHittingYourself);
+			}
 		}
 		else
 		{

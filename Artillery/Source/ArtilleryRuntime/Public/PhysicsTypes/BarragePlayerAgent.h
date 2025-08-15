@@ -46,9 +46,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Movement, meta=(ClampMin="0", UIMin="0"))
 	float TurningBoost = 1.1;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Movement)
-	float MaxStickVelocity = 955;
+	float MaxStickVelocity = 995;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Movement)
-	float HardMaxVelocity = 1500;
+	float HardMaxVelocity = 1800;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Movement)
 	float Deceleration = 12;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Movement)
