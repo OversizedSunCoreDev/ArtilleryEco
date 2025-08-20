@@ -40,6 +40,18 @@ void FBarrageDispatchTests::Define()
 		}
 	});
 
+	AfterEach([this]()
+	{
+		if (TestWorld)
+		{
+			TestWorld->DestroyWorld(false);
+			GEngine->DestroyWorldContext(TestWorld);
+			TestWorld = nullptr;
+			BarrageDispatch = nullptr;
+		}
+	});
+	
+
 	Describe("Barrage Dispatch Tests", [this]()
 	{
 		Describe("System Initialization", [this]()
@@ -92,6 +104,7 @@ void FBarrageDispatchTests::Define()
 				TestTrue("Sphere primitive creation should succeed", FBarragePrimitive::IsNotNull(Result));
 				TestTrue("Sphere primitive should have valid key", Result->KeyIntoBarrage != 0);
 				TestTrue("Sphere primitive should have matching skeleton key", Result->KeyOutOfBarrage == OutKey);
+
 			});
 
 			It("Should create capsule primitives", [this]()
