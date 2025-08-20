@@ -8,6 +8,7 @@
 #include "FBPhysicsInput.h"
 #include "FBShapeParams.h"
 #include "PhysicsFilters/FastObjectLayerFilters.h"
+#include "CoordinateUtils.h"
 
 BEGIN_DEFINE_SPEC(FBarrageDispatchTests, "Artillery.Barrage.Barrage Dispatch Tests", 
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
@@ -50,7 +51,6 @@ void FBarrageDispatchTests::Define()
 			BarrageDispatch = nullptr;
 		}
 	});
-	
 
 	Describe("Barrage Dispatch Tests", [this]()
 	{
@@ -118,6 +118,39 @@ void FBarrageDispatchTests::Define()
 				TestTrue("Capsule primitive creation should succeed", FBarragePrimitive::IsNotNull(Result));
 				TestTrue("Capsule primitive should have valid key", Result->KeyIntoBarrage != 0);
 			});
+
+			It("Should create a projectile", [this]()
+			{
+				FSkeletonKey OutKey;
+				FBBoxParams BoxParams = FBarrageBounder::GenerateBoxBounds(
+					FVector3d(0, 0, 0), 
+					100.0, 
+					100.0, 
+					100.0
+				);
+				
+				FBLet Result = BarrageDispatch->CreateProjectile(BoxParams, OutKey, Layers::MOVING);
+				
+				TestTrue("Projectile creation should succeed", FBarragePrimitive::IsNotNull(Result));
+				TestTrue("Projectile should have valid key", Result->KeyIntoBarrage != 0);
+			});
+
+			It("Should create a complex static mesh from an Actor with a UStaticMeshComponent", [this]()
+			{
+				FSkeletonKey OutKey;
+				AActor* TestActor = TestWorld->SpawnActor<AActor>();
+				UStaticMeshComponent* MeshComponent = NewObject<UStaticMeshComponent>(TestActor);
+				MeshComponent->SetStaticMesh(LoadObject<UStaticMesh>(MeshComponent, TEXT("/Artillery/TestMeshes/SM_Chair.SM_Chair")));
+				MeshComponent->RegisterComponent();
+				TestActor->AddInstanceComponent(MeshComponent);
+				
+				FBTransform MeshTransform;
+				MeshTransform.SetTransform(MeshComponent->GetComponentTransform());
+				FBLet Result = BarrageDispatch->LoadComplexStaticMesh(MeshTransform, MeshComponent, OutKey);
+				
+				TestTrue("Complex static mesh creation should succeed", FBarragePrimitive::IsNotNull(Result));
+				TestTrue("Complex static mesh should have valid key", Result->KeyIntoBarrage != 0);
+			});
 		});
 
 		Describe("Physics Queries", [this]()
@@ -166,6 +199,53 @@ void FBarrageDispatchTests::Define()
 				TestTrue("SphereCast operation should return a blocking hit", OutHit->bBlockingHit);
 			});
 
+			It("Should perform sphere searches against a box", [this]()
+			{
+				const FVector3d Location(0, 0, 0);
+				const double Radius = 70.0;
+				uint32 OutFoundObjectCount = 0;
+				TArray<uint32> OutFoundObjects;
+				// Create an object to search for
+				FSkeletonKey BoxKeys[2];
+				FBBoxParams BoxParams = FBarrageBounder::GenerateBoxBounds(
+					FVector3d(0, 0, 0), 
+					50.0, 
+					50.0, 
+					50.0
+				);
+				FBLet Box = BarrageDispatch->CreatePrimitive(BoxParams, BoxKeys[0], Layers::MOVING);
+
+				BoxParams = FBarrageBounder::GenerateBoxBounds(
+					FVector3d(30, 0, 0),
+					50.0,
+					50.0,
+					50.0
+				);
+				BarrageDispatch->CreatePrimitive(BoxParams, BoxKeys[1], Layers::MOVING);
+				// Create filters using the object we just created
+				auto BroadPhaseFilter = BarrageDispatch->GetDefaultBroadPhaseLayerFilter(Layers::MOVING);
+				auto ObjectFilter = BarrageDispatch->GetDefaultLayerFilter(Layers::MOVING);
+				auto BodiesFilter = BarrageDispatch->GetFilterToIgnoreSingleBody (Box->KeyIntoBarrage);
+
+				BarrageDispatch->StackUp();
+				BarrageDispatch->StepWorld(0, 0);
+				BarrageDispatch->StepWorld(0, 1);
+				BarrageDispatch->StepWorld(1, 0);
+				BarrageDispatch->StepWorld(1, 1);
+				BarrageDispatch->SphereSearch(
+					Box->KeyIntoBarrage, 
+					Location, 
+					Radius, 
+					BroadPhaseFilter, 
+					ObjectFilter, 
+					BodiesFilter,
+					&OutFoundObjectCount,
+					OutFoundObjects
+				);
+				
+				TestTrue("SphereSearch should find at least one object", OutFoundObjectCount > 0);
+			});
+
 			It("Should perform ray casts against a box", [this]()
 			{
 				const FVector3d RayStart(0, 0, 0);
@@ -207,6 +287,62 @@ void FBarrageDispatchTests::Define()
 				TestEqual ("RayCast hit location should be correct", OutHit->Location, FVector (65.0f, 0.0f, 0.0f));
 			});
 		});
+
+		Describe("Contact Events", [this]()
+		{
+			It("Should produce a contact started event", [this]()
+			{
+				// Bind to the contact added delegate
+				bool bContactEventTriggered = false;
+				auto lambda = [&bContactEventTriggered](const BarrageContactEvent&)
+				{
+					bContactEventTriggered = true;
+				};
+				BarrageDispatch->OnBarrageContactAddedDelegate.AddLambda(lambda);
+
+
+				// Setup primitives to collide
+				FSkeletonKey Sphere1Key, Sphere2Key;
+				auto Sphere1Params = FBarrageBounder::GenerateSphereBounds(FVector3d(0, 0, 0), 50.0);
+				FBLet Sphere1 = BarrageDispatch->CreatePrimitive(
+					Sphere1Params,
+					Sphere1Key,
+					Layers::MOVING
+				);
+
+				auto Sphere2Params = FBarrageBounder::GenerateSphereBounds(FVector3d(100, 0, 0), 50.0);
+				FBLet Sphere2 = BarrageDispatch->CreatePrimitive(
+					Sphere2Params,
+					Sphere2Key,
+					Layers::MOVING
+				);
+
+				// Spawn into world then set on a collision course with each other
+				BarrageDispatch->StackUp();
+				BarrageDispatch->StepWorld(0, 0);
+
+				// Set the primitive bodies to move towards each other
+				FBarragePrimitive::SetVelocity(FVector3d(50, 0, 0), Sphere1);
+				FBarragePrimitive::SetVelocity(FVector3d(-50, 0, 0), Sphere2);
+
+				BarrageDispatch->StackUp();
+				BarrageDispatch->StepWorld(0, 0);
+				BarrageDispatch->StepWorld(0, 1);
+				BarrageDispatch->StepWorld(0, 3);
+				BarrageDispatch->StepWorld(1000, 0);
+				BarrageDispatch->StepWorld(1000, 1);
+				BarrageDispatch->StepWorld(1000, 3);
+				BarrageDispatch->StepWorld(2000, 0);
+				BarrageDispatch->StepWorld(2000, 1);
+				BarrageDispatch->StepWorld(2000, 3);
+
+				// Process contact events
+				BarrageDispatch->BroadcastContactEvents();
+
+				TestTrue("Contact added event should be triggered", bContactEventTriggered);
+			});
+		});
+
 	});
 
 	AfterEach([this]()
