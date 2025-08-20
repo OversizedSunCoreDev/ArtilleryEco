@@ -36,10 +36,10 @@ inline bool AThistleInject::RegistrationImplementation()
 		// Inbound.BindUObject(this, &AThistleInject::LocomotionStateMachine); // this looks like it's not used...
 		TMap<AttribKey, double> MyAttributes = TMap<AttribKey, double>();
 		MyAttributes.Add(HEALTH, 1000);
-		MyAttributes.Add(MAX_HEALTH, 1000);
+		MyAttributes.Add(MAXHEALTH, 100);
 		MyAttributes.Add(Attr::HealthRechargePerTick, 0);
 		MyAttributes.Add(MANA, 1000);
-		MyAttributes.Add(MAX_MANA, 1000);
+		MyAttributes.Add(MAXMANA, 1000);
 		MyAttributes.Add(Attr::ManaRechargePerTick, 10);
 		MyAttributes.Add(Attr::ProposedDamage, 5);
 		MyKey = ArtilleryStateMachine->CompleteRegistrationWithAILocomotionAndParent( MyAttributes, LKeyCarry->GetMyKey());
@@ -189,32 +189,38 @@ bool AThistleInject::MoveToPoint(FVector3f To)
 	if(NavSys)
 	{
 		ANavigationData* NavData = NavSys->GetDefaultNavDataInstance(FNavigationSystem::DontCreate);
-		if (NavData)
+		if (NavData && this && !this->IsActorBeingDestroyed() && !To.ContainsNaN())
 		{
-			FPathFindingQuery Query(this, *NavData, FVector3d(FBarragePrimitive::GetPosition(BarragePhysicsAgent->MyBarrageBody)), FVector3d(To));
-			FPathFindingResult Result = NavSys->FindPathSync(Query);
-			if (Result.IsSuccessful())
+			auto Start = FVector3d(FBarragePrimitive::GetPosition(BarragePhysicsAgent->MyBarrageBody));
+			auto Finish = FVector3d(To);
+			if (!Start.ContainsNaN() && !Finish.ContainsNaN())
 			{
-				// I KNOW THIS LOOKS DUMB BUT ONE IS POINTER CHECK AND OTHER IS PATH VALIDITY CHECK (lol.)
-				if (Path.IsValid() && Path->IsValid())
+				FPathFindingQuery Query(this, *NavData, Start, Finish);
+			
+				FPathFindingResult Result = NavSys->FindPathSync(Query);
+				if (Result.IsSuccessful())
 				{
-					Path = Result.Path;
-					Path->EnableRecalculationOnInvalidation(false);
-					Path->SetIgnoreInvalidation(true);
-				}
-				else // TODO: flying nav doesn't work with navmesh so just set a dumb path for now
-				{
-					TArray<FVector> PathPoints;
-					PathPoints.Add(Query.StartLocation);
-					PathPoints.Add(FVector3d(To));
-					Path = MakeShareable<FNavigationPath>(new FNavigationPath(PathPoints, this));
-					Path->SetNavigationDataUsed(NavData);
-				}
+					// I KNOW THIS LOOKS DUMB BUT ONE IS POINTER CHECK AND OTHER IS PATH VALIDITY CHECK (lol.)
+					if (Path.IsValid() && Path->IsValid())
+					{
+						Path = Result.Path;
+						Path->EnableRecalculationOnInvalidation(false);
+						Path->SetIgnoreInvalidation(true);
+					}
+					else // TODO: flying nav doesn't work with navmesh so just set a dumb path for now
+					{
+						TArray<FVector> PathPoints;
+						PathPoints.Add(Query.StartLocation);
+						PathPoints.Add(FVector3d(To));
+						Path = MakeShareable<FNavigationPath>(new FNavigationPath(PathPoints, this));
+						Path->SetNavigationDataUsed(NavData);
+					}
 
-				// First path point is start location, so we skip it since we're already there
-				NextPathIndex = 1;
-				// Path->DebugDraw(NavData, FColor::Red, nullptr, /*bPersistent=*/false, 5.f);
-				return true;
+					// First path point is start location, so we skip it since we're already there
+					NextPathIndex = 1;
+					// Path->DebugDraw(NavData, FColor::Red, nullptr, /*bPersistent=*/false, 5.f);
+					return true;
+				}
 			}
 		}
 	}
@@ -237,7 +243,7 @@ void AThistleInject::LocomotionStateMachine()
 		TSharedPtr<FHitResult> HitResult = MakeShared<FHitResult>();
 		Physics->SphereCast(0.05f, 200.0f, static_cast<FVector3d>(BarragePhysicsAgent->MyBarrageBody->GetCentroidPossiblyStale(BarragePhysicsAgent->MyBarrageBody)), FVector::DownVector, HitResult, LevelGeoBroadPhaseFilter, LevelGeoObjectLayerFilter, BodyFilter);
 		bool groundful = HitResult && HitResult->Distance < 30;
-		if (EnemyType == Ground && groundful && !ArtilleryStateMachine->MyTags->HasTag(TAG_Orders_Move_Break) && Path && Path->IsReady())
+		if (EnemyType == Ground && groundful && !ArtilleryStateMachine->MyTags->HasTag(TAG_Orders_Move_Break) && Path && Path->IsReady() && (Path->GetPathPoints()).Num() >= NextPathIndex)
 		{
 			FVector3f Destination = FVector3f(Path->GetDestinationLocation());
 			FVector3f NextWaypoint = FVector3f(Path->GetPathPoints()[NextPathIndex].Location);

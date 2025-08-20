@@ -484,7 +484,6 @@ uint32 UThistleBehavioralist::GetEnemiesWithinRangeOfPoint(
 		}
 		const float CurrentEnemyHealth = EnemyHealthAttr->GetCurrentValue();
 
-		// TODO - add 'dead' enemy keys to a dead array so we can clean up the array later
 		if (CurrentEnemyHealth > 0.f)
 		{
 			TWeakObjectPtr<AActor> EnemyActor = TransformDispatch->GetAActorByObjectKey(EnemyKey);
@@ -496,11 +495,7 @@ uint32 UThistleBehavioralist::GetEnemiesWithinRangeOfPoint(
 					EnemyCountFound++;
 				}
 			}
-			// TODO - Add debugging toggles as we are starting to hit perf issues with these messages on all the time
-			// else
-			// {
-			// 	UE_LOG(LogTemp, Warning, TEXT("ThistleBehavioralist: EnemyKey [%llu] is not an actor despite being registered as an enemy!"), EnemyKey.Obj)
-			// }
+
 		}
 		else if (CurrentEnemyHealth <= 0.f)
 		{
@@ -512,10 +507,6 @@ uint32 UThistleBehavioralist::GetEnemiesWithinRangeOfPoint(
 					DeadEnemies.Add(EnemyKey);
 				}
 			}
-			// else
-			// {
-			// 	UE_LOG(LogTemp, Warning, TEXT("ThistleBehavioralist: EnemyKey [%llu] is not an actor despite being registered as an enemy, and has 0 or less health!"), EnemyKey.Obj)
-			// }
 		}
 	}
 	return EnemyCountFound;

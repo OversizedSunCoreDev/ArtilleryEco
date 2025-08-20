@@ -24,7 +24,11 @@ FWorldSimOwner::FWorldSimOwner(float cDeltaTime, InitExitFunction JobThreadIniti
 	// Register allocation hook. In this example we'll just let Jolt use malloc / free but you can override these if you want (see Memory.h).
 	// This needs to be done before any other Jolt function is called.
 	RegisterDefaultAllocator();
-	contact_listener = MakeShareable(new BarrageContactListener());
+
+	//hey future friend! collision listeners, character collision, and character collision listeners live below. so...
+	//if you are looking for character collision behavior, this is the line that sets it up.
+	character_contact_listener = MakeShareable(new BarrageContactListener());
+	contact_listener = character_contact_listener;
 	Allocator = MakeShareable(new TempAllocatorImpl(AllocationArenaSize));
 	physics_system = MakeShareable(new PhysicsSystem());
 	// Install trace and assert callbacks
@@ -217,13 +221,13 @@ inline EMotionQuality LayerToMotionQualityMapping(uint16 Layer)
 	case Layers::NON_MOVING:
 		return EMotionQuality::Discrete;
 	case Layers::MOVING:
-		return EMotionQuality::Discrete;
+		return EMotionQuality::LinearCast;
 	case Layers::HITBOX:
 		return EMotionQuality::Discrete;
 	case Layers::PROJECTILE:
-		return EMotionQuality::Discrete;
+		return EMotionQuality::LinearCast;
 	case Layers::ENEMYPROJECTILE:
-		return EMotionQuality::Discrete;
+		return EMotionQuality::LinearCast;
 	case Layers::BONKFREEENEMY:
 		return EMotionQuality::Discrete;
 	case Layers::ENEMY:
@@ -340,6 +344,7 @@ inline FBarrageKey FWorldSimOwner::CreatePrimitive(FBCharParams& ToCreate, uint1
 	NewCharacter->World = this->physics_system;
 	NewCharacter->mDeltaTime = DeltaTime;
 	NewCharacter->mForcesUpdate = Vec3::sZero();
+	NewCharacter->mListener = character_contact_listener;
 	// Create the shape
 	BodyID BodyIDTemp = NewCharacter->Create(&this->CharacterVsCharacterCollisionSimple);
 	//AddInternalQueuing(BodyIDTemp, 0);// we can't figure this out yet. we'll have to set it later or rearch for data exposure reasons. --JMK, can kicka
@@ -549,6 +554,7 @@ FWorldSimOwner::~FWorldSimOwner()
 	//grab our hold open.		
 	TSharedPtr<JPH::PhysicsSystem> HoldOpen = physics_system;
 	physics_system.Reset(); //cast it into the fire.
+	CharacterToJoltMapping->Reset();//free characters so they don't double free inner shapes.
 	std::this_thread::yield(); //Cycle.
 	HoldOpen.Reset();
 	job_system.Reset();

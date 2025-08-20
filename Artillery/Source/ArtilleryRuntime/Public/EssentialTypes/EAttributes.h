@@ -37,7 +37,9 @@ enum class E_AttribKey : uint8
 	Range,
 	TicksSinceLastFired,
 	LastFiredTimestamp,
-	TriggerPulled
+	TriggerPulled,
+	
+	Height
 };
 
 UENUM(BlueprintType, Blueprintable)
@@ -100,10 +102,10 @@ namespace Arty
 
 	// Entity attribs
 	constexpr AttribKey HEALTH = Arty::AttribKey::Health;
-	constexpr AttribKey MAX_HEALTH = Arty::AttribKey::MaxHealth;
+	constexpr AttribKey MAXHEALTH = Arty::AttribKey::MaxHealth;
 	constexpr AttribKey MANA = Arty::AttribKey::Mana;
 	constexpr AttribKey DASH_CURRENCY = MANA;
-	constexpr AttribKey MAX_MANA = Arty::AttribKey::MaxMana;
+	constexpr AttribKey MAXMANA = Arty::AttribKey::MaxMana;
 	constexpr AttribKey PROPOSED_DAMAGE = Arty::AttribKey::ProposedDamage;
 
 	// Gun Attribs

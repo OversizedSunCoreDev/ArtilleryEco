@@ -207,7 +207,6 @@ FBLet UBarrageDispatch::CreateProjectile(FBBoxParams& Definition, FSkeletonKey O
 	return nullptr;
 }
 
-//TODO: COMPLETE MOCK
 FBLet UBarrageDispatch::CreatePrimitive(FBCharParams& Definition, FSkeletonKey OutKey, uint16_t Layer)
 {
 	if (JoltGameSim)
@@ -552,7 +551,6 @@ bool UBarrageDispatch::BroadcastContactEvents() const
 
 inline BarrageContactEvent ConstructContactEvent(EBarrageContactEventType EventType, UBarrageDispatch* BarrageDispatch,
                                                  const JPH::Body& inBody1, const JPH::Body& inBody2,
-                                                 const JPH::ContactManifold& inManifold,
                                                  JPH::ContactSettings& ioSettings)
 {
 	return BarrageContactEvent(
@@ -560,12 +558,26 @@ inline BarrageContactEvent ConstructContactEvent(EBarrageContactEventType EventT
 		BarrageContactEntity(BarrageDispatch->GenerateBarrageKeyFromBodyId(inBody2.GetID()), inBody2));
 }
 
+//retains the presence of the contact manifold, as we will eventually need to use this.
 void UBarrageDispatch::HandleContactAdded(const JPH::Body& inBody1, const JPH::Body& inBody2,
                                           const JPH::ContactManifold& inManifold,
                                           JPH::ContactSettings& ioSettings)
 {
+	HandleContactAdded(inBody1, inBody2, ioSettings);
+}
+
+void UBarrageDispatch::HandleContactAdded(const BarrageContactEntity Ent1, const BarrageContactEntity Ent2)
+{
+	BarrageContactEvent ContactEventToEnqueue = BarrageContactEvent(
+		EBarrageContactEventType::ADDED, Ent1, Ent2);
+	ContactEventPump->Enqueue(ContactEventToEnqueue);
+}
+
+void UBarrageDispatch::HandleContactAdded(const JPH::Body& inBody1, const JPH::Body& inBody2,
+										  JPH::ContactSettings& ioSettings)
+{
 	BarrageContactEvent ContactEventToEnqueue = ConstructContactEvent(EBarrageContactEventType::ADDED, this, inBody1,
-	                                                                  inBody2, inManifold, ioSettings);
+																	  inBody2, ioSettings);
 	ContactEventPump->Enqueue(ContactEventToEnqueue);
 }
 
@@ -574,7 +586,7 @@ void UBarrageDispatch::HandleContactPersisted(const JPH::Body& inBody1, const JP
                                               JPH::ContactSettings& ioSettings)
 {
 	BarrageContactEvent ContactEventToEnqueue = ConstructContactEvent(EBarrageContactEventType::PERSISTED, this,
-	                                                                  inBody1, inBody2, inManifold, ioSettings);
+	                                                                  inBody1, inBody2, ioSettings);
 	ContactEventPump->Enqueue(ContactEventToEnqueue);
 }
 

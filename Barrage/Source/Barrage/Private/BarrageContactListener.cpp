@@ -34,8 +34,39 @@ using namespace JPH;
 		}
 		**/
 	}
-	
-	void BarrageContactListener::OnContactRemoved(const SubShapeIDPair& inSubShapePair)
+
+//TODO: This is a JANKY hack for character collisions and basically doesn't include enough info to really get
+//fine grained about stuff.
+void BarrageContactListener::OnContactAdded(const JPH::CharacterVirtual* inCharacter, const JPH::BodyID& inBodyID2,
+	const JPH::SubShapeID& inSubShapeID2, JPH::RVec3Arg inContactPosition, JPH::Vec3Arg inContactNormal,
+	JPH::CharacterContactSettings& ioSettings)
+{
+		TRACE_CPUPROFILER_EVENT_SCOPE_STR("Report Contact");
+		if (UBarrageDispatch::SelfPtr)
+		{
+			auto Ent1 = BarrageContactEntity(UBarrageDispatch::SelfPtr->GenerateBarrageKeyFromBodyId(inCharacter->GetInnerBodyID()));
+			
+			auto Ent2 = BarrageContactEntity(UBarrageDispatch::SelfPtr->GenerateBarrageKeyFromBodyId(inCharacter->GetInnerBodyID()));
+			UBarrageDispatch::SelfPtr->HandleContactAdded(Ent1, Ent2);
+		}      
+}
+
+//TODO: this needs replaced when we go to multiplayer.
+void BarrageContactListener::OnCharacterContactAdded(const JPH::CharacterVirtual* inCharacter,
+	const JPH::CharacterVirtual* inOtherCharacter, const JPH::SubShapeID& inSubShapeID2,
+	JPH::RVec3Arg inContactPosition, JPH::Vec3Arg inContactNormal, JPH::CharacterContactSettings& ioSettings)
+{
+		TRACE_CPUPROFILER_EVENT_SCOPE_STR("Report Contact");
+		if (UBarrageDispatch::SelfPtr)
+		{
+			auto Ent1 = BarrageContactEntity(UBarrageDispatch::SelfPtr->GenerateBarrageKeyFromBodyId(inCharacter->GetInnerBodyID()));
+			
+			auto Ent2 = BarrageContactEntity(UBarrageDispatch::SelfPtr->GenerateBarrageKeyFromBodyId(inOtherCharacter->GetInnerBodyID()));
+			UBarrageDispatch::SelfPtr->HandleContactAdded(Ent1, Ent2);
+		}  
+}
+
+void BarrageContactListener::OnContactRemoved(const SubShapeIDPair& inSubShapePair)
 	{
 		if (UBarrageDispatch::SelfPtr)
 		{
