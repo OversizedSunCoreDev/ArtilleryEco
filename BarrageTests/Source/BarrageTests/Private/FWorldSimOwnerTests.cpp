@@ -12,13 +12,20 @@ TSharedPtr<FWorldSimOwner> ClassUnderTest = MakeShared<FWorldSimOwner>(0.016f, [
 		{
 			ClassUnderTest->WorkerAcc[threadId] = FBOutputFeed(std::this_thread::get_id(), 512);
 			ClassUnderTest->ThreadAcc[threadId] = FWorldSimOwner::FBInputFeed(std::this_thread::get_id(), 512);
+			MyWORKERIndex = threadId;
+			MyBARRAGEIndex = threadId;
 		}
 	});
 END_DEFINE_SPEC (FWorldSimOwnerTests)
 void FWorldSimOwnerTests::Define ()
 {
-	MyWORKERIndex = 0;
-	MyBARRAGEIndex = 0;
+	constexpr static int32 FORCED_THREAD_INDEX = 0;
+	BeforeEach ([this]()
+	{
+		MyBARRAGEIndex = FORCED_THREAD_INDEX;
+		MyWORKERIndex = FORCED_THREAD_INDEX;
+	});
+
 	Describe("A World Sim Owner", [this]()
 	{
 		It("should initialize with the expected member variables", [this]()
@@ -37,11 +44,12 @@ void FWorldSimOwnerTests::Define ()
 
 		Describe("when creating primitives", [this]()
 		{
+
 			FBarrageKey ActualKey;
 			AfterEach([this, &ActualKey]()
 			{
-				ClassUnderTest->ThreadAcc[MyBARRAGEIndex].Queue->Empty();
-				ClassUnderTest->WorkerAcc[MyWORKERIndex].Queue->Empty();
+				ClassUnderTest->ThreadAcc[FORCED_THREAD_INDEX].Queue->Empty();
+				ClassUnderTest->WorkerAcc[FORCED_THREAD_INDEX].Queue->Empty();
 			});
 
 			It("should enqueue an event to create a box", [this, &ActualKey]()
@@ -51,7 +59,7 @@ void FWorldSimOwnerTests::Define ()
 				TestTrue ("The returned key is valid", ActualKey.KeyIntoBarrage != 0);
 
 				FBPhysicsInput ActualUpdate;
-				TestTrue("There is an event in the queue", ClassUnderTest->ThreadAcc[MyBARRAGEIndex].Queue->Dequeue(ActualUpdate));
+				TestTrue("There is an event in the queue", ClassUnderTest->ThreadAcc[FORCED_THREAD_INDEX].Queue->Dequeue(ActualUpdate));
 				TestEqual("The event is an add", ActualUpdate.Action, PhysicsInputType::ADD);
 
 				JPH::BodyID ResultBodyID;
@@ -66,7 +74,7 @@ void FWorldSimOwnerTests::Define ()
 				TestTrue("The returned key is valid", ActualKey.KeyIntoBarrage != 0);
 
 				FBPhysicsInput ActualUpdate;
-				TestTrue("There is an event in the queue", ClassUnderTest->ThreadAcc[MyBARRAGEIndex].Queue->Dequeue(ActualUpdate));
+				TestTrue("There is an event in the queue", ClassUnderTest->ThreadAcc[FORCED_THREAD_INDEX].Queue->Dequeue(ActualUpdate));
 				TestEqual("The event is an add", ActualUpdate.Action, PhysicsInputType::ADD);
 			});
 
@@ -77,7 +85,7 @@ void FWorldSimOwnerTests::Define ()
 				TestTrue("The returned key is valid", ActualKey.KeyIntoBarrage != 0);
 
 				FBPhysicsInput ActualUpdate;
-				TestTrue("There is an event in the queue", ClassUnderTest->ThreadAcc[MyBARRAGEIndex].Queue->Dequeue(ActualUpdate));
+				TestTrue("There is an event in the queue", ClassUnderTest->ThreadAcc[FORCED_THREAD_INDEX].Queue->Dequeue(ActualUpdate));
 				TestEqual("The event is an add", ActualUpdate.Action, PhysicsInputType::ADD);
 			});
 
@@ -88,7 +96,7 @@ void FWorldSimOwnerTests::Define ()
 				TestTrue("The returned key is valid", ActualKey.KeyIntoBarrage != 0);
 
 				FBPhysicsInput ActualUpdate;
-				TestTrue("There is an event in the queue", ClassUnderTest->ThreadAcc[MyBARRAGEIndex].Queue->Dequeue(ActualUpdate));
+				TestTrue("There is an event in the queue", ClassUnderTest->ThreadAcc[FORCED_THREAD_INDEX].Queue->Dequeue(ActualUpdate));
 				TestEqual("The event is an add", ActualUpdate.Action, PhysicsInputType::ADD);
 			});
 		});
@@ -104,7 +112,7 @@ void FWorldSimOwnerTests::Define ()
 
 				// Take the event from the queue and process it
 				FBPhysicsInput ActualUpdate;
-				if(ClassUnderTest->ThreadAcc[MyBARRAGEIndex].Queue->Dequeue(ActualUpdate))
+				if(ClassUnderTest->ThreadAcc[FORCED_THREAD_INDEX].Queue->Dequeue(ActualUpdate))
 				{
 					JPH::BodyID BoxBodyID = JPH::BodyID(ActualUpdate.Target.KeyIntoBarrage);
 					ClassUnderTest->body_interface->AddBodiesFinalize(&BoxBodyID, 1,
@@ -120,8 +128,8 @@ void FWorldSimOwnerTests::Define ()
 			{
 				ClassUnderTest->FinalizeReleasePrimitive(BoxPrimitiveKey);
 				// Clear the thread accumulator after each test
-				ClassUnderTest->ThreadAcc[MyBARRAGEIndex].Queue->Empty();
-				ClassUnderTest->WorkerAcc[MyWORKERIndex].Queue->Empty();
+				ClassUnderTest->ThreadAcc[FORCED_THREAD_INDEX].Queue->Empty();
+				ClassUnderTest->WorkerAcc[FORCED_THREAD_INDEX].Queue->Empty();
 			});
 
 			It("should perform simple sphere tests", [this]()

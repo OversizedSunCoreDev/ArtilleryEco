@@ -10,6 +10,19 @@
 #include "PhysicsFilters/FastObjectLayerFilters.h"
 #include "CoordinateUtils.h"
 
+/*
+* This helper function offloads step functions intended to be run in the Game Thread.
+* It will then await the results on the Game Thread. The results are void
+*/
+void AsyncStepWorldSequenceBlockingYield(UBarrageDispatch* Dispatch)
+{
+	// This is wild, but if Artillery is running, just let the simulation run, it is doing stuff. So yield for like, I don't know, a second.
+	FPlatformProcess::YieldCycles(10000000);
+
+	// The bigger todo is decouple the subsystem architecture from requiring a world and properly initializing. WE are basicly at Funcational
+	// testing territory here with risk of side effects based on Artillery implementation.
+}
+
 BEGIN_DEFINE_SPEC(FBarrageDispatchTests, "Artillery.Barrage.Barrage Dispatch Tests", 
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
@@ -153,196 +166,246 @@ void FBarrageDispatchTests::Define()
 			});
 		});
 
-		Describe("Physics Queries", [this]()
+		Describe("Physics", [this]()
 		{
-			It("Should perform sphere casts against a box", [this]()
+			It("Should perform physics tasks, all in one It due to parallel test execution and dispatch threading model", [this]()
 			{
-				const double Radius = 50.0;
-				const double Distance = 100.0;
-				const FVector3d CastFrom(0, 0, 0);
-				const FVector3d Direction(1, 0, 0);
-				TSharedPtr<FHitResult> OutHit = MakeShared<FHitResult>();
-				
-				// Create an object to hit first
-				FSkeletonKey BoxKey;
-				FBBoxParams BoxParams = FBarrageBounder::GenerateBoxBounds(
-					FVector3d(90, 0, 0), 
-					50.0, 
-					50.0, 
-					50.0
-				);
-				FBLet Box = BarrageDispatch->CreatePrimitive(BoxParams, BoxKey, Layers::MOVING);
-
-				// Create filters using the object we just created
-				auto BroadPhaseFilter = BarrageDispatch->GetDefaultBroadPhaseLayerFilter(Layers::MOVING);
-				auto ObjectFilter = BarrageDispatch->GetDefaultLayerFilter(Layers::MOVING);
-				auto BodiesFilter = BarrageDispatch->GetFilterToIgnoreSingleBody (FBarrageKey ());
-
-				BarrageDispatch->StackUp ();
-				BarrageDispatch->StepWorld (0, 0);
-				BarrageDispatch->StepWorld (0, 1);
-				BarrageDispatch->StepWorld (1, 0);
-				BarrageDispatch->StepWorld (1, 1);
-
-				BarrageDispatch->SphereCast(
-					Radius, 
-					Distance, 
-					CastFrom, 
-					Direction, 
-					OutHit, 
-					BroadPhaseFilter, 
-					ObjectFilter, 
-					BodiesFilter
-				);
-				
-				// Note: Actual hit testing would require setting up the physics world properly
-				TestTrue("SphereCast operation should return a blocking hit", OutHit->bBlockingHit);
-			});
-
-			It("Should perform sphere searches against a box", [this]()
-			{
-				const FVector3d Location(0, 0, 0);
-				const double Radius = 70.0;
-				uint32 OutFoundObjectCount = 0;
-				TArray<uint32> OutFoundObjects;
-				// Create an object to search for
-				FSkeletonKey BoxKeys[2];
-				FBBoxParams BoxParams = FBarrageBounder::GenerateBoxBounds(
-					FVector3d(0, 0, 0), 
-					50.0, 
-					50.0, 
-					50.0
-				);
-				FBLet Box = BarrageDispatch->CreatePrimitive(BoxParams, BoxKeys[0], Layers::MOVING);
-
-				BoxParams = FBarrageBounder::GenerateBoxBounds(
-					FVector3d(30, 0, 0),
-					50.0,
-					50.0,
-					50.0
-				);
-				BarrageDispatch->CreatePrimitive(BoxParams, BoxKeys[1], Layers::MOVING);
-				// Create filters using the object we just created
-				auto BroadPhaseFilter = BarrageDispatch->GetDefaultBroadPhaseLayerFilter(Layers::MOVING);
-				auto ObjectFilter = BarrageDispatch->GetDefaultLayerFilter(Layers::MOVING);
-				auto BodiesFilter = BarrageDispatch->GetFilterToIgnoreSingleBody (Box->KeyIntoBarrage);
-
-				BarrageDispatch->StackUp();
-				BarrageDispatch->StepWorld(0, 0);
-				BarrageDispatch->StepWorld(0, 1);
-				BarrageDispatch->StepWorld(1, 0);
-				BarrageDispatch->StepWorld(1, 1);
-				BarrageDispatch->SphereSearch(
-					Box->KeyIntoBarrage, 
-					Location, 
-					Radius, 
-					BroadPhaseFilter, 
-					ObjectFilter, 
-					BodiesFilter,
-					&OutFoundObjectCount,
-					OutFoundObjects
-				);
-				
-				TestTrue("SphereSearch should find at least one object", OutFoundObjectCount > 0);
-			});
-
-			It("Should perform ray casts against a box", [this]()
-			{
-				const FVector3d RayStart(0, 0, 0);
-				const FVector3d RayEnd(100, 0, 0);
-				TSharedPtr<FHitResult> OutHit = MakeShared<FHitResult>();
-				
-				// Create an object to hit first
-				FSkeletonKey BoxKey;
-				FBBoxParams BoxParams = FBarrageBounder::GenerateBoxBounds(
-					FVector3d(90, 0, 0), 
-					50.0, 
-					50.0, 
-					50.0
-				);
-				FBLet Box = BarrageDispatch->CreatePrimitive(BoxParams, BoxKey, Layers::MOVING);
-				// Create filters using the object we just created
-				auto BroadPhaseFilter = BarrageDispatch->GetDefaultBroadPhaseLayerFilter(Layers::MOVING);
-				auto ObjectFilter = BarrageDispatch->GetDefaultLayerFilter(Layers::MOVING);
-				auto BodiesFilter = BarrageDispatch->GetFilterToIgnoreSingleBody (FBarrageKey ());
-				BarrageDispatch->StackUp ();
-				BarrageDispatch->StepWorld (0, 0);
-				BarrageDispatch->StepWorld (0, 1);
-				BarrageDispatch->StepWorld (1, 0);
-				BarrageDispatch->StepWorld (1, 1);
-				BarrageDispatch->CastRay(
-					RayStart, 
-					RayEnd - RayStart, 
-					BroadPhaseFilter, 
-					ObjectFilter, 
-					BodiesFilter, 
-					OutHit
-				);
-				
-				// Note: Actual hit testing would require setting up the physics world properly
-				TestTrue("RayCast operation should return a blocking hit", OutHit->bBlockingHit);
-
-				// 65 is correct, box is at 90, the 50 diam given is in UE coordinates CONVERTED to Jolt half extents e.g. 90 - (50 / 2) = 65
-				TestEqual ("RayCast hit distance should be correct", OutHit->Distance, 65.0f);
-				TestEqual ("RayCast hit location should be correct", OutHit->Location, FVector (65.0f, 0.0f, 0.0f));
-			});
-		});
-
-		Describe("Contact Events", [this]()
-		{
-			It("Should produce a contact started event", [this]()
-			{
-				// Bind to the contact added delegate
-				bool bContactEventTriggered = false;
-				auto lambda = [&bContactEventTriggered](const BarrageContactEvent&)
 				{
-					bContactEventTriggered = true;
-				};
-				BarrageDispatch->OnBarrageContactAddedDelegate.AddLambda(lambda);
+					const double Radius = 50.0;
+					const double Distance = 100.0;
+					const FVector3d CastFrom(0, 0, 0);
+					const FVector3d Direction(1, 0, 0);
+					TSharedPtr<FHitResult> OutHit = MakeShared<FHitResult>();
+
+					// Create an object to hit first
+					FSkeletonKey BoxKey;
+					FBBoxParams BoxParams = FBarrageBounder::GenerateBoxBounds(
+						FVector3d(90, 0, 0),
+						50.0,
+						50.0,
+						50.0
+					);
+					FBLet Box = BarrageDispatch->CreatePrimitive(BoxParams, BoxKey, Layers::MOVING);
+
+					// Create filters using the object we just created
+					auto BroadPhaseFilter = BarrageDispatch->GetDefaultBroadPhaseLayerFilter(Layers::MOVING);
+					auto ObjectFilter = BarrageDispatch->GetDefaultLayerFilter(Layers::MOVING);
+					auto BodiesFilter = BarrageDispatch->GetFilterToIgnoreSingleBody(FBarrageKey());
+
+					AsyncStepWorldSequenceBlockingYield(BarrageDispatch);
+
+					BarrageDispatch->SphereCast(
+						Radius,
+						Distance,
+						CastFrom,
+						Direction,
+						OutHit,
+						BroadPhaseFilter,
+						ObjectFilter,
+						BodiesFilter
+					);
+
+					// Note: Actual hit testing would require setting up the physics world properly
+					TestTrue("SphereCast operation should return a blocking hit", OutHit->bBlockingHit);
+				}
+
+				{
+					const FVector3d Location(0, 0, 0);
+					const double Radius = 70.0;
+					uint32 OutFoundObjectCount = 0;
+					TArray<uint32> OutFoundObjects;
+					// Create an object to search for
+					FSkeletonKey BoxKeys[2];
+					FBBoxParams BoxParams = FBarrageBounder::GenerateBoxBounds(
+						FVector3d(0, 0, 0),
+						50.0,
+						50.0,
+						50.0
+					);
+					FBLet Box = BarrageDispatch->CreatePrimitive(BoxParams, BoxKeys[0], Layers::MOVING);
+
+					BoxParams = FBarrageBounder::GenerateBoxBounds(
+						FVector3d(30, 0, 0),
+						50.0,
+						50.0,
+						50.0
+					);
+					BarrageDispatch->CreatePrimitive(BoxParams, BoxKeys[1], Layers::MOVING);
+					// Create filters using the object we just created
+					auto BroadPhaseFilter = BarrageDispatch->GetDefaultBroadPhaseLayerFilter(Layers::MOVING);
+					auto ObjectFilter = BarrageDispatch->GetDefaultLayerFilter(Layers::MOVING);
+					auto BodiesFilter = BarrageDispatch->GetFilterToIgnoreSingleBody(Box->KeyIntoBarrage);
+
+					AsyncStepWorldSequenceBlockingYield(BarrageDispatch);
+
+					BarrageDispatch->SphereSearch(
+						Box->KeyIntoBarrage,
+						Location,
+						Radius,
+						BroadPhaseFilter,
+						ObjectFilter,
+						BodiesFilter,
+						&OutFoundObjectCount,
+						OutFoundObjects
+					);
+
+					TestTrue("SphereSearch should find at least one object", OutFoundObjectCount > 0);
+				}
+
+				{
+					const FVector3d RayStart(0, 0, 0);
+					const FVector3d RayEnd(100, 0, 0);
+					TSharedPtr<FHitResult> OutHit = MakeShared<FHitResult>();
+
+					// Create an object to hit first
+					FSkeletonKey BoxKey;
+					FBBoxParams BoxParams = FBarrageBounder::GenerateBoxBounds(
+						FVector3d(90, 0, 0),
+						50.0,
+						50.0,
+						50.0
+					);
+					FBLet Box = BarrageDispatch->CreatePrimitive(BoxParams, BoxKey, Layers::MOVING);
+					// Create filters using the object we just created
+					auto BroadPhaseFilter = BarrageDispatch->GetDefaultBroadPhaseLayerFilter(Layers::MOVING);
+					auto ObjectFilter = BarrageDispatch->GetDefaultLayerFilter(Layers::MOVING);
+					auto BodiesFilter = BarrageDispatch->GetFilterToIgnoreSingleBody(FBarrageKey());
+
+					AsyncStepWorldSequenceBlockingYield(BarrageDispatch);
+
+					BarrageDispatch->CastRay(
+						RayStart,
+						RayEnd - RayStart,
+						BroadPhaseFilter,
+						ObjectFilter,
+						BodiesFilter,
+						OutHit
+					);
+
+					// Note: Actual hit testing would require setting up the physics world properly
+					TestTrue("RayCast operation should return a blocking hit", OutHit->bBlockingHit);
+
+					// 65 is correct, box is at 90, the 50 diam given is in UE coordinates CONVERTED to Jolt half extents e.g. 90 - (50 / 2) = 65
+					TestEqual("RayCast hit distance should be correct", OutHit->Distance, 65.0f);
+					TestEqual("RayCast hit location should be correct", OutHit->Location, FVector(65.0f, 0.0f, 0.0f));
+				}
+
+				{
+					// Bind to the contact added delegate
+					bool bContactEventTriggered = false;
+					auto lambda = [&bContactEventTriggered](const BarrageContactEvent&)
+						{
+							bContactEventTriggered = true;
+						};
+					BarrageDispatch->OnBarrageContactAddedDelegate.AddLambda(lambda);
 
 
-				// Setup primitives to collide
-				FSkeletonKey Sphere1Key, Sphere2Key;
-				auto Sphere1Params = FBarrageBounder::GenerateSphereBounds(FVector3d(0, 0, 0), 50.0);
-				FBLet Sphere1 = BarrageDispatch->CreatePrimitive(
-					Sphere1Params,
-					Sphere1Key,
-					Layers::MOVING
-				);
+					// Setup primitives to collide
+					FSkeletonKey Sphere1Key, Sphere2Key;
+					auto Sphere1Params = FBarrageBounder::GenerateSphereBounds(FVector3d(0, 0, 0), 50.0);
+					FBLet Sphere1 = BarrageDispatch->CreatePrimitive(
+						Sphere1Params,
+						Sphere1Key,
+						Layers::MOVING
+					);
 
-				auto Sphere2Params = FBarrageBounder::GenerateSphereBounds(FVector3d(100, 0, 0), 50.0);
-				FBLet Sphere2 = BarrageDispatch->CreatePrimitive(
-					Sphere2Params,
-					Sphere2Key,
-					Layers::MOVING
-				);
+					auto Sphere2Params = FBarrageBounder::GenerateSphereBounds(FVector3d(100, 0, 0), 50.0);
+					FBLet Sphere2 = BarrageDispatch->CreatePrimitive(
+						Sphere2Params,
+						Sphere2Key,
+						Layers::MOVING
+					);
 
-				// Spawn into world then set on a collision course with each other
-				BarrageDispatch->StackUp();
-				BarrageDispatch->StepWorld(0, 0);
+					// Spawn into world then set on a collision course with each other
+					AsyncStepWorldSequenceBlockingYield(BarrageDispatch);
 
-				// Set the primitive bodies to move towards each other
-				FBarragePrimitive::SetVelocity(FVector3d(50, 0, 0), Sphere1);
-				FBarragePrimitive::SetVelocity(FVector3d(-50, 0, 0), Sphere2);
+					// Set the primitive bodies to move towards each other
+					FBarragePrimitive::SetVelocity(FVector3d(50, 0, 0), Sphere1);
+					FBarragePrimitive::SetVelocity(FVector3d(-50, 0, 0), Sphere2);
 
-				BarrageDispatch->StackUp();
-				BarrageDispatch->StepWorld(0, 0);
-				BarrageDispatch->StepWorld(0, 1);
-				BarrageDispatch->StepWorld(0, 3);
-				BarrageDispatch->StepWorld(1000, 0);
-				BarrageDispatch->StepWorld(1000, 1);
-				BarrageDispatch->StepWorld(1000, 3);
-				BarrageDispatch->StepWorld(2000, 0);
-				BarrageDispatch->StepWorld(2000, 1);
-				BarrageDispatch->StepWorld(2000, 3);
+					AsyncStepWorldSequenceBlockingYield(BarrageDispatch);
 
-				// Process contact events
-				BarrageDispatch->BroadcastContactEvents();
+					// Process contact events
+					BarrageDispatch->BroadcastContactEvents();
 
-				TestTrue("Contact added event should be triggered", bContactEventTriggered);
+					TestTrue("Contact added event should be triggered", bContactEventTriggered);
+				}
+
+				{
+					// Bind to the contact persisted delegate
+					bool bContactEventTriggered = false;
+					auto lambda = [&bContactEventTriggered](const BarrageContactEvent& ContactEvent)
+						{
+							bContactEventTriggered = true;
+						};
+					BarrageDispatch->OnBarrageContactPersistedDelegate.AddLambda(lambda);
+
+					// Setup primitives to collide
+					FSkeletonKey Sphere1Key, Sphere2Key;
+					auto Sphere1Params = FBarrageBounder::GenerateSphereBounds(FVector3d(0, 0, 0), 50.0);
+					FBLet Sphere1 = BarrageDispatch->CreatePrimitive(
+						Sphere1Params,
+						Sphere1Key,
+						Layers::MOVING
+					);
+					auto Sphere2Params = FBarrageBounder::GenerateSphereBounds(FVector3d(25, 0, 0), 50.0);
+					FBLet Sphere2 = BarrageDispatch->CreatePrimitive(
+						Sphere2Params,
+						Sphere2Key,
+						Layers::MOVING,
+						true
+					);
+					// Spawn into world then set on a collision course with each other
+					AsyncStepWorldSequenceBlockingYield(BarrageDispatch);
+					// Set the primitive bodies to move towards each other
+					FBarragePrimitive::SetVelocity(FVector3d(10, 0, 0), Sphere1);
+					FBarragePrimitive::SetVelocity(FVector3d(-10, 0, 0), Sphere2);
+					AsyncStepWorldSequenceBlockingYield(BarrageDispatch);
+
+					FBarragePrimitive::SetVelocity(FVector3d(0, 0, 0), Sphere1);
+					FBarragePrimitive::SetVelocity(FVector3d(0, 0, 0), Sphere2);
+					AsyncStepWorldSequenceBlockingYield(BarrageDispatch);
+
+					// Process contact events
+					TestTrue("Contact persisted event should be triggered", bContactEventTriggered);
+				}
+
+				{
+					// Bind to the contact ended delegate
+					bool bContactEventTriggered = false;
+					auto lambda = [&bContactEventTriggered](const BarrageContactEvent&)
+						{
+							bContactEventTriggered = true;
+						};
+					BarrageDispatch->OnBarrageContactRemovedDelegate.AddLambda(lambda);
+					// Setup primitives to collide
+					FSkeletonKey Sphere1Key, Sphere2Key;
+					auto Sphere1Params = FBarrageBounder::GenerateSphereBounds(FVector3d(0, 0, 0), 50.0);
+					FBLet Sphere1 = BarrageDispatch->CreatePrimitive(
+						Sphere1Params,
+						Sphere1Key,
+						Layers::MOVING
+					);
+					auto Sphere2Params = FBarrageBounder::GenerateSphereBounds(FVector3d(100, 0, 0), 50.0);
+					FBLet Sphere2 = BarrageDispatch->CreatePrimitive(
+						Sphere2Params,
+						Sphere2Key,
+						Layers::MOVING
+					);
+					// Spawn into world then set on a collision course with each other
+					AsyncStepWorldSequenceBlockingYield(BarrageDispatch);
+					// Set the primitive bodies to move towards each other
+					FBarragePrimitive::SetVelocity(FVector3d(50, 0, 0), Sphere1);
+					FBarragePrimitive::SetVelocity(FVector3d(-50, 0, 0), Sphere2);
+					AsyncStepWorldSequenceBlockingYield(BarrageDispatch);
+					// Now set them to move apart
+					FBarragePrimitive::SetVelocity(FVector3d(-50, 0, 0), Sphere1);
+					FBarragePrimitive::SetVelocity(FVector3d(50, 0, 0), Sphere2);
+					AsyncStepWorldSequenceBlockingYield(BarrageDispatch);
+					TestTrue("Contact ended event should be triggered", bContactEventTriggered);
+				}
 			});
 		});
-
 	});
 
 	AfterEach([this]()
