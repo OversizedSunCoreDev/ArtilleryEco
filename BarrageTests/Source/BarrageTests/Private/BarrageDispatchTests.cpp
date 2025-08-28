@@ -92,6 +92,25 @@ void FBarrageDispatchTests::Define()
 						});
 				});
 
+			Describe("Key Generation", [this]()
+				{
+					It("Should generate a non-deterministic Barrage keys from Body IDs", [this]()
+						{
+							const uint32 RawBodyId = 123456;
+							JPH::BodyID BodyId(RawBodyId);
+							FBarrageKey GeneratedKey = BarrageDispatch->GenerateBarrageKeyFromBodyId(BodyId);
+							TestNotEqual("Generated Barrage key should not match raw Body ID", GeneratedKey.KeyIntoBarrage, static_cast<uint64>(RawBodyId));
+							TestNotEqual<uint64>("Generated Barrage key is non-zero", GeneratedKey.KeyIntoBarrage, 0U);
+						});
+					It("Should generate a non-deterministic Barrage keys from raw Body ID integers", [this]()
+						{
+							const uint32 RawBodyId = 654321;
+							FBarrageKey GeneratedKey = BarrageDispatch->GenerateBarrageKeyFromBodyId(RawBodyId);
+							TestNotEqual("Generated Barrage key should not match raw Body ID", GeneratedKey.KeyIntoBarrage, static_cast<uint64>(RawBodyId));
+							TestNotEqual<uint64>("Generated Barrage key is non-zero", GeneratedKey.KeyIntoBarrage, 0U);
+						});
+				});
+
 			Describe("Primitive Creation", [this]()
 				{
 					It("Should create box primitives", [this]()
@@ -200,6 +219,9 @@ void FBarrageDispatchTests::Define()
 
 									// Note: Actual hit testing would require setting up the physics world properly
 									TestTrue("SphereCast operation should return a blocking hit", OutHit->bBlockingHit);
+									
+									FBarrageKey HitResultKey = BarrageDispatch->GetBarrageKeyFromFHitResult(OutHit);
+									TestEqual("SphereCast hit should match created object", HitResultKey, Box->KeyIntoBarrage);
 								});
 							It("Should performa a sphere search", [this]
 								{
@@ -401,6 +423,36 @@ void FBarrageDispatchTests::Define()
 									TestTrue("Contact ended event should be triggered", bContactEventTriggered);
 								});
 						});
+
+						Describe("Collision Filter Helpers", [this]()
+							{
+								It("Should return a broad phase layer filter for a specific object layer", [this]()
+									{
+										auto Filter = UBarrageDispatch::GetFilterForSpecificObjectLayerOnly(Layers::MOVING);
+										TestTrue("Filter should include MOVING layer", Filter.ShouldCollide(JPH::ObjectLayer(Layers::MOVING)));
+										TestFalse("Filter should exclude STATIC layer", Filter.ShouldCollide(JPH::ObjectLayer(Layers::NON_MOVING)));
+									});
+
+								It("Should return an ignore single body filter", [this]()
+									{
+										FSkeletonKey BoxKey;
+										FBBoxParams BoxParams = FBarrageBounder::GenerateBoxBounds(
+											FVector3d(0, 0, 0),
+											50.0,
+											50.0,
+											50.0
+										);
+										FBLet Box = BarrageDispatch->CreatePrimitive(BoxParams, BoxKey, Layers::MOVING);
+										auto Filter = BarrageDispatch->GetFilterToIgnoreSingleBody(Box->KeyIntoBarrage);
+										TestFalse("Filter should ignore the specified body", Filter.ShouldCollide(JPH::BodyID(static_cast<uint32>(Box->KeyIntoBarrage.KeyIntoBarrage))));
+										TestTrue("Filter should not ignore other bodies", Filter.ShouldCollide(JPH::BodyID(999999)));
+
+										auto FBLetFilter = BarrageDispatch->GetFilterToIgnoreSingleBody(Box);
+										TestFalse("FBLet Filter should ignore the specified body", FBLetFilter.ShouldCollide(JPH::BodyID(static_cast<uint32>(Box->KeyIntoBarrage.KeyIntoBarrage))));
+										TestTrue("FBLet Filter should not ignore other bodies", FBLetFilter.ShouldCollide(JPH::BodyID(999999)));
+									});
+
+							});
 				});
 		});
 }
