@@ -174,6 +174,17 @@ void FBarrageDispatchTests::Define()
 
 							TestTrue("Projectile creation should succeed", FBarragePrimitive::IsNotNull(Result));
 							TestTrue("Projectile should have valid key", Result->KeyIntoBarrage != 0);
+
+							// step world to ensure projectile is fully initialized
+							BlockingWaitOnAsyncWorldSimulation(BarrageDispatch);
+
+							FBLet GetShapeRefByBarrageKey = BarrageDispatch->GetShapeRef(Result->KeyIntoBarrage);
+							FBLet GetShapeRefBySkeletonKey = BarrageDispatch->GetShapeRef(OutKey);
+
+							TestTrue("GetShapeRef by BarrageKey should succeed", FBarragePrimitive::IsNotNull(GetShapeRefByBarrageKey));
+							TestTrue("GetShapeRef by SkeletonKey should succeed", FBarragePrimitive::IsNotNull(GetShapeRefBySkeletonKey));
+							TestEqual("GetShapeRef by BarrageKey should match original", GetShapeRefByBarrageKey->KeyIntoBarrage, Result->KeyIntoBarrage);
+							TestEqual("GetShapeRef by SkeletonKey should match original", GetShapeRefBySkeletonKey->KeyOutOfBarrage, OutKey);
 						});
 				});
 
@@ -426,11 +437,25 @@ void FBarrageDispatchTests::Define()
 
 						Describe("Collision Filter Helpers", [this]()
 							{
-								It("Should return a broad phase layer filter for a specific object layer", [this]()
+								It("Should return an object phase layer filter for a specific object layer", [this]()
 									{
 										auto Filter = UBarrageDispatch::GetFilterForSpecificObjectLayerOnly(Layers::MOVING);
 										TestTrue("Filter should include MOVING layer", Filter.ShouldCollide(JPH::ObjectLayer(Layers::MOVING)));
 										TestFalse("Filter should exclude STATIC layer", Filter.ShouldCollide(JPH::ObjectLayer(Layers::NON_MOVING)));
+									});
+
+								It("Should return a default broad phase layer filter", [this]()
+									{
+										auto Filter = BarrageDispatch->GetDefaultBroadPhaseLayerFilter(Layers::MOVING);
+										TestTrue("Filter should include MOVING layer", Filter.ShouldCollide(JPH::BroadPhaseLayer(Layers::MOVING)));
+										TestTrue("Filter should include STATIC layer", Filter.ShouldCollide(JPH::BroadPhaseLayer(Layers::NON_MOVING)));
+									});
+
+								It("Should return a default object layer filter", [this]()
+									{
+										auto Filter = BarrageDispatch->GetDefaultLayerFilter(Layers::MOVING);
+										TestTrue("Filter should include MOVING layer", Filter.ShouldCollide(JPH::ObjectLayer(Layers::MOVING)));
+										TestTrue("Filter should include STATIC layer", Filter.ShouldCollide(JPH::ObjectLayer(Layers::NON_MOVING)));
 									});
 
 								It("Should return an ignore single body filter", [this]()
