@@ -1,6 +1,12 @@
 #include "Misc/AutomationTest.h"
 #include "FBarragePrimitive.h"
 
+/**
+* These tests cover the basic functionality of the FBarragePrimitive class. The static helpers for the instances
+* is found in the BarageDispatchTests. This is because there is a protected friend relationship between the two
+* and the static global pointer to the dispatch is required for many of the static functions to work.
+**/
+
 BEGIN_DEFINE_SPEC (FBarragePrimitiveTests, "Artillery.Barrage.Barrage Primitive Tests", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 END_DEFINE_SPEC (FBarragePrimitiveTests)
 void FBarragePrimitiveTests::Define ()

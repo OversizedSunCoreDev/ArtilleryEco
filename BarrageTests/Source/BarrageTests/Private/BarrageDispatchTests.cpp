@@ -302,6 +302,67 @@ void FBarrageDispatchTests::Define()
 						});
 				});
 
+			Describe("Primitive Functions Requiring Global Barrage", [this]()
+				{
+					It("Should dispatch velocity", [this]()
+						{
+							const FVector3d Point(0, 0, 0);
+							const double Radius = 50.0;
+							FSkeletonKey OutKey;
+							FBLet LeasedSubject;
+
+							FBSphereParams SphereParams = FBarrageBounder::GenerateSphereBounds(Point, Radius);
+							LeasedSubject = BarrageDispatch->CreatePrimitive(SphereParams, OutKey, Layers::MOVING); // Required for velocity
+							FBarragePrimitive::SetGravityFactor(0.0f, LeasedSubject); // Disable gravity to prevent interference with velocity test
+							BlockingWaitOnAsyncWorldSimulation(BarrageDispatch);
+
+							const FVector3d Velocity{ 100., 0., 0. };
+							FBarragePrimitive::SetVelocity(Velocity, LeasedSubject);
+							BlockingWaitOnAsyncWorldSimulation(BarrageDispatch);
+							const FVector3f ActualVelocity = FBarragePrimitive::GetVelocity(LeasedSubject);
+							// Test nearly equal until we can control dampening, friction, etc, or it may be created as a kinematic
+							TestNearlyEqual("Velocity should match set value", ActualVelocity.X, FVector3f(Velocity).X, 20.f);
+						});
+
+					It("Should dispatch Position", [this]()
+						{
+							const FVector3d Point(0, 0, 0);
+							const double Radius = 50.0;
+							FSkeletonKey OutKey;
+							FBLet LeasedSubject;
+
+							FBSphereParams SphereParams = FBarrageBounder::GenerateSphereBounds(Point, Radius);
+							LeasedSubject = BarrageDispatch->CreatePrimitive(SphereParams, OutKey, Layers::NON_MOVING);
+							BlockingWaitOnAsyncWorldSimulation(BarrageDispatch);
+
+							const FVector3d NewPosition{ 100., 0., 0. };
+							FBarragePrimitive::SetPosition(NewPosition, LeasedSubject);
+							BlockingWaitOnAsyncWorldSimulation(BarrageDispatch);
+							const FVector3f ActualPosition = FBarragePrimitive::GetPosition(LeasedSubject);
+							TestEqual("Position should match set value", ActualPosition, FVector3f(NewPosition));
+						});
+
+					xIt("should dispatch speed limit", [this]()
+						{
+							const FVector3d Point(0, 0, 0);
+							const double Radius = 50.0;
+							FSkeletonKey OutKey;
+							FBLet LeasedSubject;
+
+							FBSphereParams SphereParams = FBarrageBounder::GenerateSphereBounds(Point, Radius);
+							LeasedSubject = BarrageDispatch->CreatePrimitive(SphereParams, OutKey, Layers::MOVING);
+							BlockingWaitOnAsyncWorldSimulation(BarrageDispatch);
+
+							FBarragePrimitive::SpeedLimit(LeasedSubject, 13.f);
+							BlockingWaitOnAsyncWorldSimulation(BarrageDispatch);
+
+							float OutSpeedLimit = TNumericLimits<float>::Max();
+							TestTrue("Should have a speed limit", FBarragePrimitive::GetSpeedLimitIfAny(LeasedSubject, OutSpeedLimit));
+							TestEqual("Should be the value set", 13.f, OutSpeedLimit);
+						});
+
+				});
+
 			Describe("Physics", [this]()
 				{
 					Describe("Collision Filtering", [this]()
