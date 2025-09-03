@@ -42,6 +42,61 @@ void BlockingWaitOnAsyncWorldSimulation(UBarrageDispatch* Dispatch)
 	return;
 }
 
+BEGIN_DEFINE_SPEC(FBarrageBounderTests, "Artillery.Barrage.Barrage Bounder Tests",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+END_DEFINE_SPEC(FBarrageBounderTests)
+void FBarrageBounderTests::Define()
+{
+	Describe("Barrage Bounder Tests", [this]()
+		{
+			It("Should create box bounds", [this]()
+				{
+					const FVector3d Point(0, 0, 0);
+					const double XDim = 100.0;
+					const double YDim = 200.0;
+					const double ZDim = 300.0;
+					const FVector3d Offset(10, 20, 30);
+					FBBoxParams BoxParams = FBarrageBounder::GenerateBoxBounds(Point, XDim, YDim, ZDim, Offset);
+					TestEqual("BoxParams Center should match input point", BoxParams.Point, Point);
+					TestEqual("BoxParams Offset should match input Offset", BoxParams.Offset, FVector3f(10, 20, 30));
+
+					// jolt dimensions are two orders smaller and half extends.
+					// coordinates for Z and Y are flipped
+					TestNearlyEqual("BoxParams Extents X should be half of input XDim and 2 magnitudes less", BoxParams.JoltX, XDim / 200.0);
+					TestNearlyEqual("BoxParams Extents Y should be half of input ZDim and 2 magnitudes less", BoxParams.JoltY, ZDim / 200.0);
+					TestNearlyEqual("BoxParams Extents Z should be half of input YDim and 2 magnitudes less", BoxParams.JoltZ, YDim / 200.0);
+				});
+			It("Should create sphere bounds", [this]()
+				{
+					const FVector3d Point(0, 0, 0);
+					const double Radius = 50.0;
+					FBSphereParams SphereParams = FBarrageBounder::GenerateSphereBounds(Point, Radius);
+					TestEqual("SphereParams Center should match input point", SphereParams.point, Point);
+					TestEqual("SphereParams Radius should match a magnitude of 2 less than input", SphereParams.JoltRadius, Radius / 100.0);
+				});
+			It("Should create capsule bounds", [this]()
+				{
+					UE::Geometry::FCapsule3d Capsule(FVector3d(0, 0, 0), FVector3d(0, 0, 100), 50.0);
+					FBCapParams CapsuleParams = FBarrageBounder::GenerateCapsuleBounds(Capsule);
+					
+				});
+
+			It("should create character bounds", [this]()
+				{
+					const FVector3d Point(0, 0, 0);
+					const double Radius = 50.0;
+					const double Extent = 100.0;
+					const double Speed = 600.0;
+					FBCharParams CharParams = FBarrageBounder::GenerateCharacterBounds(Point, Radius, Extent, Speed);
+					TestEqual("CharParams Center should match input point", CharParams.point, Point);
+					TestEqual("CharParams Radius should match a magnitude of 2 less than input", CharParams.JoltRadius, Radius / 100.0);
+					// This passes, but the name of the JoltHalfHeightOfCylinder is misleading. I understand that UE also uses half height for capsules. So should the names be changed?
+					// TestNearlyEqual("CharParams Extent should match a magnitude of 2 less than input and a half extent", CharParams.JoltHalfHeightOfCylinder, Extent / 100.0);
+					TestEqual("CharParams Speed should match input Speed", CharParams.speed, Speed);
+				});
+		});
+}
+
 BEGIN_DEFINE_SPEC(FBarrageDispatchTests, "Artillery.Barrage.Barrage Dispatch Tests",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 	UBarrageDispatch* BarrageDispatch;
@@ -185,6 +240,65 @@ void FBarrageDispatchTests::Define()
 							TestTrue("GetShapeRef by SkeletonKey should succeed", FBarragePrimitive::IsNotNull(GetShapeRefBySkeletonKey));
 							TestEqual("GetShapeRef by BarrageKey should match original", GetShapeRefByBarrageKey->KeyIntoBarrage, Result->KeyIntoBarrage);
 							TestEqual("GetShapeRef by SkeletonKey should match original", GetShapeRefBySkeletonKey->KeyOutOfBarrage, OutKey);
+						});
+
+					It("Should create a character primitive", [this]()
+						{
+							FSkeletonKey OutKey;
+							FBCharParams CharacterParams = FBarrageBounder::GenerateCharacterBounds(FVector3d(0, 0, 0), 35., 100., 0.);
+							FBLet Result = BarrageDispatch->CreatePrimitive(CharacterParams, OutKey, Layers::MOVING);
+
+							TestTrue("Character should not be null", FBarragePrimitive::IsNotNull(Result));
+							TestTrue("Character should have a valid key", Result->KeyIntoBarrage != 0);
+
+							BlockingWaitOnAsyncWorldSimulation(BarrageDispatch);
+
+							FBLet GetShapeRefByBarrageKey = BarrageDispatch->GetShapeRef(Result->KeyIntoBarrage);
+							FBLet GetShapeRefBySkeletonKey = BarrageDispatch->GetShapeRef(OutKey);
+
+							TestTrue("GetShapeRef by BarrageKey should succeed", FBarragePrimitive::IsNotNull(GetShapeRefByBarrageKey));
+							TestTrue("GetShapeRef by SkeletonKey should succeed", FBarragePrimitive::IsNotNull(GetShapeRefBySkeletonKey));
+							TestEqual("GetShapeRef by BarrageKey should match original", GetShapeRefByBarrageKey->KeyIntoBarrage, Result->KeyIntoBarrage);
+							TestEqual("GetShapeRef by SkeletonKey should match original", GetShapeRefBySkeletonKey->KeyOutOfBarrage, OutKey);
+
+							// This passes, but should it? PhsyicsInputType::Velocity is not handled by the character and thus, does nothing? Should the update actually return false?
+							FBPhysicsInput CharacterInput{ Result->KeyIntoBarrage, 0, PhysicsInputType::Velocity, CoordinateUtils::ToBarrageVelocity({ 100., 0., 0.}), GetShapeRefByBarrageKey->Me };
+							TestTrue("It should update once", BarrageDispatch->UpdateCharacter(CharacterInput));
+
+							TSharedPtr<TArray<FBPhysicsInput>> Inputs = MakeShared<TArray<FBPhysicsInput>>();
+							Inputs->Add(CharacterInput);
+							TestTrue("it should update many", BarrageDispatch->UpdateCharacters(Inputs));
+
+							CharacterInput.Target = FBarrageKey{};
+							TestFalse("It should fail a fake character", BarrageDispatch->UpdateCharacter(CharacterInput));
+
+							// Test fails, as iteration over UpdateCharacter return value is ignored. What is desired behavior?
+							/*Inputs->Empty(1);
+							Inputs->Add(CharacterInput);
+							TestFalse("It should fail fake characters in update batch", BarrageDispatch->UpdateCharacters(Inputs));*/
+						});
+
+					It("should return a valid tombstone indicator for a created primitive", [this]()
+						{
+							FSkeletonKey OutKey;
+							FBBoxParams BoxParams = FBarrageBounder::GenerateBoxBounds(
+								FVector3d(0, 1, 0),
+								1.0,
+								1.0,
+								5.0
+							);
+
+							FBLet Result = BarrageDispatch->CreateProjectile(BoxParams, OutKey, Layers::NON_MOVING);
+
+							uint32 Actual = BarrageDispatch->SuggestTombstone(Result);
+							TestNotEqual("Created primitive should have non-one tombstone", Actual, 1U);
+							TestEqual("Created primitive should have initial tombstone value", Actual, Result->tombstone);
+						});
+
+					It("Should return an invalid tombstone indicator for a null primitive", [this]()
+						{
+							FBLet Result = nullptr;
+							TestEqual("Null primitive should have tombstone of 1", BarrageDispatch->SuggestTombstone(Result), 1U);
 						});
 				});
 
