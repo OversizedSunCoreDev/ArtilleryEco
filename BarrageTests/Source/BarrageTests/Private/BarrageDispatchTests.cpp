@@ -342,6 +342,46 @@ void FBarrageDispatchTests::Define()
 							TestEqual("Position should match set value", ActualPosition, FVector3f(NewPosition));
 						});
 
+					It("should return a false-y value for a non-character FBLet when GetCharacterGroundState", [this]()
+						{
+							const FVector3d Point(0, 0, 0);
+							const double Radius = 50.0;
+							FSkeletonKey OutKey;
+							FBLet LeasedSubject;
+							FBSphereParams SphereParams = FBarrageBounder::GenerateSphereBounds(Point, Radius);
+							LeasedSubject = BarrageDispatch->CreatePrimitive(SphereParams, OutKey, Layers::MOVING);
+							BlockingWaitOnAsyncWorldSimulation(BarrageDispatch);
+							FBarragePrimitive::FBGroundState GroundState = FBarragePrimitive::GetCharacterGroundState(LeasedSubject);
+							TestEqual("Non-character FBLet should return NotFound ground state", GroundState, FBarragePrimitive::FBGroundState::NotFound);
+						});
+
+					It("should return a false-y value for a null FBLet when GetCharacterGroundState", [this]()
+						{
+							FBLet LeasedSubject = nullptr;
+							FBarragePrimitive::FBGroundState GroundState = FBarragePrimitive::GetCharacterGroundState(LeasedSubject);
+							TestEqual("Null FBLet should return NotFound ground state", GroundState, FBarragePrimitive::FBGroundState::NotFound);
+						});
+
+					It("should return a false-y value for a non-character FBLet when GetCharacterGroundNormal", [this]()
+						{
+							const FVector3d Point(0, 0, 0);
+							const double Radius = 50.0;
+							FSkeletonKey OutKey;
+							FBLet LeasedSubject;
+							FBSphereParams SphereParams = FBarrageBounder::GenerateSphereBounds(Point, Radius);
+							LeasedSubject = BarrageDispatch->CreatePrimitive(SphereParams, OutKey, Layers::MOVING);
+							BlockingWaitOnAsyncWorldSimulation(BarrageDispatch);
+							const FVector3f GroundNormal = FBarragePrimitive::GetCharacterGroundNormal(LeasedSubject);
+							TestEqual("Non-character FBLet should return zero ground normal", GroundNormal, FVector3f::ZeroVector);
+						});
+
+					It("should return a false-y value for a null FBLet when GetCharacterGroundNormal", [this]()
+						{
+							FBLet LeasedSubject = nullptr;
+							const FVector3f GroundNormal = FBarragePrimitive::GetCharacterGroundNormal(LeasedSubject);
+							TestEqual("Null FBLet should return zero ground normal", GroundNormal, FVector3f::ZeroVector);
+						});
+
 					xIt("should dispatch speed limit", [this]()
 						{
 							const FVector3d Point(0, 0, 0);
@@ -533,6 +573,7 @@ void FBarrageDispatchTests::Define()
 									TestTrue("Contact added event should be triggered", bContactEventTriggered);
 								});
 
+							// This is x'd because the Barrage implementation for contact listner - contact persisted override is noop at the moment.
 							xIt("Should trigger a contact persisted event", [this]()
 								{
 									// Bind to the contact persisted delegate

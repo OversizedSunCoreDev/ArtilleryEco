@@ -7,53 +7,72 @@
 * and the static global pointer to the dispatch is required for many of the static functions to work.
 **/
 
-BEGIN_DEFINE_SPEC (FBarragePrimitiveTests, "Artillery.Barrage.Barrage Primitive Tests", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
-END_DEFINE_SPEC (FBarragePrimitiveTests)
-void FBarragePrimitiveTests::Define ()
+BEGIN_DEFINE_SPEC(FBarragePrimitiveTests, "Artillery.Barrage.Barrage Primitive Tests", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+END_DEFINE_SPEC(FBarragePrimitiveTests)
+void FBarragePrimitiveTests::Define()
 {
-	Describe ("Initial State of a Primitive", [this]()
-	{
-		It ("should use the given keys, not marked for tombstoning, and uninitialized.", [this]()
+	Describe("Initial State of a Primitive", [this]()
 		{
-			FBarrageKey GivenIntoKey;
-			FSkeletonKey GivenOutOfKey;
-			FBarragePrimitive ClassUnderTest (GivenIntoKey, GivenOutOfKey);
-
-			TestEqual ("KeyIntoBarrage", ClassUnderTest.KeyIntoBarrage, GivenIntoKey);
-			TestEqual ("KeyOutOfBarrage", ClassUnderTest.KeyOutOfBarrage, GivenOutOfKey);
-			TestEqual ("Tombstone", ClassUnderTest.tombstone, 0);
-			TestEqual ("Me", ClassUnderTest.Me, FBShape::Uninitialized);
-		});
-	});
-
-	Describe ("Static Functions", [this] ()
-	{
-		Describe("FromJoltGroundState", [this]()
-		{
-			/**
-			There exists no value of JPH::CharacterBase::EGroundState in which
-			FBarragePrimitive::FBGroundState::NotFound exists. This holds true
-			so long as the definition of JPH::CharacterBase::EGroundState does
-			not change.
-			**/
-			const TTuple<FString, FBarragePrimitive::FBGroundState, JPH::CharacterBase::EGroundState> StatePairsToTest[] =
-			{ 
-				{ "Ground", FBarragePrimitive::FBGroundState::OnGround, JPH::CharacterBase::EGroundState::OnGround},
-				{ "SteepGround", FBarragePrimitive::FBGroundState::OnSteepGround, JPH::CharacterBase::EGroundState::OnSteepGround },
-				{ "NotSupported", FBarragePrimitive::FBGroundState::NotSupported, JPH::CharacterBase::EGroundState::NotSupported },
-				{ "InAir", FBarragePrimitive::FBGroundState::InAir, JPH::CharacterBase::EGroundState::InAir },
-			};
-
-			It ("should map the given enumeration value from Jolt to Barrage", [this, StatePairsToTest]
-			{
-				for (const auto& TestPair : StatePairsToTest)
+			It("should use the given keys, not marked for tombstoning, and uninitialized.", [this]()
 				{
-					const FBarragePrimitive::FBGroundState Expected = TestPair.Get<1> ();
-					const FBarragePrimitive::FBGroundState Actual = FBarragePrimitive::FromJoltGroundState (TestPair.Get<2> ());
-					TestEqual (TestPair.Get<0> (), Expected, Actual);
-				}
-			});
+					FBarrageKey GivenIntoKey;
+					FSkeletonKey GivenOutOfKey;
+					FBarragePrimitive ClassUnderTest(GivenIntoKey, GivenOutOfKey);
+
+					TestEqual("KeyIntoBarrage", ClassUnderTest.KeyIntoBarrage, GivenIntoKey);
+					TestEqual("KeyOutOfBarrage", ClassUnderTest.KeyOutOfBarrage, GivenOutOfKey);
+					TestEqual("Tombstone", ClassUnderTest.tombstone, 0);
+					TestEqual("Me", ClassUnderTest.Me, FBShape::Uninitialized);
+				});
 		});
 
-	});
+	Describe("Static Functions", [this]()
+		{
+			Describe("FromJoltGroundState", [this]()
+				{
+					/**
+					There exists no value of JPH::CharacterBase::EGroundState in which
+					FBarragePrimitive::FBGroundState::NotFound exists. This holds true
+					so long as the definition of JPH::CharacterBase::EGroundState does
+					not change.
+					**/
+					const TTuple<FString, FBarragePrimitive::FBGroundState, JPH::CharacterBase::EGroundState> StatePairsToTest[] =
+					{
+						{ "Ground", FBarragePrimitive::FBGroundState::OnGround, JPH::CharacterBase::EGroundState::OnGround},
+						{ "SteepGround", FBarragePrimitive::FBGroundState::OnSteepGround, JPH::CharacterBase::EGroundState::OnSteepGround },
+						{ "NotSupported", FBarragePrimitive::FBGroundState::NotSupported, JPH::CharacterBase::EGroundState::NotSupported },
+						{ "InAir", FBarragePrimitive::FBGroundState::InAir, JPH::CharacterBase::EGroundState::InAir },
+					};
+
+					It("should map the given enumeration value from Jolt to Barrage", [this, StatePairsToTest]
+						{
+							for (const auto& TestPair : StatePairsToTest)
+							{
+								const FBarragePrimitive::FBGroundState Expected = TestPair.Get<1>();
+								const FBarragePrimitive::FBGroundState Actual = FBarragePrimitive::FromJoltGroundState(TestPair.Get<2>());
+								TestEqual(TestPair.Get<0>(), Expected, Actual);
+							}
+						});
+				});
+
+			Describe("UpConversion", [this]()
+				{
+					It("should up convert a float vector to a double vector", [this]()
+						{
+							const FVector3f Given(1.0f, 2.0f, 3.0f);
+							const FVector3d Expected(1.0, 2.0, 3.0);
+							const FVector3d Actual = FBarragePrimitive::UpConvertFloatVector(Given);
+							TestEqual("UpConverted FVector should match expected FVector3d", Actual, Expected);
+						});
+
+					It("should up convert a float quaternion to a double quaternion", [this]()
+						{
+							const FQuat4f Given(1.0f, 2.0f, 3.0f, 4.0f);
+							const FQuat4d Expected(1.0, 2.0, 3.0, 4.0);
+							const FQuat4d Actual = FBarragePrimitive::UpConvertFloatQuat(Given);
+							TestEqual("UpConverted FQuat should match expected FQuat4d", Actual, Expected);
+						});
+				});
+
+		});
 }
