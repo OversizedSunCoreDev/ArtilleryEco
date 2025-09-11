@@ -210,6 +210,111 @@ void FWorldSimOwnerTests::Define()
 				});
 		});
 
+	Describe("Broad Phase Layer Interface Implementation", [this]()
+		{
+			TSharedPtr<JPH::BroadPhaseLayerInterface> BroadPhaseLayerInterface = MakeShared<FWorldSimOwner::BPLayerInterfaceImpl>();
+
+			It("should map object layers to broad phase layers as expected", [this, BroadPhaseLayerInterface]()
+				{
+					const int32 NumDefinedLayers = Layers::NUM_LAYERS;
+					for (int32 Layer = 0; Layer < NumDefinedLayers; ++Layer)
+					{
+						JPH::BroadPhaseLayer Result = BroadPhaseLayerInterface->GetBroadPhaseLayer(Layer);
+						switch (Layer)
+						{
+						case Layers::NON_MOVING:
+							TestEqual("NON_MOVING maps to NON_MOVING broad phase layer", Result, JOLT::BroadPhaseLayers::NON_MOVING);
+							break;
+						case Layers::MOVING:
+						case Layers::ENEMY:
+						case Layers::BONKFREEENEMY:
+						case Layers::HITBOX:
+						case Layers::PROJECTILE:
+						case Layers::ENEMYPROJECTILE:
+						case Layers::CAST_QUERY:
+						case Layers::CAST_QUERY_LEVEL_GEOMETRY_ONLY:
+							TestEqual("MOVING and related layers map to MOVING broad phase layer", Result, JOLT::BroadPhaseLayers::MOVING);
+							break;
+						case Layers::DEBRIS:
+							TestEqual("DEBRIS maps to DEBRIS broad phase layer", Result, JOLT::BroadPhaseLayers::DEBRIS);
+							break;
+						default:
+							TestFalse("All defined layers should be handled in the switch", true);
+							break;
+						}
+					}
+				});
+
+			It("should report the correct number of broad phase layers", [this, BroadPhaseLayerInterface]()
+				{
+					const unsigned int NumBroadPhaseLayers = BroadPhaseLayerInterface->GetNumBroadPhaseLayers();
+					TestEqual("The number of broad phase layers is as expected", NumBroadPhaseLayers, JOLT::BroadPhaseLayers::NUM_LAYERS);
+				});
+		});
+
+	Describe("Object vs. Broad Phase Layer Filter Implementation", [this]()
+		{
+			TSharedPtr<JPH::ObjectVsBroadPhaseLayerFilter> ObjectVsBroadPhaseLayerFilter = MakeShared<FWorldSimOwner::ObjectVsBroadPhaseLayerFilterImpl>();
+			// lazy and inference is too
+			using T = TArray < JPH::BroadPhaseLayer>;
+			using P = TArray < TPair < JPH::ObjectLayer, T>>;
+
+			P PositiveExpectations
+			{
+				{ Layers::NON_MOVING, T{ JOLT::BroadPhaseLayers::MOVING, JOLT::BroadPhaseLayers::DEBRIS } },
+				{ Layers::MOVING, T{ JOLT::BroadPhaseLayers::NON_MOVING, JOLT::BroadPhaseLayers::MOVING } },
+				{ Layers::HITBOX, T{ } },
+				{ Layers::PROJECTILE, T{ JOLT::BroadPhaseLayers::NON_MOVING, JOLT::BroadPhaseLayers::MOVING } },
+				{ Layers::ENEMYPROJECTILE, T{ JOLT::BroadPhaseLayers::NON_MOVING, JOLT::BroadPhaseLayers::MOVING } },
+				{ Layers::ENEMY, T{ JOLT::BroadPhaseLayers::NON_MOVING, JOLT::BroadPhaseLayers::MOVING } },
+				{ Layers::BONKFREEENEMY, T{ JOLT::BroadPhaseLayers::NON_MOVING, JOLT::BroadPhaseLayers::MOVING } },
+				{ Layers::CAST_QUERY, T{ JOLT::BroadPhaseLayers::NON_MOVING, JOLT::BroadPhaseLayers::MOVING } },
+				{ Layers::CAST_QUERY_LEVEL_GEOMETRY_ONLY, T{ JOLT::BroadPhaseLayers::NON_MOVING, JOLT::BroadPhaseLayers::MOVING } },
+				{ Layers::DEBRIS, T{ JOLT::BroadPhaseLayers::NON_MOVING } }
+			};
+
+			P NegativeExpectations
+			{
+				{ Layers::NON_MOVING, T{ JOLT::BroadPhaseLayers::NON_MOVING } },
+				{ Layers::MOVING, T{ JOLT::BroadPhaseLayers::DEBRIS } },
+				{ Layers::HITBOX, T{ JOLT::BroadPhaseLayers::NON_MOVING, JOLT::BroadPhaseLayers::DEBRIS } },
+				{ Layers::PROJECTILE, T{ JOLT::BroadPhaseLayers::DEBRIS } },
+				{ Layers::ENEMYPROJECTILE, T{ JOLT::BroadPhaseLayers::DEBRIS } },
+				{ Layers::ENEMY, T{ JOLT::BroadPhaseLayers::DEBRIS } },
+				{ Layers::BONKFREEENEMY, T{ JOLT::BroadPhaseLayers::DEBRIS } },
+				{ Layers::CAST_QUERY, T{ JOLT::BroadPhaseLayers::DEBRIS } },
+				{ Layers::CAST_QUERY_LEVEL_GEOMETRY_ONLY, T{ JOLT::BroadPhaseLayers::DEBRIS } },
+				{ Layers::DEBRIS, T{ JOLT::BroadPhaseLayers::MOVING, JOLT::BroadPhaseLayers::DEBRIS } }
+			};
+
+			It("should return true for a collision when expected", [this, PositiveExpectations, ObjectVsBroadPhaseLayerFilter]()
+				{
+					for (const auto& Pair : PositiveExpectations)
+					{
+						for (const auto& BroadPhaseLayer : Pair.Value)
+						{
+							bool Result = ObjectVsBroadPhaseLayerFilter->ShouldCollide(Pair.Key, BroadPhaseLayer);
+							FString ObjectLayerName = StaticEnum<EPhysicsLayer>()->GetNameStringByValue(static_cast<int64>(Pair.Key));
+							TestTrue(FString::Printf(TEXT("Object Layer %s should collide with Broad Phase Layer %d"), *ObjectLayerName, BroadPhaseLayer.GetValue()), Result);
+						}
+					}
+				});
+
+			It("should return false for a collision when expected", [this, NegativeExpectations, ObjectVsBroadPhaseLayerFilter]()
+				{
+					for (const auto& Pair : NegativeExpectations)
+					{
+						for (const auto& BroadPhaseLayer : Pair.Value)
+						{
+							bool Result = ObjectVsBroadPhaseLayerFilter->ShouldCollide(Pair.Key, BroadPhaseLayer);
+							FString ObjectLayerName = StaticEnum<EPhysicsLayer>()->GetNameStringByValue(static_cast<int64>(Pair.Key));
+							TestFalse(FString::Printf(TEXT("Object Layer %s should NOT collide with Broad Phase Layer %d"), *ObjectLayerName, BroadPhaseLayer.GetValue()), Result);
+						}
+					}
+				});
+		});
+			
+
 	Describe("Object Layer Pair Filter Implementation", [this]()
 		{
 			// lazy and inference is too
