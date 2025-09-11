@@ -216,37 +216,99 @@ void FWorldSimOwnerTests::Define()
 			using T = TArray < JPH::ObjectLayer>;
 			using P = TArray < TPair < JPH::ObjectLayer, T>>;
 
-			It("should return true for a pair that is allowed", [this]()
+			P PositiveExpectations
+			{
+				{ Layers::MOVING, T{ Layers::NON_MOVING, Layers::BONKFREEENEMY, Layers::MOVING, Layers::ENEMY, Layers::ENEMYPROJECTILE, Layers::CAST_QUERY } },
+				{ Layers::NON_MOVING, T{ Layers::MOVING, Layers::BONKFREEENEMY, Layers::CAST_QUERY, Layers::CAST_QUERY_LEVEL_GEOMETRY_ONLY, Layers::DEBRIS, Layers::ENEMY, Layers::ENEMYPROJECTILE, Layers::MOVING, Layers::PROJECTILE } },
+				{ Layers::ENEMY, T{ Layers::NON_MOVING, Layers::MOVING, Layers::ENEMY, Layers::PROJECTILE, Layers::CAST_QUERY }},
+				{ Layers::BONKFREEENEMY, T{ Layers::NON_MOVING, Layers::MOVING, Layers::PROJECTILE, Layers::CAST_QUERY }},
+				{ Layers::HITBOX, T{ Layers::PROJECTILE, Layers::ENEMYPROJECTILE, Layers::CAST_QUERY } },
+				{ Layers::PROJECTILE, T{ Layers::NON_MOVING, Layers::BONKFREEENEMY, Layers::ENEMY, Layers::HITBOX, Layers::CAST_QUERY } },
+				{ Layers::ENEMYPROJECTILE, T{ Layers::NON_MOVING, Layers::MOVING, Layers::HITBOX } },
+				{ Layers::CAST_QUERY, T{ Layers::NON_MOVING, Layers::MOVING, Layers::ENEMY, Layers::BONKFREEENEMY, Layers::HITBOX, Layers::PROJECTILE, Layers::ENEMYPROJECTILE } },
+				{ Layers::CAST_QUERY_LEVEL_GEOMETRY_ONLY, T{ Layers::NON_MOVING } },
+				{ Layers::DEBRIS, T{ Layers::NON_MOVING }}
+			};
+
+			P NegativeExpectations
+			{
+				{ Layers::MOVING, T{ Layers::HITBOX, Layers::DEBRIS, Layers::CAST_QUERY_LEVEL_GEOMETRY_ONLY, Layers::PROJECTILE } },
+				{ Layers::NON_MOVING, T{ Layers::NON_MOVING, Layers::HITBOX } },
+				{ Layers::ENEMY, T{ Layers::ENEMYPROJECTILE, Layers::BONKFREEENEMY } },
+				{ Layers::BONKFREEENEMY, T{ Layers::ENEMY, Layers::ENEMYPROJECTILE, Layers::HITBOX, Layers::BONKFREEENEMY } },
+				{ Layers::HITBOX, T{ Layers::NON_MOVING, Layers::MOVING, Layers::ENEMY, Layers::BONKFREEENEMY, Layers::HITBOX } },
+				{ Layers::PROJECTILE, T{ Layers::PROJECTILE, Layers::DEBRIS } },
+				{ Layers::ENEMYPROJECTILE, T{ Layers::ENEMYPROJECTILE, Layers::BONKFREEENEMY, Layers::PROJECTILE, Layers::CAST_QUERY_LEVEL_GEOMETRY_ONLY, Layers::DEBRIS } },
+				{ Layers::CAST_QUERY, T{ } },
+				{ Layers::CAST_QUERY_LEVEL_GEOMETRY_ONLY, T{ Layers::MOVING, Layers::BONKFREEENEMY, Layers::HITBOX, Layers::PROJECTILE, Layers::ENEMYPROJECTILE, Layers::CAST_QUERY_LEVEL_GEOMETRY_ONLY, Layers::DEBRIS } },
+				{ Layers::DEBRIS, T{ Layers::MOVING, Layers::HITBOX, Layers::PROJECTILE, Layers::ENEMYPROJECTILE, Layers::CAST_QUERY, Layers::CAST_QUERY_LEVEL_GEOMETRY_ONLY,Layers::DEBRIS } }
+			};
+
+			It("should cover all layers in expectations", [this, PositiveExpectations, NegativeExpectations]()
+				{
+					const int32 NumDefinedLayers = Layers::NUM_LAYERS;
+					TSet<JPH::ObjectLayer> CoveredLayersPerLayer;
+					for (int32 Layer = 0; Layer < NumDefinedLayers; ++Layer)
+					{
+						bool FoundInPositive = false;
+						for (const auto& Pair : PositiveExpectations)
+						{
+							if (Pair.Key == Layer)
+							{
+								FoundInPositive = true;
+								for(const auto& CoveredLayer : Pair.Value)
+								{
+									CoveredLayersPerLayer.Add(CoveredLayer);
+								}
+								break;
+							}
+						}
+						bool FoundInNegative = false;
+						for (const auto& Pair : NegativeExpectations)
+						{
+							if (Pair.Key == Layer)
+							{
+								FoundInNegative = true;
+								for (const auto& CoveredLayer : Pair.Value)
+								{
+									CoveredLayersPerLayer.Add(CoveredLayer);
+								}
+								break;
+							}
+						}
+
+						// convert the JPH::ObjectLayer (uint8) to an EPhysicsLayer which has the ability to get the Enum name using UE libraries
+						FString Name = StaticEnum<EPhysicsLayer>()->GetNameStringByValue(static_cast<int64>(Layer));
+						TestTrue(FString::Printf(TEXT("Layer %s is covered in positive expectations"), *Name), FoundInPositive);
+						TestTrue(FString::Printf(TEXT("Layer %s is covered in negative expectations"), *Name), FoundInNegative);
+						TestEqual("should cover all layers, including self", CoveredLayersPerLayer.Num(), NumDefinedLayers);
+					}
+				});
+
+			It("should return true for a pair that is allowed", [this, PositiveExpectations]()
 				{
 					FWorldSimOwner::ObjectLayerPairFilterImpl ClassUnderTest;
-					P PositiveExpectations
-					{
-						{ Layers::MOVING, T{ Layers::NON_MOVING, Layers::BONKFREEENEMY, Layers::MOVING, Layers::ENEMY, Layers::ENEMYPROJECTILE, Layers::CAST_QUERY } },
-						{ Layers::NON_MOVING, T{ Layers::MOVING, Layers::BONKFREEENEMY, Layers::CAST_QUERY, Layers::CAST_QUERY_LEVEL_GEOMETRY_ONLY, Layers::DEBRIS, Layers::ENEMY, Layers::ENEMYPROJECTILE, Layers::MOVING, Layers::PROJECTILE } }
-					};
-
 					for (const auto& Pair : PositiveExpectations)
 					{
 						for (const auto& TestLayer : Pair.Value)
 						{
-							TestTrue(FString::Printf(TEXT("Layer %d should collide with %d"), Pair.Key, TestLayer), ClassUnderTest.ShouldCollide(Pair.Key, TestLayer));
+							FString TestedLayer = StaticEnum<EPhysicsLayer>()->GetNameStringByValue(static_cast<int64>(Pair.Key));
+							FString AgainstLayer = StaticEnum<EPhysicsLayer>()->GetNameStringByValue(static_cast<int64>(TestLayer));
+							TestTrue(FString::Printf(TEXT("Layer %s should collide with %s"), *TestedLayer, *AgainstLayer), ClassUnderTest.ShouldCollide(Pair.Key, TestLayer));
 						}
 					}
 				});
 
-			It("should return false for a pair that is not allowed", [this]()
+			It("should return false for a pair that is not allowed", [this, NegativeExpectations]()
 				{
 					FWorldSimOwner::ObjectLayerPairFilterImpl ClassUnderTest;
-					P NegativeExpectations
-					{
-						{ Layers::MOVING, T{ Layers::HITBOX, Layers::DEBRIS, Layers::CAST_QUERY_LEVEL_GEOMETRY_ONLY, Layers::PROJECTILE } },
-						{ Layers::NON_MOVING, T{ Layers::NON_MOVING, Layers::HITBOX } }
-					};
 					for (const auto& Pair : NegativeExpectations)
 					{
 						for (const auto& TestLayer : Pair.Value)
 						{
-							TestFalse(FString::Printf(TEXT("Layer %d should not collide with %d"), Pair.Key, TestLayer), ClassUnderTest.ShouldCollide(Pair.Key, TestLayer));
+							FString TestedLayer = StaticEnum<EPhysicsLayer>()->GetNameStringByValue(static_cast<int64>(Pair.Key));
+							FString AgainstLayer = StaticEnum<EPhysicsLayer>()->GetNameStringByValue(static_cast<int64>(TestLayer));
+							TestFalse(FString::Printf(TEXT("Layer %s should collide with %s"), *TestedLayer, *AgainstLayer), ClassUnderTest.ShouldCollide(Pair.Key, TestLayer));
 						}
 					}
 				});
