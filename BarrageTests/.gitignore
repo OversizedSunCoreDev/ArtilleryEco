@@ -1,9 +1,6 @@
 # Visual Studio 2015 user specific files
 .vs/
 
-# Riderlink
-Developer/RiderLink/*
-
 # Compiled Object files
 *.slo
 *.lo
@@ -50,7 +47,7 @@ SourceArt/**/*.tga
 
 # Binary Files
 Binaries/*
-*/Binaries/*
+Plugins/*/Binaries/*
 
 # Builds
 Build/*
@@ -71,12 +68,7 @@ Saved/*
 
 # Compiled source files for the engine to use
 Intermediate/*
-*/Intermediate/*
+Plugins/*/Intermediate/*
 
 # Cache files for the editor to use
 DerivedDataCache/*
-NiagaraUIRenderer/Binaries/**/*
-NiagaraUIRenderer/Intermediate/**/*
-
-# New Stuff
-VisualStudioTools

@@ -1,4 +1,5 @@
 ﻿#include "ORDIN.h"
+#include <stdexcept>
 
 /**
 * Please note the following special memory values. All of these are BAD, some are worse.
