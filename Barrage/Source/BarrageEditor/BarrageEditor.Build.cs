@@ -68,12 +68,17 @@ public class BarrageEditor : ModuleRules
 				"Chaos",
 				"Slate",
 				"SlateCore",
-				"JoltPhysics",
 				"SkeletonKey",
+				"Barrage",
 				"mimalloc"// <- add jolt dependecy here
 				// ... add private dependencies that you statically link with here ...	
 			}
 		);
+
+		if (Target.bBuildEditor)
+		{
+			PrivateDependencyModuleNames.Add("UnrealEd");
+		}
 
 		DynamicallyLoadedModuleNames.AddRange(
 			new string[]

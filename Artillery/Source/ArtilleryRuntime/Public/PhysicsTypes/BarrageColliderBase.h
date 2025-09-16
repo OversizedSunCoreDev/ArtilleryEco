@@ -59,6 +59,7 @@ inline UBarrageColliderBase::UBarrageColliderBase(const FObjectInitializer& Obje
 	Super::SetCollisionEnabled(ECollisionEnabled::Type::NoCollision);
 	Super::SetEnableGravity(false);
 	Super::SetSimulatePhysics(false);
+	bHiddenInGame = true;
 }
 
 //---------------------------------
