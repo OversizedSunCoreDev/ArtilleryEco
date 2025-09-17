@@ -1,5 +1,4 @@
-#include "PhysicsTypes/BarrageBoxComponent.h"
-#include "CoordinateUtils.h"
+#include "PhysicsTypes/BarrageAutoBox.h"
 
 
 //CONSTRUCTORS
@@ -7,10 +6,18 @@
 //do not invoke the default constructor unless you have a really good plan. in general, let UE initialize your components.
 
 // Sets default values for this component's properties
-inline UBarrageBoxComponent::UBarrageBoxComponent(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
+UBarrageAutoBox::UBarrageAutoBox(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer), MyMassClass(Weights::NormalEnemy)
 {
 	// Set this component to be initialized when the game starts, and to be ticked every frame.  You can turn these features
 	// off to improve performance if you don't need them.
+	switch (Weight)
+	{
+	case EBWeightClasses::NormalEnemy: MyMassClass = Weights::NormalEnemy; break;
+	case EBWeightClasses::BigEnemy: MyMassClass = Weights::BigEnemy; break;
+	case EBWeightClasses::HugeEnemy: MyMassClass = Weights::HugeEnemy; break;
+	default: MyMassClass = FMassByCategory(Weights::NormalEnemy); break;
+	}
+
 	bWantsInitializeComponent = true;
 	PrimaryComponentTick.bCanEverTick = true;
 	MyObjectKey = 0;
@@ -20,18 +27,16 @@ inline UBarrageBoxComponent::UBarrageBoxComponent(const FObjectInitializer& Obje
 	Super::SetCollisionEnabled(ECollisionEnabled::Type::NoCollision);
 	Super::SetEnableGravity(false);
 	Super::SetSimulatePhysics(false);
-
-	bUseEditorCompositing = true;
 }
 
 //KEY REGISTER, initializer, and failover.
 //----------------------------------
 
-inline void UBarrageBoxComponent::Register()
+void UBarrageAutoBox::Register()
 {
-	if (MyObjectKey == 0)
+	if (GetOwner())
 	{
-		if (GetOwner())
+		if (MyObjectKey == 0)
 		{
 			if (GetOwner()->GetComponentByClass<UKeyCarry>())
 			{
@@ -44,21 +49,45 @@ inline void UBarrageBoxComponent::Register()
 				MyObjectKey = ActorKey(val);
 			}
 		}
-	}
 
-	if (!IsReady && MyObjectKey != 0) // this could easily be just the !=, but it's better to have the whole idiom in the example
-	{
-		UBarrageDispatch* Physics = GetWorld()->GetSubsystem<UBarrageDispatch>();
-		FBBoxParams params = FBarrageBounder::GenerateBoxBounds(
-			GetOwner()->GetActorLocation(),
-			XDiam,
-			YDiam,
-			ZDiam,
-			FVector3d(OffsetCenterToMatchBoundedShapeX, OffsetCenterToMatchBoundedShapeY, OffsetCenterToMatchBoundedShapeZ));
-		MyBarrageBody = Physics->CreatePrimitive(params, MyObjectKey, Layers::MOVING);
-		if (MyBarrageBody)
+		if (!IsReady && MyObjectKey != 0) // this could easily be just the !=, but it's better to have the whole idiom in the example
 		{
-			IsReady = true;
+			UPrimitiveComponent* AnyMesh = GetOwner()->GetComponentByClass<UMeshComponent>();
+			AnyMesh = AnyMesh ? AnyMesh : GetOwner()->GetComponentByClass<UPrimitiveComponent>();
+			if (AnyMesh)
+			{
+				FVector extents = DiameterXYZ.IsNearlyZero() || DiameterXYZ.Length() <= 0.1 ? FVector::ZeroVector : DiameterXYZ;
+				if (extents.IsZero())
+				{
+					FBoxSphereBounds Boxen = AnyMesh->GetLocalBounds();
+					if (Boxen.BoxExtent.GetMin() >= 0.01)
+					{
+						// Multiply by the scale factor, then multiply by 2 since mesh bounds is radius not diameter
+						extents = Boxen.BoxExtent * AnyMesh->GetComponentScale() * 2;
+					}
+					else
+					{
+						//I SAID BEHAAAAAAAAAAAVE.
+						extents = FVector(1, 1, 1);
+					}
+				}
+
+				UBarrageDispatch* Physics = GetWorld()->GetSubsystem<UBarrageDispatch>();
+				FBBoxParams params = FBarrageBounder::GenerateBoxBounds(
+					GetOwner()->GetActorLocation(),
+					FMath::Max(extents.X, .1),
+					FMath::Max(extents.Y, 0.1),
+					FMath::Max(extents.Z, 0.1),
+					FVector3d(OffsetCenterToMatchBoundedShapeX, OffsetCenterToMatchBoundedShapeY, OffsetCenterToMatchBoundedShapeZ),
+					MyMassClass.Category);
+				MyBarrageBody = Physics->CreatePrimitive(params, MyObjectKey, static_cast<uint16>(Layer), false, false, isMovable);
+				if (MyBarrageBody)
+				{
+					AnyMesh->WakeRigidBody();
+					IsReady = true;
+					AnyMesh->SetSimulatePhysics(false);
+				}
+			}
 		}
 	}
 
@@ -68,13 +97,12 @@ inline void UBarrageBoxComponent::Register()
 	}
 }
 
-FBoxSphereBounds UBarrageBoxComponent::CalcBounds(const FTransform& LocalToWorld) const
+FBoxSphereBounds UBarrageAutoBox::CalcBounds(const FTransform& LocalToWorld) const
 {
-	const FVector BoxExtent = FVector(XDiam, YDiam, ZDiam);
-	return FBoxSphereBounds(FBox(-BoxExtent, BoxExtent)).TransformBy(LocalToWorld);
+	return FBoxSphereBounds(FBox(-DiameterXYZ, DiameterXYZ)).TransformBy(LocalToWorld);
 }
 
-FPrimitiveSceneProxy* UBarrageBoxComponent::CreateSceneProxy()
+FPrimitiveSceneProxy* UBarrageAutoBox::CreateSceneProxy()
 {
 	// This render proxy is draws only how we wish to view the box in-editor, it
 	// will not represent the actual physics shape if that is different within the
@@ -88,11 +116,11 @@ FPrimitiveSceneProxy* UBarrageBoxComponent::CreateSceneProxy()
 			return reinterpret_cast<size_t>(&UniquePointer);
 		}
 
-		FBarrageBoxSceneProxy(const UBarrageBoxComponent* InComponent, FVector3f&& BarragePosition)
+		FBarrageBoxSceneProxy(const UBarrageAutoBox* InComponent, FVector3f&& BarragePosition)
 			: FPrimitiveSceneProxy(InComponent)
 			, bDrawOnlyIfSelected(false)
 			, BarragePosition(MoveTemp(BarragePosition))
-			, BoxExtents(InComponent->XDiam, InComponent->YDiam, InComponent->ZDiam)
+			, BoxExtents(InComponent->DiameterXYZ)
 			, bHasBarrageBody(InComponent->MyBarrageBody.IsValid())
 		{
 			bWillEverBeLit = false;
@@ -159,7 +187,7 @@ FPrimitiveSceneProxy* UBarrageBoxComponent::CreateSceneProxy()
 
 					FPrimitiveDrawInterface* PDI = Collector.GetPDI(ViewIndex);
 					DrawOrientedWireBox(PDI, LocalToWorld.GetOrigin(), LocalToWorld.GetScaledAxis(EAxis::X), LocalToWorld.GetScaledAxis(EAxis::Y), LocalToWorld.GetScaledAxis(EAxis::Z), BoxExtents, DrawColor, SDPG_World, UELineThickness);
-					
+
 					if (bHasBarrageBody)
 					{
 						// Draw a line to indicate the position of the barrage body
