@@ -15,6 +15,12 @@
 #include "Jolt/Physics/Collision/Shape/OffsetCenterOfMassShape.h"
 #include "Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h"
 #include "Jolt/Physics/Collision/Shape/ScaledShape.h"
+#include "Jolt/Physics/Collision/Shape/ConvexHullShape.h"
+#include "Jolt/Physics/Collision/Shape/MeshShape.h"
+#include "Jolt/Physics/Collision/Shape/TriangleShape.h"
+#include "Jolt/Physics/Collision/Shape/HeightFieldShape.h"
+#include "Jolt/Physics/Collision/Shape/StaticCompoundShape.h"
+#include "Jolt/Physics/Collision/Shape/MutableCompoundShape.h"
 
 // SOOOOOOOO
 // I really want to use the Jolt debug renderer, but it requires 
@@ -35,6 +41,12 @@
 //    - This may make the debugger "slower", but it allows for interleaved simulation and debug drawing
 // sincerely, martin hollstein
 
+//TODO:
+// - Add the following flags:
+//   - Draw if enabled
+//   - Change Debug Color
+//   - Show/Hide Text Labels
+
 // simple draw command structure
 // Draw commands let us gather then execute, allowing flexible ordering and batching if needed
 // and we can extend them into the UE recording system if needed
@@ -42,8 +54,12 @@ struct FDrawShapeCommand
 {
 	static const FColor JoltDebugColor;
 	FText DeubgText;
-	FDrawShapeCommand(FText InDebugText)
+	FColor Color;
+	FTransform Transform;
+	FDrawShapeCommand(FText InDebugText, FTransform Transform)
 		: DeubgText(InDebugText)
+		, Color(JoltDebugColor)
+		, Transform(Transform)
 	{
 	}
 
@@ -51,67 +67,89 @@ struct FDrawShapeCommand
 	virtual void Draw(FPrimitiveDrawInterface* PDI) const = 0;
 };
 
-const FColor FDrawShapeCommand::JoltDebugColor = FColor::Green;
+const FColor FDrawShapeCommand::JoltDebugColor = FColor::Orange;
 
 struct DrawPointCommand : public FDrawShapeCommand
 {
-	FVector Position;
 	float Size;
 	FColor Color;
-	DrawPointCommand(const JPH::Body& Body)
-		: FDrawShapeCommand(NSLOCTEXT("joltbarrage", "point", "Empty"))
-		, Position(FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(Body.GetPosition())))
+	DrawPointCommand(FTransform Transform)
+		: FDrawShapeCommand(NSLOCTEXT("joltbarrage", "point", "Empty"), Transform)
 		, Size(5.f)
 		, Color(JoltDebugColor)
 	{
 	}
 	virtual void Draw(FPrimitiveDrawInterface* PDI) const override
 	{
-		PDI->DrawPoint(Position, Color, Size, SDPG_World);
+		PDI->DrawPoint(Transform.GetLocation(), Color, Size, SDPG_World);
 	}
 };
 
 struct DrawSphereCommand : public FDrawShapeCommand
 {
 	FVector Position;
-	FRotator Orientation;
 	float Radius;
-	FColor Color;
 
-	DrawSphereCommand(const JPH::Body& Body, const JPH::SphereShape* SphereShape)
-		: FDrawShapeCommand(NSLOCTEXT("joltbarrage", "sphere", "Sphere"))
-		, Position(FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(Body.GetPosition())))
-		, Orientation(FBarragePrimitive::UpConvertFloatQuat(CoordinateUtils::FromJoltRotation(Body.GetRotation())))
+	DrawSphereCommand(FTransform Transform, const JPH::SphereShape* SphereShape)
+		: FDrawShapeCommand(NSLOCTEXT("joltbarrage", "sphere", "Sphere"), Transform)
 		, Radius(CoordinateUtils::JoltToRadius(SphereShape->GetRadius()))
-		, Color(JoltDebugColor)
 	{
 	}
 	virtual void Draw(FPrimitiveDrawInterface* PDI) const override
 	{
-		DrawWireSphere(PDI, Position, FLinearColor::Green, Radius, 2, SDPG_World, 1.f);
+		DrawWireSphere(PDI, Transform.GetLocation(), Color, Radius, 2, SDPG_World, 1.f);
 	}
 };
 
 struct DrawBoxCommand : public FDrawShapeCommand
 {
-	FVector Position;
-	FRotator Orientation;
 	FVector Extents;
-	FColor Color;
-	DrawBoxCommand(const JPH::Body& Body, const JPH::BoxShape* BoxShape)
-		: FDrawShapeCommand(NSLOCTEXT("joltbarrage", "box", "Box"))
-		, Position(FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(Body.GetPosition())))
-		, Orientation(FBarragePrimitive::UpConvertFloatQuat(CoordinateUtils::FromJoltRotation(Body.GetRotation())))
+	DrawBoxCommand(FTransform Transform, const JPH::BoxShape* BoxShape)
+		: FDrawShapeCommand(NSLOCTEXT("joltbarrage", "box", "Box"), Transform)
 		, Extents(FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(BoxShape->GetHalfExtent())) * 2.f) // Jolt boxes are half extents
-		, Color(JoltDebugColor)
 	{
 	}
 	virtual void Draw(FPrimitiveDrawInterface* PDI) const override
 	{
-		FQuat BodyRotation = Orientation.Quaternion();
-		DrawOrientedWireBox(PDI, Position, BodyRotation.GetRightVector(), BodyRotation.GetForwardVector(), BodyRotation.GetUpVector(), Extents, FLinearColor::Green, SDPG_World, 1.f);
+		FQuat BodyRotation = Transform.GetRotation();
+		DrawOrientedWireBox(PDI, Transform.GetLocation(), BodyRotation.GetRightVector(), BodyRotation.GetForwardVector(), BodyRotation.GetUpVector(), Extents, Color, SDPG_World, 1.f);
 	}
 };
+
+struct DrawCapsuleCommand : public FDrawShapeCommand
+{
+	float Radius;
+	float HalfHeight;
+	DrawCapsuleCommand(FTransform Transform, const JPH::CapsuleShape* CapsuleShape)
+		: FDrawShapeCommand(NSLOCTEXT("joltbarrage", "capsule", "Capsule"), Transform)
+		, Radius(CoordinateUtils::JoltToRadius(CapsuleShape->GetRadius()))
+		, HalfHeight(CapsuleShape->GetHalfHeightOfCylinder()) //TODO: What is the conversion to UE?
+	{
+	}
+	virtual void Draw(FPrimitiveDrawInterface* PDI) const override
+	{
+		FQuat BodyRotation = Transform.GetRotation();
+		DrawWireCapsule(PDI, Transform.GetLocation(), BodyRotation.GetForwardVector(), BodyRotation.GetRightVector(), BodyRotation.GetUpVector(), Color, HalfHeight, Radius, 2, SDPG_World, 1.f);
+	}
+};
+
+struct DrawCylinderCommand : public FDrawShapeCommand
+{
+	float Radius;
+	float HalfHeight;
+	DrawCylinderCommand(FTransform Transform, const JPH::CylinderShape* CylinderShape)
+		: FDrawShapeCommand(NSLOCTEXT("joltbarrage", "cylinder", "Cylinder"), Transform)
+		, Radius(CoordinateUtils::JoltToRadius(CylinderShape->GetRadius()))
+		, HalfHeight(CylinderShape->GetHalfHeight()) //TODO: What is the conversion to UE?
+	{
+	}
+	virtual void Draw(FPrimitiveDrawInterface* PDI) const override
+	{
+		FQuat BodyRotation = Transform.GetRotation();
+		DrawWireCylinder(PDI, Transform.GetLocation(), BodyRotation.GetForwardVector(), BodyRotation.GetRightVector(), BodyRotation.GetUpVector(), Color, HalfHeight, Radius, 2, SDPG_World, 1.f);
+	}
+};
+
 
 // This macro function will log the debug message of the shape type and sub shape type
 #ifndef LOG_UNHANDLED_SHAPE_SUB_SHAPE
@@ -119,7 +157,7 @@ struct DrawBoxCommand : public FDrawShapeCommand
 	UE_LOG(LogTemp, Warning, TEXT("BarrageJoltVisualDebugger: Encountered unknown shape type %d and sub shape type %s, cannot visualize"), static_cast<int32>(ShapeType), *FString(JPH::sSubShapeTypeNames[static_cast<int32>(ShapeSubType)]));
 #endif
 // Helper recursive function to decompose BodyShapes to a core set of "scalar" shapes that we can draw
-void GatherScalarShapes(const JPH::Body& Body, const JPH::Shape* BodyShape, TArray<const FDrawShapeCommand*>& CollectedScalarShapes)
+void GatherScalarShapes(const FTransform& LocalToWorld, const JPH::Shape* BodyShape, TArray<const FDrawShapeCommand*>& CollectedScalarShapes)
 {
 	if (BodyShape == nullptr)
 	{
@@ -139,7 +177,7 @@ void GatherScalarShapes(const JPH::Body& Body, const JPH::Shape* BodyShape, TArr
 			const JPH::SphereShape* SphereShape = reinterpret_cast<const JPH::SphereShape*>(BodyShape);
 			if (SphereShape != nullptr)
 			{
-				CollectedScalarShapes.Add(new DrawSphereCommand(Body, SphereShape));
+				CollectedScalarShapes.Add(new DrawSphereCommand(LocalToWorld, SphereShape));
 			}
 			break;
 		}
@@ -148,14 +186,31 @@ void GatherScalarShapes(const JPH::Body& Body, const JPH::Shape* BodyShape, TArr
 			const JPH::BoxShape* BoxShape = reinterpret_cast<const JPH::BoxShape*>(BodyShape);
 			if (BoxShape != nullptr)
 			{
-				CollectedScalarShapes.Add(new DrawBoxCommand(Body, BoxShape));
+				CollectedScalarShapes.Add(new DrawBoxCommand(LocalToWorld, BoxShape));
 			}
 			break;
 		}
 		case JPH::EShapeSubType::Triangle:
 		case JPH::EShapeSubType::Capsule:
+		{
+			const JPH::CapsuleShape* CapsuleShape = reinterpret_cast<const JPH::CapsuleShape*>(BodyShape);
+			if (CapsuleShape != nullptr)
+			{
+				CollectedScalarShapes.Add(new DrawCapsuleCommand(LocalToWorld, CapsuleShape));
+			}
+			break;
+		}
 		case JPH::EShapeSubType::TaperedCapsule:
+			break;
 		case JPH::EShapeSubType::Cylinder:
+		{
+			const JPH::CylinderShape* CylinderShape = reinterpret_cast<const JPH::CylinderShape*>(BodyShape);
+			if (CylinderShape != nullptr)
+			{
+				CollectedScalarShapes.Add(new DrawCylinderCommand(LocalToWorld, CylinderShape));
+			}
+			break;
+		}
 		case JPH::EShapeSubType::ConvexHull:
 			// TODO: Implement other convex shapes as needed
 		case JPH::EShapeSubType::UserConvex1:
@@ -168,12 +223,12 @@ void GatherScalarShapes(const JPH::Body& Body, const JPH::Shape* BodyShape, TArr
 		case JPH::EShapeSubType::UserConvex8:
 			// These are convex shapes we don't yet support drawing
 			LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
-			CollectedScalarShapes.Add(new DrawPointCommand(Body));
+			CollectedScalarShapes.Add(new DrawPointCommand(LocalToWorld));
 			break;
 		default:
 			// Unknown convex shape subtype
 			LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
-			CollectedScalarShapes.Add(new DrawPointCommand(Body));
+			CollectedScalarShapes.Add(new DrawPointCommand(LocalToWorld));
 			break;
 		}
 		break;
@@ -181,11 +236,25 @@ void GatherScalarShapes(const JPH::Body& Body, const JPH::Shape* BodyShape, TArr
 		switch (ShapeSubType)
 		{
 		case JPH::EShapeSubType::StaticCompound:
+		{
+			const JPH::StaticCompoundShape* CompoundShape = reinterpret_cast<const JPH::StaticCompoundShape*>(BodyShape);
+			if (CompoundShape != nullptr)
+			{
+			}
+			break;
+		}
 		case JPH::EShapeSubType::MutableCompound:
+		{
+			const JPH::MutableCompoundShape* CompoundShape = reinterpret_cast<const JPH::MutableCompoundShape*>(BodyShape);
+			if (CompoundShape != nullptr)
+			{
+			}
+			break;
+		}
 		default:
 			// Unknown convex shape subtype
 			LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
-			CollectedScalarShapes.Add(new DrawPointCommand(Body));
+			CollectedScalarShapes.Add(new DrawPointCommand(LocalToWorld));
 			break;
 		}
 		break;
@@ -197,7 +266,10 @@ void GatherScalarShapes(const JPH::Body& Body, const JPH::Shape* BodyShape, TArr
 			const JPH::RotatedTranslatedShape* DecoratedShape = reinterpret_cast<const JPH::RotatedTranslatedShape*>(BodyShape);
 			if (DecoratedShape != nullptr)
 			{
-				GatherScalarShapes(Body, DecoratedShape->GetInnerShape(), CollectedScalarShapes);
+				FVector Position = FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(DecoratedShape->GetPosition()));
+				FQuat Rotation = FBarragePrimitive::UpConvertFloatQuat(CoordinateUtils::FromJoltRotation(DecoratedShape->GetRotation()));
+				FTransform NewLocalToWorld = FTransform(Rotation, Position) * LocalToWorld;
+				GatherScalarShapes(NewLocalToWorld, DecoratedShape->GetInnerShape(), CollectedScalarShapes);
 			}
 			break;
 		}
@@ -206,7 +278,9 @@ void GatherScalarShapes(const JPH::Body& Body, const JPH::Shape* BodyShape, TArr
 			const JPH::ScaledShape* DecoratedShape = reinterpret_cast<const JPH::ScaledShape*>(BodyShape);
 			if (DecoratedShape != nullptr)
 			{
-				GatherScalarShapes(Body, DecoratedShape->GetInnerShape(), CollectedScalarShapes);
+				FVector Scale = FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(DecoratedShape->GetScale()));
+				FTransform NewLocalToWorld = FTransform(FQuat::Identity, FVector::ZeroVector, Scale) * LocalToWorld;
+				GatherScalarShapes(NewLocalToWorld, DecoratedShape->GetInnerShape(), CollectedScalarShapes);
 			}
 			break;
 		}
@@ -215,14 +289,15 @@ void GatherScalarShapes(const JPH::Body& Body, const JPH::Shape* BodyShape, TArr
 			const JPH::OffsetCenterOfMassShape* DecoratedShape = reinterpret_cast<const JPH::OffsetCenterOfMassShape*>(BodyShape);
 			if (DecoratedShape != nullptr)
 			{
-				GatherScalarShapes(Body, DecoratedShape->GetInnerShape(), CollectedScalarShapes);
+				// TODO: Add visualization for Center of Mass rendering.
+				GatherScalarShapes(LocalToWorld, DecoratedShape->GetInnerShape(), CollectedScalarShapes);
 			}
 			break;
 		}
 		default:
 			// Unknown decorator shape subtype
 			LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
-			CollectedScalarShapes.Add(new DrawPointCommand(Body));
+			CollectedScalarShapes.Add(new DrawPointCommand(LocalToWorld));
 			break;
 		}
 		break;
@@ -233,7 +308,7 @@ void GatherScalarShapes(const JPH::Body& Body, const JPH::Shape* BodyShape, TArr
 		default:
 			// Unknown mesh shape subtype
 			LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
-			CollectedScalarShapes.Add(new DrawPointCommand(Body));
+			CollectedScalarShapes.Add(new DrawPointCommand(LocalToWorld));
 			break;
 		}
 		break;
@@ -244,7 +319,7 @@ void GatherScalarShapes(const JPH::Body& Body, const JPH::Shape* BodyShape, TArr
 		default:
 			// Unknown heightfield shape subtype
 			LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
-			CollectedScalarShapes.Add(new DrawPointCommand(Body));
+			CollectedScalarShapes.Add(new DrawPointCommand(LocalToWorld));
 			break;
 		}
 		break;
@@ -255,7 +330,7 @@ void GatherScalarShapes(const JPH::Body& Body, const JPH::Shape* BodyShape, TArr
 		default:
 			// Unknown softbody shape subtype
 			LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
-			CollectedScalarShapes.Add(new DrawPointCommand(Body));
+			CollectedScalarShapes.Add(new DrawPointCommand(LocalToWorld));
 			break;
 		}
 		break;
@@ -272,8 +347,8 @@ void GatherScalarShapes(const JPH::Body& Body, const JPH::Shape* BodyShape, TArr
 		switch (ShapeSubType)
 		{
 		case JPH::EShapeSubType::Empty:
-			CollectedScalarShapes.Add(new DrawPointCommand(Body));
-
+			CollectedScalarShapes.Add(new DrawPointCommand(LocalToWorld));
+			break;
 		default:
 			LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
 			break;
@@ -285,12 +360,12 @@ void GatherScalarShapes(const JPH::Body& Body, const JPH::Shape* BodyShape, TArr
 	case JPH::EShapeType::User4:
 		// These are user defined shapes, we don't know how to draw them
 		LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
-		CollectedScalarShapes.Add(new DrawPointCommand(Body));
+		CollectedScalarShapes.Add(new DrawPointCommand(LocalToWorld));
 		break;
 	default:
 		// Unknown shape type
 		LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
-		CollectedScalarShapes.Add(new DrawPointCommand(Body));
+		CollectedScalarShapes.Add(new DrawPointCommand(LocalToWorld));
 		break;
 	}
 }
@@ -374,30 +449,41 @@ FDebugRenderSceneProxy* UBarrageJoltVisualDebugger::CreateDebugSceneProxy()
 
 			// Get a lock to get a list of all the bodies in the JOLT simulation
 			JPH::BodyIDVector RigidBodies;
+			TArray<const FDrawShapeCommand*> CollectedScalarShapes;
+
 			PhysicsSystem->GetActiveBodies(JPH::EBodyType::RigidBody, RigidBodies);
 			for (const JPH::BodyID& BodyID : RigidBodies)
 			{
-				for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ViewIndex++)
-				{
-					if (VisibilityMap & (1 << ViewIndex))
-					{
-						const FSceneView* View = Views[ViewIndex];
 
-						FPrimitiveDrawInterface* PDI = Collector.GetPDI(ViewIndex);
-						JPH::BodyLockRead BodyReadLock(PhysicsSystem->GetBodyLockInterface(), BodyID);
-						if (BodyReadLock.Succeeded())
+				FTransform LocalToWorld = FTransform::Identity;
+				{
+					JPH::BodyLockRead BodyReadLock(PhysicsSystem->GetBodyLockInterface(), BodyID);
+					if (BodyReadLock.Succeeded())
+					{
+						const JPH::Body& Body = BodyReadLock.GetBody();
+						FVector BodyPosition = FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(Body.GetPosition()));
+						FQuat BodyRotation = FBarragePrimitive::UpConvertFloatQuat(CoordinateUtils::FromJoltRotation(Body.GetRotation()));
+
+						LocalToWorld = FTransform(BodyRotation, BodyPosition);
+						GatherScalarShapes(LocalToWorld, Body.GetShape(), CollectedScalarShapes);
+
+					}
+				}
+			}
+
+			for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ViewIndex++)
+			{
+				if (VisibilityMap & (1 << ViewIndex))
+				{
+					const FSceneView* View = Views[ViewIndex];
+
+					FPrimitiveDrawInterface* PDI = Collector.GetPDI(ViewIndex);
+					for (const FDrawShapeCommand* DrawCommand : CollectedScalarShapes)
+					{
+						if (DrawCommand != nullptr)
 						{
-							const JPH::Body& Body = BodyReadLock.GetBody();
-							TArray<const FDrawShapeCommand*> CollectedScalarShapes;
-							GatherScalarShapes(Body, Body.GetShape(), CollectedScalarShapes);
-							for (const FDrawShapeCommand* DrawCommand : CollectedScalarShapes)
-							{
-								if (DrawCommand != nullptr)
-								{
-									DrawCommand->Draw(PDI);
-									delete DrawCommand;
-								}
-							}
+							DrawCommand->Draw(PDI);
+							delete DrawCommand;
 						}
 					}
 				}
