@@ -162,8 +162,6 @@ FPrimitiveSceneProxy* UBarrageBoxComponent::CreateSceneProxy()
 					
 					if (bHasBarrageBody)
 					{
-						// Draw a line to indicate the position of the barrage body
-						PDI->DrawLine(LocalToWorld.GetOrigin(), FBarragePrimitive::UpConvertFloatVector(BarragePosition), BarrageColor, SDPG_World, BarrageLineThickness);
 						// Draw a ghost boxy thing at the position of the barrage body, it is assumed to be in world space already
 						DrawOrientedWireBox(PDI, FBarragePrimitive::UpConvertFloatVector(BarragePosition), LocalToWorld.GetScaledAxis(EAxis::X), LocalToWorld.GetScaledAxis(EAxis::Y), LocalToWorld.GetScaledAxis(EAxis::Z), BoxExtents, BarrageColor, SDPG_World, BarrageLineThickness);
 					}

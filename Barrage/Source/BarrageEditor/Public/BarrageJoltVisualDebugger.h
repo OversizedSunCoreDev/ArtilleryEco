@@ -1,6 +1,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "DebugRenderSceneProxy.h"
+#include "Debug/DebugDrawComponent.h"
 #include "BarrageJoltVisualDebugger.generated.h"
 
 /**
@@ -13,11 +15,19 @@
 * - Requires an object to be selected, not appropriate for a global debugger.
 **/
 
-UCLASS()
-class BARRAGEEDITOR_API UBarrageJoltVisualDebugger : public UPrimitiveComponent
+UCLASS(editinlinenew, ClassGroup = Debug)
+class BARRAGEEDITOR_API UBarrageJoltVisualDebugger : public UDebugDrawComponent
 {
 	GENERATED_BODY()
 
+public:
+	UBarrageJoltVisualDebugger();
+
+	virtual FBoxSphereBounds CalcBounds(const FTransform& LocalToWorld) const override;
+
 protected:
-	virtual FPrimitiveSceneProxy* CreateSceneProxy() override;
+#if UE_ENABLE_DEBUG_DRAWING
+	virtual FDebugRenderSceneProxy* CreateDebugSceneProxy() override;
+#endif
+
 };
