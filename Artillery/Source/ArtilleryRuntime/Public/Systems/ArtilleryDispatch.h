@@ -363,15 +363,15 @@ public:
 
 	void RegisterControllite(const FSkeletonKey& in, Machlet LaputanMachine) const;
 
-	void RegisterAttributes(FSkeletonKey in, AttrMapPtr Attributes);
+	void RegisterOrAddAttributes(FSkeletonKey in, AttrMapPtr Attributes);
 
-	void RegisterRelationships(FSkeletonKey in, IdMapPtr Relationships);
+	void RegisterOrAddRelationships(FSkeletonKey in, IdMapPtr Relationships);
 
-	void RegisterVecAttribs(FSkeletonKey in, Attr3MapPtr Vectors);
+	void RegisterOrAddVecAttribs(FSkeletonKey in, Attr3MapPtr Vectors);
 
 	//adds or assumes responsibility for the lifecycle of a tag container keyed to this SK
 	// ReSharper disable once CppMemberFunctionMayBeConst
-	FConservedTags RegisterGameplayTags(FSkeletonKey in, GameplayTagContainerPtrInternal GameplayTags);
+	FConservedTags RegisterOrAddGameplayTags(FSkeletonKey in, GameplayTagContainerPtrInternal GameplayTags);
 
 	// ReSharper disable once CppMemberFunctionMayBeConst
 	FConservedTags GetExistingConservedTags(FSkeletonKey in);

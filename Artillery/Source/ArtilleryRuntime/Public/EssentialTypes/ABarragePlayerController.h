@@ -133,7 +133,7 @@ public:
 			
 			VectorAttributes->Add(Arty::Attr3::UControllerOnlyLookVector, MakeShareable(new FConservedVector()));
 			VectorAttributes->Add(Arty::Attr3::TrueLookVector, MakeShareable(new FConservedVector()));
-			MyDispatch->RegisterVecAttribs(GetMyKey(), VectorAttributes);
+			MyDispatch->RegisterOrAddVecAttribs(GetMyKey(), VectorAttributes);
 
 		}
 		else

@@ -47,7 +47,7 @@ struct ARTILLERYRUNTIME_API FRelationshipMap
 			MyRelationships->FindChecked(x.Key)->SetCurrentValue(x.Value);
 		}
 
-		MyDispatch->RegisterRelationships(ParentKey, MyRelationships);
+		MyDispatch->RegisterOrAddRelationships(ParentKey, MyRelationships);
 
 		ReadyToUse = true;
 	};

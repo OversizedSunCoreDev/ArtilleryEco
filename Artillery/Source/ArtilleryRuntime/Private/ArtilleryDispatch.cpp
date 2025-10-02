@@ -69,7 +69,6 @@ bool UArtilleryDispatch::RegistrationImplementation()
 }
 
 //Place at the end of the latest initialization-like phase.
-//should we move this lil guy over into ya boy Dispatch? It feels real dispatchy.
 void UArtilleryDispatch::REGISTER_ENTITY_FINAL_TICK_RESOLVER(const ActorKey& Self)
 {
 	TLEntityFinalTickResolver temp = TLEntityFinalTickResolver(Self); //this semantic sucks. gotta fix it.
@@ -334,7 +333,7 @@ void UArtilleryDispatch::ProcessRequestRouterGameThread()
 								RelationshipMap->Add(Request.Relationship, PowerWordGun);
 								PowerWordGun->SetBaseValue(BANG);
 								PowerWordGun->SetCurrentValue(BANG);
-								RegisterRelationships(Request.SourceOrSelf, RelationshipMap);
+								RegisterOrAddRelationships(Request.SourceOrSelf, RelationshipMap);
 							}
 						}
 						break;
@@ -713,43 +712,132 @@ void UArtilleryDispatch::RegisterControllite(const FSkeletonKey& in, Machlet Lap
 	KeyToControlliteMapping->Add(in, LaputanMachine); //I spill my drink.
 }
 
-void UArtilleryDispatch::RegisterAttributes(FSkeletonKey in, AttrMapPtr Attributes)
+void UArtilleryDispatch::RegisterOrAddAttributes(FSkeletonKey in, AttrMapPtr Attributes)
 {
 	if (__LIVE__)
 	{
 		if (TSharedPtr<AttrCuckoo> hold = AttributeSetToDataMapping)
 		{
-			AttributeSetToDataMapping->insert_or_assign(in, Attributes);
+			AttrMapPtr Extant;
+			hold->find(in, Extant);
+			if (Extant)
+			{
+				if (Attributes)
+				{
+					for (auto& proposed : *Attributes)
+					{
+						//merge them, we must, not merely append.
+						auto& possible = Extant->FindOrAdd(proposed.Key);
+						if (possible)
+						{
+							possible->SetCurrentValue(proposed.Value->GetCurrentValue());
+						}
+						else
+						{
+							possible = proposed.Value;
+						}
+					}
+				}
+			}
+			else
+			{
+				hold->insert_or_assign(in, Attributes);
+			}
+
 		}
 	}
 }
 
-void UArtilleryDispatch::RegisterRelationships(FSkeletonKey in, IdMapPtr Relationships)
+void UArtilleryDispatch::RegisterOrAddRelationships(FSkeletonKey in, IdMapPtr Relationships)
 {
 	if (__LIVE__ && IsReady)
 	{
-		IdentSetToDataMapping->insert_or_assign(in, Relationships);
+		IdMapPtr Extant;
+		IdentSetToDataMapping->find(in, Extant);
+		if (!Extant)
+		{
+			//we still perform insert OR assign for a lot of Threading Reasons.
+			//it might exist by the time we get here.
+			//it shouldn't in any of our existing use cases..
+			//POTENTIAL BUG
+			//TODO: swap to single atomic lambda
+			IdentSetToDataMapping->insert_or_assign(in, Relationships);
+		}
+		else
+		{
+			if (Relationships)
+			{
+				for (auto& proposed : *Relationships)
+				{
+					//merge them, we must, not merely append.
+					auto& possible = Extant->FindOrAdd(proposed.Key);
+					if (possible)
+					{
+						possible->SetCurrentValue(proposed.Value->CurrentValue);
+					}
+					else
+					{
+						possible = proposed.Value;
+					}
+				}
+			}
+		}
 	}
 }
 
-void UArtilleryDispatch::RegisterVecAttribs(FSkeletonKey in, Attr3MapPtr Vectors)
+void UArtilleryDispatch::RegisterOrAddVecAttribs(FSkeletonKey in, Attr3MapPtr Vectors)
 {
-	VectorSetToDataMapping->Add(in, Vectors);
+	auto Extant = VectorSetToDataMapping->Find(in);
+	if (Extant && *Extant && Vectors)
+	{
+		for (auto& proposed : *Vectors)
+		{
+			//merge them, we must, not merely append.
+			auto& possible = (*Extant)->FindOrAdd(proposed.Key);
+			if (possible != nullptr && possible.IsValid())
+			{
+				possible->SetCurrentValue(proposed.Value->CurrentValue);
+			}
+			else
+			{
+				possible = proposed.Value;
+			}
+		}
+	}
+	else
+	{
+		VectorSetToDataMapping->Add(in, Vectors);
+	}
 }
 
-FConservedTags UArtilleryDispatch::RegisterGameplayTags(FSkeletonKey in, GameplayTagContainerPtrInternal GameplayTags)
+FConservedTags UArtilleryDispatch::RegisterOrAddGameplayTags(FSkeletonKey in, GameplayTagContainerPtrInternal GameplayTags)
 {
-	FConservedTags TerrorModuleOnline = GameplayTagContainerToDataMapping->NewTagContainer(in);
+	if (!GameplayTagContainerToDataMapping->SkeletonKeyExists(in))
+	{
+		FConservedTags TerrorModuleOnline = GameplayTagContainerToDataMapping->NewTagContainer(in);
+		if (__LIVE__ && this && GameplayTagContainerToDataMapping && GameplayTagContainerToDataMapping.IsValid() &&
+			GameplayTags)
+		{
+			for (const FGameplayTag& tag : GameplayTags->GetGameplayTagArray())
+			{
+				GameplayTagContainerToDataMapping->Add(in, tag);
+			}
+		}
+		RequestRouter->TagReferenceModel(in, GetShadowNow(), TerrorModuleOnline);
+		return TerrorModuleOnline; // this is the only good way to get a fast reference.
+	}
 	if (__LIVE__ && this && GameplayTagContainerToDataMapping && GameplayTagContainerToDataMapping.IsValid() &&
 		GameplayTags)
 	{
+		auto PreviousTerrorModuleAlreadyOnline = GameplayTagContainerToDataMapping->GetReference(in);
 		for (const FGameplayTag& tag : GameplayTags->GetGameplayTagArray())
 		{
-			GameplayTagContainerToDataMapping->Add(in, tag);
+			GameplayTagContainerToDataMapping->Add(in, tag); 
 		}
+		//This feels overly finicky.
+		return PreviousTerrorModuleAlreadyOnline; // I think this works, because the ref module should be online.
 	}
-	RequestRouter->TagReferenceModel(in, GetShadowNow(), TerrorModuleOnline);
-	return TerrorModuleOnline; // this is the only good way to get a fast reference.
+	return nullptr; //yer jacked bb. this shouldn't happen. but if it does...
 }
 
 FConservedTags UArtilleryDispatch::GetExistingConservedTags(FSkeletonKey in)
@@ -768,7 +856,7 @@ FConservedTags UArtilleryDispatch::GetOrRegisterConservedTags(FSkeletonKey in)
 		FConservedTags GetExistingConservedTagsResult = GetExistingConservedTags(in);
 		return GetExistingConservedTagsResult != nullptr
 			       ? GetExistingConservedTagsResult
-			       : RegisterGameplayTags(in, nullptr);
+			       : RegisterOrAddGameplayTags(in, nullptr);
 	}
 	return nullptr;
 }
@@ -823,14 +911,14 @@ void UArtilleryDispatch::RunGuns() const
 		RequestorQueue_Abilities_TripleBuffer->SwapReadBuffers();
 		for (TTuple<long, EventBufferInfo>& GunToRun : RequestorQueue_Abilities_TripleBuffer->Read())
 		{
-			auto Del =  GunToFiringFunctionMapping->Find(GunToRun.Value.GunKey);
+			auto Del = GunToFiringFunctionMapping->Find(GunToRun.Value.GunKey);
 			if (Del)
 			{
 				TotalFirings += Del->
-				ExecuteIfBound(
-					GunByKey->FindRef(GunToRun.Value.GunKey),
-					false,
-					GunToRun.Value);
+					ExecuteIfBound(
+						GunByKey->FindRef(GunToRun.Value.GunKey),
+						false,
+						GunToRun.Value);
 			}
 		}
 		RequestorQueue_Abilities_TripleBuffer->Read().Reset();
