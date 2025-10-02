@@ -75,6 +75,7 @@ namespace JOLT
 		static constexpr BroadPhaseLayer NON_MOVING(0);
 		static constexpr BroadPhaseLayer MOVING(1);
 		static constexpr BroadPhaseLayer DEBRIS(2);
-		static constexpr uint NUM_LAYERS(3);
+		static constexpr BroadPhaseLayer ENEMYHITBOX(3);
+		static constexpr uint NUM_LAYERS(4);
 	};	
 }

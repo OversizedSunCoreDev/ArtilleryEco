@@ -46,9 +46,20 @@ void BarrageContactListener::OnContactAdded(const JPH::CharacterVirtual* inChara
 		{
 			auto Ent1 = BarrageContactEntity(UBarrageDispatch::SelfPtr->GenerateBarrageKeyFromBodyId(inCharacter->GetInnerBodyID()));
 			
-			auto Ent2 = BarrageContactEntity(UBarrageDispatch::SelfPtr->GenerateBarrageKeyFromBodyId(inCharacter->GetInnerBodyID()));
+			auto Ent2 = BarrageContactEntity(UBarrageDispatch::SelfPtr->GenerateBarrageKeyFromBodyId(inBodyID2));
+			//in general, almost nothing should push the character without explicitly invoking one of the apply forces functions.
+			//the exception RIGHT NOW is other non-enemy non-hitboxed movers, and terrain. this is in part because the player weighs 1 Unit
+			//to make the math for forces easier. That is Not Very Many Units.
+			if (Ent2.MyLayer != Layers::MOVING && Ent2.MyLayer != Layers::NON_MOVING)
+			{
+				ioSettings.mCanPushCharacter = false; //TODO validate push/apply 
+			}
+			if (Ent2.MyLayer == Layers::NON_MOVING)
+			{
+				ioSettings.mCanReceiveImpulses = false; // no push world plz.
+			}
 			UBarrageDispatch::SelfPtr->HandleContactAdded(Ent1, Ent2);
-		}      
+		}
 }
 
 //TODO: this needs replaced when we go to multiplayer.

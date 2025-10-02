@@ -30,6 +30,7 @@ enum FBShape
 	Box,
 	Sphere,
 	Static,
+	Complex,
 	Character,
 	Projectile
 };

@@ -200,7 +200,7 @@ inline EMotionType LayerToMotionTypeMapping(uint16 Layer)
 		return EMotionType::Kinematic;
 	case Layers::ENEMY:
 		return EMotionType::Dynamic;
-	case Layers::BONKFREEENEMY:
+	case Layers::ENEMYHITBOX:
 		return EMotionType::Dynamic;
 	case Layers::CAST_QUERY:
 		return EMotionType::Kinematic;
@@ -228,8 +228,8 @@ inline EMotionQuality LayerToMotionQualityMapping(uint16 Layer)
 		return EMotionQuality::LinearCast;
 	case Layers::ENEMYPROJECTILE:
 		return EMotionQuality::LinearCast;
-	case Layers::BONKFREEENEMY:
-		return EMotionQuality::Discrete;
+	case Layers::ENEMYHITBOX:
+		return EMotionQuality::LinearCast;
 	case Layers::ENEMY:
 		return EMotionQuality::Discrete;
 	case Layers::CAST_QUERY:
@@ -393,9 +393,14 @@ inline FBarrageKey FWorldSimOwner::CreatePrimitive(FBCapParams& ToCreate, uint16
 	return FBK;
 }
 
+//If you set layer to nonmoving, you should set movement type to nonmoving as well or you're going to have
+//a really terrible time. It's not technically wrong to do this, so we don't throw, but there's no good
+//reason I can think of. At this API level, intended for extremely advanced users,
+//it is our policy to be no-throw wherever possible, and to permit behavior that
+//is not rational so long as it is sane.
 FBLet FWorldSimOwner::LoadComplexStaticMesh(FBTransform& MeshTransform,
                                             const UStaticMeshComponent* StaticMeshComponent,
-                                            FSkeletonKey Outkey)
+                                            FSkeletonKey Outkey, Layers::EJoltPhysicsLayer Layer, EMotionType Movement, bool IsSensor, bool ForceActualMesh)
 {
 	// using ParticlesType = Chaos::TParticles<Chaos::FRealSingle, 3>;
 	// using ParticleVecType = Chaos::TVec3<Chaos::FRealSingle>;
@@ -413,7 +418,7 @@ FBLet FWorldSimOwner::LoadComplexStaticMesh(FBTransform& MeshTransform,
 		//or compound shapes which will get added back in.
 	}
 	TObjectPtr<UStaticMesh> CollisionMesh = StaticMeshComponent->GetStaticMesh();
-	if (!CollisionMesh)
+	if (!CollisionMesh || ForceActualMesh)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Falling back to ACTUAL MESH."));
 		CollisionMesh = StaticMeshComponent->GetStaticMesh();
@@ -479,19 +484,25 @@ FBLet FWorldSimOwner::LoadComplexStaticMesh(FBTransform& MeshTransform,
 		}
 		//TODO: should we be holding the shape ref in gamesim owner?
 		auto& shape = err.Get();
-		BodyCreationSettings creation_settings;
-		creation_settings.mMotionType = EMotionType::Static;
-		creation_settings.mObjectLayer = Layers::NON_MOVING;
-		creation_settings.mFriction = 0.5f;
-		creation_settings.mRestitution = 0;
-		creation_settings.mUseManifoldReduction = true;
 		
+		BodyCreationSettings creation_settings;
+		creation_settings.mMotionType = Movement;
+		creation_settings.mObjectLayer = Layer;
+		creation_settings.mFriction = 0.5f;
+		creation_settings.mOverrideMassProperties = EOverrideMassProperties::MassAndInertiaProvided;
+		creation_settings.mRestitution = 0;
+		creation_settings.mCollideKinematicVsNonDynamic = true;
+		creation_settings.mMassPropertiesOverride.SetMassAndInertiaOfSolidBox(shape->GetLocalBounds().GetExtent() *2, 1);
+		creation_settings.mMassPropertiesOverride.mMass = EBWeightClasses::HugeEnemy;
+		creation_settings.mMotionQuality = EMotionQuality::Discrete;
+		creation_settings.mUseManifoldReduction = true;
+		creation_settings.mIsSensor = IsSensor;
 		Shape::ShapeResult result = shape->ScaleShape(MeshTransform.GetScaleJoltArg());
 		if (result.HasError() || result.IsEmpty())
 		{
 			throw;
 		}
-
+		
 		Ref<Shape> OriginAndRotationApplied = new RotatedTranslatedShape(CoordinateUtils::ToJoltCoordinates(MeshTransform.GetLocation()), CoordinateUtils::ToJoltRotation(MeshTransform.GetRotationQuat()),  result.Get());
 		creation_settings.SetShape(OriginAndRotationApplied);
 		BodyID bID = body_interface->CreateBody(creation_settings)->GetID();

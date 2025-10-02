@@ -254,17 +254,42 @@ FBLet UBarrageDispatch::ManagePointers(FSkeletonKey OutKey, FBarrageKey temp, FB
 //probably worth reviewing how indexed triangles work, too : https://www.youtube.com/watch?v=dOjZw5VU6aM
 FBLet UBarrageDispatch::LoadComplexStaticMesh(FBTransform& MeshTransform,
                                               const UStaticMeshComponent* StaticMeshComponent,
-                                              FSkeletonKey OutKey) const
+                                              FSkeletonKey OutKey,
+                                              bool IsSensor)
 {
 	if (JoltGameSim)
 	{
 		FBLet shared = JoltGameSim->LoadComplexStaticMesh(MeshTransform, StaticMeshComponent, OutKey);
-		if (shared)
+		if (shared && shared.IsValid())
 		{
+			shared->Me = FBShape::Static;
 			JoltBodyLifecycleMapping->insert_or_assign(shared->KeyIntoBarrage, shared);
-			TranslationMapping->insert_or_assign(OutKey, shared->KeyIntoBarrage);
+			TranslationMapping->insert_or_assign(shared->KeyOutOfBarrage, shared->KeyIntoBarrage);
+			return shared;
 		}
-		return shared;
+	}
+	return nullptr;
+}
+
+
+//https://github.com/jrouwe/JoltPhysics/blob/master/Samples/Tests/Shapes/MeshShapeTest.cpp
+//probably worth reviewing how indexed triangles work, too : https://www.youtube.com/watch?v=dOjZw5VU6aM
+FBLet UBarrageDispatch::LoadEnemyHitboxFromStaticMesh(FBTransform& MeshTransform,
+											  const UStaticMeshComponent* StaticMeshComponent,
+											  FSkeletonKey OutKey, bool IsSensor, bool UseRawMeshForCollision) 
+{
+	if (JoltGameSim)
+	{
+		FBLet shared = JoltGameSim->LoadComplexStaticMesh(MeshTransform, StaticMeshComponent, OutKey,
+			Layers::ENEMYHITBOX, JPH::EMotionType::Dynamic, IsSensor, UseRawMeshForCollision);
+		if (shared && shared.IsValid())
+		{
+			FBarragePrimitive::SetGravityFactor(0, shared);
+			shared->Me= FBShape::Complex;
+			JoltBodyLifecycleMapping->insert_or_assign(shared->KeyIntoBarrage, shared);
+			TranslationMapping->insert_or_assign( shared->KeyOutOfBarrage, shared->KeyIntoBarrage);
+			return shared;
+		}
 	}
 	return nullptr;
 }
