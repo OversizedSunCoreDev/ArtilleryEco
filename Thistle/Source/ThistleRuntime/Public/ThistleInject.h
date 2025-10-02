@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Destructible.h"
 #include "GameFramework/Pawn.h"
 
 #include "GenericTeamAgentInterface.h"
@@ -67,12 +68,11 @@ enum EnemyCategory
 };
 
 UCLASS()
-class THISTLERUNTIME_API AThistleInject : public APawn, public IGenericTeamAgentInterface, public IKeyedConstruct
+class THISTLERUNTIME_API AThistleInject : public ADestructible
 {
 	GENERATED_BODY()
 
 public:
-	virtual FSkeletonKey GetMyKey() const override;
 	UPROPERTY(EditAnywhere)
 	FString GunDefinitionID;
 	/** Properties that define how the component can move.
@@ -86,29 +86,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Thistle)
 	USceneComponent* MyMainGun;
 	//You are expected to call finish dying on your death being ready to tidy up.
-	UFUNCTION(BlueprintNativeEvent,  Category = "Thistle")
-	void OnDeath();
-	virtual void PostInitializeComponents() override;
-	UFUNCTION(BlueprintCallable,  Category = "BaseCharacter")
-	void FinishDeath();
+	virtual void FinishDeath() override;
 	// Sets default values for this pawn's properties
 	AThistleInject(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 	UPROPERTY(BlueprintAssignable, Category = "Thistle")
 	FOnArrivalAtDestination OnArrivalAtDestination;
 	//~ Begin INavAgentInterface Interface
 	virtual const FNavAgentProperties& GetNavAgentPropertiesRef() const override;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category=Artillery, meta = (AllowPrivateAccess = "true"))
-	UBarrageAutoBox* BarragePhysicsAgent;
-	
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Artillery, meta = (AllowPrivateAccess = "true"))	
-	UKeyCarry* LKeyCarry;
-	
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Artillery, meta = (AllowPrivateAccess = "true"))
-	UEnemyMachine* ArtilleryStateMachine;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Barrage)
-	bool disableZAxis = true;
 
 	// flag to mark if enemy is idle or not
 	bool Idle = false;
@@ -125,7 +109,6 @@ public:
 	// this isn't gonna be thread safe but I honestly just want to try it out
 	UPROPERTY()
 	bool atDestination = false;
-	UFUNCTION(BlueprintGetter)
 	virtual bool RegistrationImplementation() override;
 	FVector3f FinalDestination;
 	FNavPathSharedPtr Path;
@@ -150,9 +133,7 @@ public:
 	//TODO: Revisit 2/20/25 --J
 	UFUNCTION(BlueprintCallable, Category = "Thistle")
 	virtual bool RotateMainGun(FRotator RotateTowards, ERelativeTransformSpace OperatingSpace);
-
-	UFUNCTION(BlueprintCallable, Category = "Movement")
-	void AddForce(FVector3f Force);
+	
 	UFUNCTION(BlueprintCallable, Category = "Movement")
 	bool MoveToPoint( FVector3f To);
 	FGenericTeamId myTeam = FGenericTeamId(7);
@@ -167,12 +148,6 @@ protected:
 public:	
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
-
-private:
-	UFUNCTION(BlueprintCallable, Category = Attributes)
-	float GetHealth();
-	
-	FSkeletonKey MyKey;
 };
 
 

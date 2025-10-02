@@ -8,35 +8,20 @@
 #include "UEventLogSystem.h"
 #include "Public/GameplayTags.h"
 
-void AThistleInject::OnDeath_Implementation()
-{
-	FinishDeath();
-}
 
-void AThistleInject::PostInitializeComponents()
-{
-	Super::PostInitializeComponents();
-	if (!IsDefaultSubobject())
-	{
-		LKeyCarry->AttemptRegister();
-	}
-}
 
-inline FSkeletonKey AThistleInject::GetMyKey() const
-{
-	return LKeyCarry->GetMyKey();
-}
+
 
 inline bool AThistleInject::RegistrationImplementation()
 {
+	Super::RegistrationImplementation();
 	if(ArtilleryStateMachine->MyDispatch)
 	{
 		LKeyCarry->AttemptRegister();
-		// FArtilleryRunAILocomotionFromDispatch Inbound;
-		// Inbound.BindUObject(this, &AThistleInject::LocomotionStateMachine); // this looks like it's not used...
+		
 		TMap<AttribKey, double> MyAttributes = TMap<AttribKey, double>();
-		MyAttributes.Add(HEALTH, 1000);
-		MyAttributes.Add(MAXHEALTH, 100);
+		MyAttributes.Add(HEALTH, 200);
+		MyAttributes.Add(MAXHEALTH, 200);
 		MyAttributes.Add(Attr::HealthRechargePerTick, 0);
 		MyAttributes.Add(MANA, 1000);
 		MyAttributes.Add(MAXMANA, 1000);
@@ -48,13 +33,13 @@ inline bool AThistleInject::RegistrationImplementation()
 		Attr3MapPtr VectorAttributes = MakeShareable(new Attr3Map());
 		VectorAttributes->Add(Attr3::AimVector, MakeShareable(new FConservedVector()));
 		VectorAttributes->Add(Attr3::FacingVector, MakeShareable(new FConservedVector()));
-		ArtilleryStateMachine->MyDispatch->RegisterVecAttribs(LKeyCarry->GetMyKey(), VectorAttributes);
+		ArtilleryStateMachine->MyDispatch->RegisterOrAddVecAttribs(LKeyCarry->GetMyKey(), VectorAttributes);
 
 		IdMapPtr MyRelationships = MakeShareable(new IdentityMap());
 		MyRelationships->Add(Ident::Target, MakeShareable(new FConservedAttributeKey()));
 		MyRelationships->Add(Ident::EquippedMainGun, MakeShareable(new FConservedAttributeKey()));
 		MyRelationships->Add(Ident::Squad, MakeShareable(new FConservedAttributeKey()));
-		ArtilleryStateMachine->MyDispatch->RegisterRelationships(LKeyCarry->GetMyKey(), MyRelationships);
+		ArtilleryStateMachine->MyDispatch->RegisterOrAddRelationships(LKeyCarry->GetMyKey(), MyRelationships);
 
 		ArtilleryStateMachine->MyTags->AddTag(TAG_Orders_Move_Needed);
 		ArtilleryStateMachine->MyTags->AddTag(TAG_Orders_Attack_Available);
@@ -78,18 +63,7 @@ void AThistleInject::FinishDeath()
 AThistleInject::AThistleInject(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
 	NavAgentProps.NavWalkingSearchHeightScale = FNavigationSystem::GetDefaultSupportedAgent().NavWalkingSearchHeightScale;
-	BarragePhysicsAgent = CreateDefaultSubobject<UBarrageAutoBox>(TEXT("Barrage Physics Agent"));
-	SetRootComponent(BarragePhysicsAgent);
-	ArtilleryStateMachine = CreateDefaultSubobject<UEnemyMachine>(TEXT("Artillery Enemy Machine"));
-	LKeyCarry = CreateDefaultSubobject<UKeyCarry>(TEXT("ActorKeyComponent"));
-	LKeyCarry->AttemptRegister();
-	this->DisableComponentsSimulatePhysics();
 	Attack = FGunKey();
-	UMeshComponent* Mesh = GetComponentByClass<UMeshComponent>();
-	if (Mesh != nullptr)
-	{
-		Mesh ->SetCollisionEnabled(ECollisionEnabled::Type::NoCollision);
-	}
 }
 
 const FNavAgentProperties& AThistleInject::GetNavAgentPropertiesRef() const
@@ -101,34 +75,9 @@ const FNavAgentProperties& AThistleInject::GetNavAgentPropertiesRef() const
 void AThistleInject::BeginPlay()
 {
 	Super::BeginPlay();
-	if(!IsDefaultSubobject())
+	if(EnemyType == Flyer)
 	{
-		AttemptRegister();
-		BarragePhysicsAgent->Register();
-		// No Chaos for you
-		this->DisableComponentsSimulatePhysics();
-		if(EnemyType == Flyer)
-		{
-			FBarragePrimitive::SetGravityFactor(0, BarragePhysicsAgent->MyBarrageBody);
-		}
-		
-		ArtilleryStateMachine->MyDispatch->REGISTER_ENTITY_FINAL_TICK_RESOLVER(GetMyKey());
-	}
-
-	UMeshComponent* Mesh = GetComponentByClass<UMeshComponent>();
-	if (Mesh != nullptr)
-	{
-		Mesh->AlwaysLoadOnClient = true;
-		Mesh->AlwaysLoadOnServer = true;
-		Mesh->bOwnerNoSee = false;
-		Mesh->bCastDynamicShadow = true;
-		Mesh->bAffectDynamicIndirectLighting = true;
-		Mesh->SetSimulatePhysics(false);
-		Mesh->bAlwaysCreatePhysicsState = false;
-		Mesh->PrimaryComponentTick.TickGroup = TG_PrePhysics;
-		Mesh->SetupAttachment(BarragePhysicsAgent);
-		Mesh->SetGenerateOverlapEvents(false);
-		Mesh->SetCanEverAffectNavigation(false);
+		FBarragePrimitive::SetGravityFactor(0, BarragePhysicsAgent->MyBarrageBody);
 	}
 	NavAgentProps.AgentRadius = BarragePhysicsAgent->DiameterXYZ.Size2D()/2;
 	NavAgentProps.AgentHeight = BarragePhysicsAgent->DiameterXYZ.Z;
@@ -172,11 +121,7 @@ bool AThistleInject::RotateMainGun(FRotator RotateTowards, ERelativeTransformSpa
 	return false;
 }
 
-void AThistleInject::AddForce(FVector3f Force)
-{
-	FVector3d FinalForce(Force.X, Force.Y, disableZAxis ? 0 : Force.Z);
-	FBarragePrimitive::ApplyForce(FinalForce, BarragePhysicsAgent->MyBarrageBody, AIMovement);
-}
+
 
 bool AThistleInject::MoveToPoint(FVector3f To)
 {
@@ -196,7 +141,8 @@ bool AThistleInject::MoveToPoint(FVector3f To)
 			if (!Start.ContainsNaN() && !Finish.ContainsNaN())
 			{
 				FPathFindingQuery Query(this, *NavData, Start, Finish);
-			
+				Query.SetAllowPartialPaths(true);
+
 				FPathFindingResult Result = NavSys->FindPathSync(Query);
 				if (Result.IsSuccessful())
 				{
@@ -322,7 +268,3 @@ void AThistleInject::Tick(float DeltaTime)
 	}
 }
 
-float AThistleInject::GetHealth()
-{
-	return ArtilleryStateMachine->MyDispatch->GetAttrib(GetMyKey(), HEALTH)->GetCurrentValue();
-}
