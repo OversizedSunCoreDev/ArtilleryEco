@@ -70,6 +70,7 @@ public class BarrageEditor : ModuleRules
 				"SlateCore",
 				"SkeletonKey",
 				"Barrage",
+				"DeveloperSettings",
 				"mimalloc"// <- add jolt dependecy here
 				// ... add private dependencies that you statically link with here ...	
 			}

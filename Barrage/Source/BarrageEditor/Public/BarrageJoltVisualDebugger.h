@@ -29,5 +29,4 @@ protected:
 #if UE_ENABLE_DEBUG_DRAWING
 	virtual FDebugRenderSceneProxy* CreateDebugSceneProxy() override;
 #endif
-
 };

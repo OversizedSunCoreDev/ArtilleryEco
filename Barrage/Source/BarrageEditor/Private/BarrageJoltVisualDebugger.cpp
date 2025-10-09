@@ -4,6 +4,7 @@
 #include "CoordinateUtils.h"
 #include "PrimitiveDrawingUtils.h"
 #include "PrimitiveSceneProxyDesc.h"
+#include "BarrageJoltVisualDebuggerSettings.h"
 
 // include all the shapes
 #include "Jolt/Physics/Collision/Shape/BoxShape.h"
@@ -21,6 +22,7 @@
 #include "Jolt/Physics/Collision/Shape/HeightFieldShape.h"
 #include "Jolt/Physics/Collision/Shape/StaticCompoundShape.h"
 #include "Jolt/Physics/Collision/Shape/MutableCompoundShape.h"
+#include "Jolt/Physics/Collision/Shape/TaperedCapsuleShape.h"
 
 // SOOOOOOOO
 // I really want to use the Jolt debug renderer, but it requires 
@@ -52,35 +54,31 @@
 // and we can extend them into the UE recording system if needed
 struct FDrawShapeCommand
 {
-	static const FColor JoltDebugColor;
 	FText DeubgText;
-	FColor Color;
 	FTransform Transform;
 	FDrawShapeCommand(FText InDebugText, FTransform Transform)
 		: DeubgText(InDebugText)
-		, Color(JoltDebugColor)
 		, Transform(Transform)
 	{
 	}
 
 	virtual ~FDrawShapeCommand() = default;
 	virtual void Draw(FPrimitiveDrawInterface* PDI) const = 0;
-};
 
-const FColor FDrawShapeCommand::JoltDebugColor = FColor::Orange;
+	FDrawShapeCommand(const FDrawShapeCommand&) = delete;
+	FDrawShapeCommand& operator=(const FDrawShapeCommand&) = delete;
+};
 
 struct DrawPointCommand : public FDrawShapeCommand
 {
-	float Size;
-	FColor Color;
 	DrawPointCommand(FTransform Transform)
 		: FDrawShapeCommand(NSLOCTEXT("joltbarrage", "point", "Empty"), Transform)
-		, Size(5.f)
-		, Color(JoltDebugColor)
 	{
 	}
 	virtual void Draw(FPrimitiveDrawInterface* PDI) const override
 	{
+		const auto Color = UBarrageJoltVisualDebuggerSettings::Get().GetPointColor();
+		const float Size = UBarrageJoltVisualDebuggerSettings::Get().GetPointSize();
 		PDI->DrawPoint(Transform.GetLocation(), Color, Size, SDPG_World);
 	}
 };
@@ -97,7 +95,9 @@ struct DrawSphereCommand : public FDrawShapeCommand
 	}
 	virtual void Draw(FPrimitiveDrawInterface* PDI) const override
 	{
-		DrawWireSphere(PDI, Transform.GetLocation(), Color, Radius, 2, SDPG_World, 1.f);
+		const auto Color = UBarrageJoltVisualDebuggerSettings::Get().GetSphereColliderColor();
+		const auto Thickness = UBarrageJoltVisualDebuggerSettings::Get().GetSphereColliderLineThickness();
+		DrawWireSphere(PDI, Transform.GetLocation(), Color, Radius, 2, SDPG_World, Thickness);
 	}
 };
 
@@ -111,8 +111,10 @@ struct DrawBoxCommand : public FDrawShapeCommand
 	}
 	virtual void Draw(FPrimitiveDrawInterface* PDI) const override
 	{
+		const auto Color = UBarrageJoltVisualDebuggerSettings::Get().GetBoxColliderColor();
+		const auto Thickness = UBarrageJoltVisualDebuggerSettings::Get().GetBoxColliderLineThickness();
 		FQuat BodyRotation = Transform.GetRotation();
-		DrawOrientedWireBox(PDI, Transform.GetLocation(), BodyRotation.GetRightVector(), BodyRotation.GetForwardVector(), BodyRotation.GetUpVector(), Extents, Color, SDPG_World, 1.f);
+		DrawOrientedWireBox(PDI, Transform.GetLocation(), BodyRotation.GetRightVector(), BodyRotation.GetForwardVector(), BodyRotation.GetUpVector(), Extents, Color, SDPG_World, Thickness);
 	}
 };
 
@@ -128,8 +130,30 @@ struct DrawCapsuleCommand : public FDrawShapeCommand
 	}
 	virtual void Draw(FPrimitiveDrawInterface* PDI) const override
 	{
+		const auto Color = UBarrageJoltVisualDebuggerSettings::Get().GetCapsuleColliderColor();
+		const auto Thickness = UBarrageJoltVisualDebuggerSettings::Get().GetCapsuleColliderLineThickness();
 		FQuat BodyRotation = Transform.GetRotation();
-		DrawWireCapsule(PDI, Transform.GetLocation(), BodyRotation.GetForwardVector(), BodyRotation.GetRightVector(), BodyRotation.GetUpVector(), Color, HalfHeight, Radius, 2, SDPG_World, 1.f);
+		DrawWireCapsule(PDI, Transform.GetLocation(), BodyRotation.GetForwardVector(), BodyRotation.GetRightVector(), BodyRotation.GetUpVector(), Color, HalfHeight, Radius, 2, SDPG_World, Thickness);
+	}
+};
+
+struct DrawTaperedCapsuleCommand : public FDrawShapeCommand
+{
+	float TopRadius;
+	float BottomRadius;
+	float HalfHeight;
+	DrawTaperedCapsuleCommand(FTransform Transform, const JPH::TaperedCapsuleShape* CapsuleShape)
+		: FDrawShapeCommand(NSLOCTEXT("joltbarrage", "taperedcapsule", "Tapered Capsule"), Transform)
+		, TopRadius(CoordinateUtils::JoltToRadius(CapsuleShape->GetTopRadius()))
+		, BottomRadius(CoordinateUtils::JoltToRadius(CapsuleShape->GetBottomRadius()))
+		, HalfHeight(CapsuleShape->GetHalfHeight()) //TODO: What is the conversion to UE?
+	{
+	}
+	virtual void Draw(FPrimitiveDrawInterface* PDI) const override
+	{
+		const auto Color = UBarrageJoltVisualDebuggerSettings::Get().GetCapsuleColliderColor();
+		FQuat BodyRotation = Transform.GetRotation();
+		DrawWireChoppedCone(PDI, Transform.GetLocation(), BodyRotation.GetForwardVector(), BodyRotation.GetRightVector(), BodyRotation.GetUpVector(), Color, HalfHeight, TopRadius, BottomRadius, 8, SDPG_World);
 	}
 };
 
@@ -145,8 +169,76 @@ struct DrawCylinderCommand : public FDrawShapeCommand
 	}
 	virtual void Draw(FPrimitiveDrawInterface* PDI) const override
 	{
+		const auto Color = UBarrageJoltVisualDebuggerSettings::Get().GetCapsuleColliderColor();
+		const auto Thickness = UBarrageJoltVisualDebuggerSettings::Get().GetCapsuleColliderLineThickness();
 		FQuat BodyRotation = Transform.GetRotation();
-		DrawWireCylinder(PDI, Transform.GetLocation(), BodyRotation.GetForwardVector(), BodyRotation.GetRightVector(), BodyRotation.GetUpVector(), Color, HalfHeight, Radius, 2, SDPG_World, 1.f);
+		DrawWireCylinder(PDI, Transform.GetLocation(), BodyRotation.GetForwardVector(), BodyRotation.GetRightVector(), BodyRotation.GetUpVector(), Color, HalfHeight, Radius, 2, SDPG_World, Thickness);
+	}
+};
+
+struct DrawTriangleCommand : public FDrawShapeCommand
+{
+	FVector Vertex0;
+	FVector Vertex1;
+	FVector Vertex2;
+	DrawTriangleCommand(FTransform Transform, const JPH::TriangleShape* TriangleShape)
+		: FDrawShapeCommand(NSLOCTEXT("joltbarrage", "triangle", "Triangle"), Transform)
+		// TODO: Verify winding order
+		, Vertex0(FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(TriangleShape->GetVertex1())))
+		, Vertex1(FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(TriangleShape->GetVertex2())))
+		, Vertex2(FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(TriangleShape->GetVertex3())))
+	{
+	}
+	virtual void Draw(FPrimitiveDrawInterface* PDI) const override
+	{
+		const auto Color = UBarrageJoltVisualDebuggerSettings::Get().GetTriangleMeshColliderColor();
+		const auto Thickness = UBarrageJoltVisualDebuggerSettings::Get().GetTriangleMeshColliderLineThickness();
+		PDI->DrawLine(Vertex0, Vertex1, Color, SDPG_World, Thickness);
+		PDI->DrawLine(Vertex1, Vertex2, Color, SDPG_World, Thickness);
+		PDI->DrawLine(Vertex2, Vertex0, Color, SDPG_World, Thickness);
+	}
+};
+
+struct DrawConvexHullCommand : public FDrawShapeCommand
+{
+	TArray<TStaticArray<FVector, 3>> Triangles;
+	DrawConvexHullCommand(FTransform Transform, const JPH::ConvexHullShape* ConvexHullShape)
+		: FDrawShapeCommand(NSLOCTEXT("joltbarrage", "convexhull", "Convex Hull"), Transform)
+	{
+		const auto Faces = ConvexHullShape->GetNumFaces();
+		Triangles.Reserve(Faces);
+		for (uint32 FaceIndex = 0; FaceIndex < Faces; ++FaceIndex)
+		{
+			const auto Vertices = ConvexHullShape->GetNumVerticesInFace(FaceIndex);
+			TArray<JPH::uint> FaceVertices;
+			FaceVertices.SetNum(Vertices);
+			const auto VerticesCollected = ConvexHullShape->GetFaceVertices(FaceIndex, Vertices, FaceVertices.GetData());
+			check(VerticesCollected == Vertices);
+			for (uint32 VertexIndex = 2U; VertexIndex < VerticesCollected; ++VertexIndex)
+			{
+				const auto Vertex0 = ConvexHullShape->GetPoint(FaceVertices[VertexIndex - 2]);
+				const auto Vertex1 = ConvexHullShape->GetPoint(FaceVertices[VertexIndex - 1]);
+				const auto Vertex2 = ConvexHullShape->GetPoint(FaceVertices[VertexIndex]);
+				TStaticArray<FVector, 3> Triangle = {
+					FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(Vertex0)),
+					FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(Vertex1)),
+					FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(Vertex2))
+				};
+				Triangles.Add(MoveTemp(Triangle));
+			}
+		}
+	}
+
+	virtual void Draw(FPrimitiveDrawInterface* PDI) const override
+	{
+		const auto Color = UBarrageJoltVisualDebuggerSettings::Get().GetConvexColliderColor();
+		const auto Thickness = UBarrageJoltVisualDebuggerSettings::Get().GetConvexColliderLineThickness();
+		for (const auto& Triangle : Triangles)
+		{
+			PDI->DrawLine(Triangle[0], Triangle[1], Color, SDPG_World, Thickness);
+			PDI->DrawLine(Triangle[1], Triangle[2], Color, SDPG_World, Thickness);
+			PDI->DrawLine(Triangle[2], Triangle[0], Color, SDPG_World, Thickness);
+		}
 	}
 };
 
@@ -191,6 +283,14 @@ void GatherScalarShapes(const FTransform& LocalToWorld, const JPH::Shape* BodySh
 			break;
 		}
 		case JPH::EShapeSubType::Triangle:
+		{
+			const JPH::TriangleShape* TriangleShape = reinterpret_cast<const JPH::TriangleShape*>(BodyShape);
+			if (TriangleShape != nullptr)
+			{
+				CollectedScalarShapes.Add(new DrawTriangleCommand(LocalToWorld, TriangleShape));
+			}
+			break;
+		}
 		case JPH::EShapeSubType::Capsule:
 		{
 			const JPH::CapsuleShape* CapsuleShape = reinterpret_cast<const JPH::CapsuleShape*>(BodyShape);
@@ -201,7 +301,14 @@ void GatherScalarShapes(const FTransform& LocalToWorld, const JPH::Shape* BodySh
 			break;
 		}
 		case JPH::EShapeSubType::TaperedCapsule:
+		{
+			const JPH::TaperedCapsuleShape* CapsuleShape = reinterpret_cast<const JPH::TaperedCapsuleShape*>(BodyShape);
+			if (CapsuleShape != nullptr)
+			{
+				CollectedScalarShapes.Add(new DrawTaperedCapsuleCommand(LocalToWorld, CapsuleShape));
+			}
 			break;
+		}
 		case JPH::EShapeSubType::Cylinder:
 		{
 			const JPH::CylinderShape* CylinderShape = reinterpret_cast<const JPH::CylinderShape*>(BodyShape);
@@ -212,6 +319,14 @@ void GatherScalarShapes(const FTransform& LocalToWorld, const JPH::Shape* BodySh
 			break;
 		}
 		case JPH::EShapeSubType::ConvexHull:
+		{
+			const JPH::ConvexHullShape* ConvexHullShape = reinterpret_cast<const JPH::ConvexHullShape*>(BodyShape);
+			if (ConvexHullShape != nullptr)
+			{
+				CollectedScalarShapes.Add(new DrawConvexHullCommand(LocalToWorld, ConvexHullShape));
+			}
+			break;
+		}
 			// TODO: Implement other convex shapes as needed
 		case JPH::EShapeSubType::UserConvex1:
 		case JPH::EShapeSubType::UserConvex2:
@@ -240,6 +355,17 @@ void GatherScalarShapes(const FTransform& LocalToWorld, const JPH::Shape* BodySh
 			const JPH::StaticCompoundShape* CompoundShape = reinterpret_cast<const JPH::StaticCompoundShape*>(BodyShape);
 			if (CompoundShape != nullptr)
 			{
+				const int32 ChildCount = CompoundShape->GetNumSubShapes();
+				JPH::Vec3 Scale3D = CoordinateUtils::ToJoltCoordinates(LocalToWorld.GetScale3D());
+				for (int32 ChildIndex = 0; ChildIndex < ChildCount; ++ChildIndex)
+				{
+					const auto& Sub = CompoundShape->GetSubShape(ChildIndex);
+					const auto T = Sub.GetLocalTransformNoScale(Scale3D);
+					FVector Position = FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(T.GetTranslation()));
+					FQuat Rotation = FBarragePrimitive::UpConvertFloatQuat(CoordinateUtils::FromJoltRotation(T.GetQuaternion()));
+					FTransform NewLocalToWorld = FTransform(Rotation, Position) * LocalToWorld;
+					GatherScalarShapes(NewLocalToWorld, Sub.mShape, CollectedScalarShapes);
+				}
 			}
 			break;
 		}
@@ -248,6 +374,17 @@ void GatherScalarShapes(const FTransform& LocalToWorld, const JPH::Shape* BodySh
 			const JPH::MutableCompoundShape* CompoundShape = reinterpret_cast<const JPH::MutableCompoundShape*>(BodyShape);
 			if (CompoundShape != nullptr)
 			{
+				const int32 ChildCount = CompoundShape->GetNumSubShapes();
+				JPH::Vec3 Scale3D = CoordinateUtils::ToJoltCoordinates(LocalToWorld.GetScale3D());
+				for (int32 ChildIndex = 0; ChildIndex < ChildCount; ++ChildIndex)
+				{
+					const auto& Sub = CompoundShape->GetSubShape(ChildIndex);
+					const auto T = Sub.GetLocalTransformNoScale(Scale3D);
+					FVector Position = FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(T.GetTranslation()));
+					FQuat Rotation = FBarragePrimitive::UpConvertFloatQuat(CoordinateUtils::FromJoltRotation(T.GetQuaternion()));
+					FTransform NewLocalToWorld = FTransform(Rotation, Position) * LocalToWorld;
+					GatherScalarShapes(NewLocalToWorld, Sub.mShape, CollectedScalarShapes);
+				}
 			}
 			break;
 		}
@@ -289,8 +426,9 @@ void GatherScalarShapes(const FTransform& LocalToWorld, const JPH::Shape* BodySh
 			const JPH::OffsetCenterOfMassShape* DecoratedShape = reinterpret_cast<const JPH::OffsetCenterOfMassShape*>(BodyShape);
 			if (DecoratedShape != nullptr)
 			{
-				// TODO: Add visualization for Center of Mass rendering.
-				GatherScalarShapes(LocalToWorld, DecoratedShape->GetInnerShape(), CollectedScalarShapes);
+				const FVector PositionOffset = FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(DecoratedShape->GetOffset()));
+				FTransform NewLocalToWorld = FTransform(PositionOffset) * LocalToWorld;
+				GatherScalarShapes(NewLocalToWorld, DecoratedShape->GetInnerShape(), CollectedScalarShapes);
 			}
 			break;
 		}
@@ -451,7 +589,7 @@ FDebugRenderSceneProxy* UBarrageJoltVisualDebugger::CreateDebugSceneProxy()
 			JPH::BodyIDVector RigidBodies;
 			TArray<const FDrawShapeCommand*> CollectedScalarShapes;
 
-			PhysicsSystem->GetActiveBodies(JPH::EBodyType::RigidBody, RigidBodies);
+			PhysicsSystem->GetBodies(RigidBodies);
 			for (const JPH::BodyID& BodyID : RigidBodies)
 			{
 
