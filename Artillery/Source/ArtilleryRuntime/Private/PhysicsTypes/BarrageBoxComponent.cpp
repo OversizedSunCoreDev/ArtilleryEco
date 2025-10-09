@@ -158,12 +158,12 @@ FPrimitiveSceneProxy* UBarrageBoxComponent::CreateSceneProxy()
 					const FLinearColor DrawColor = GetViewSelectionColor(UEBoxColor, *View, IsSelected(), IsHovered(), false, IsIndividuallySelected());
 
 					FPrimitiveDrawInterface* PDI = Collector.GetPDI(ViewIndex);
-					DrawOrientedWireBox(PDI, LocalToWorld.GetOrigin(), LocalToWorld.GetScaledAxis(EAxis::X), LocalToWorld.GetScaledAxis(EAxis::Y), LocalToWorld.GetScaledAxis(EAxis::Z), BoxExtents, DrawColor, SDPG_World, UELineThickness);
+					DrawOrientedWireBox(PDI, LocalToWorld.GetOrigin(), LocalToWorld.GetScaledAxis(EAxis::X), LocalToWorld.GetScaledAxis(EAxis::Y), LocalToWorld.GetScaledAxis(EAxis::Z), BoxExtents * 0.5f, DrawColor, SDPG_World, UELineThickness);
 					
 					if (bHasBarrageBody)
 					{
 						// Draw a ghost boxy thing at the position of the barrage body, it is assumed to be in world space already
-						DrawOrientedWireBox(PDI, FVector(BarragePosition), LocalToWorld.GetScaledAxis(EAxis::X), LocalToWorld.GetScaledAxis(EAxis::Y), LocalToWorld.GetScaledAxis(EAxis::Z), BoxExtents, BarrageColor, SDPG_World, BarrageLineThickness);
+						DrawOrientedWireBox(PDI, FVector(BarragePosition), LocalToWorld.GetScaledAxis(EAxis::X), LocalToWorld.GetScaledAxis(EAxis::Y), LocalToWorld.GetScaledAxis(EAxis::Z), BoxExtents * 0.5f, BarrageColor, SDPG_World, BarrageLineThickness);
 					}
 				}
 			}

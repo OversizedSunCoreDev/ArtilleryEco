@@ -106,15 +106,14 @@ struct DrawBoxCommand : public FDrawShapeCommand
 	FVector Extents;
 	DrawBoxCommand(FTransform Transform, const JPH::BoxShape* BoxShape)
 		: FDrawShapeCommand(NSLOCTEXT("joltbarrage", "box", "Box"), Transform)
-		, Extents(FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(BoxShape->GetHalfExtent())) * 2.f) // Jolt boxes are half extents
+		, Extents(FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(BoxShape->GetHalfExtent()))) // Jolt boxes are half extents
 	{
 	}
 	virtual void Draw(FPrimitiveDrawInterface* PDI) const override
 	{
 		const auto Color = UBarrageJoltVisualDebuggerSettings::Get().GetBoxColliderColor();
 		const auto Thickness = UBarrageJoltVisualDebuggerSettings::Get().GetBoxColliderLineThickness();
-		FQuat BodyRotation = Transform.GetRotation();
-		DrawOrientedWireBox(PDI, Transform.GetLocation(), BodyRotation.GetRightVector(), BodyRotation.GetForwardVector(), BodyRotation.GetUpVector(), Extents, Color, SDPG_World, Thickness);
+		DrawOrientedWireBox(PDI, Transform.GetLocation(), Transform.GetScaledAxis(EAxis::X), Transform.GetScaledAxis(EAxis::Y), Transform.GetScaledAxis(EAxis::Z), Extents, Color, SDPG_World, Thickness);
 	}
 };
 
