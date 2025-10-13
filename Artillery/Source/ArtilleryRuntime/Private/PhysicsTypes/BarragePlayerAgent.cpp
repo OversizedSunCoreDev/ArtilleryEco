@@ -447,3 +447,85 @@ bool UBarragePlayerAgent::CalculateAimVector(
 	}
 	return false;
 }
+
+FPrimitiveSceneProxy* UBarragePlayerAgent::CreateSceneProxy()
+{
+	class FMySceneProxy final : public FPrimitiveSceneProxy
+	{
+	public:
+		SIZE_T GetTypeHash() const override
+		{
+			static size_t UniquePointer;
+			return reinterpret_cast<size_t>(&UniquePointer);
+		}
+
+		FMySceneProxy(const UBarragePlayerAgent* InComponent)
+			: FPrimitiveSceneProxy(InComponent)
+			, CapsuleRadius(InComponent->radius)
+			, CapsuleHalfHeight(InComponent->extent)
+			, bHasBarrageBody(InComponent->MyBarrageBody.IsValid())
+			, BarragePosition(FBarragePrimitive::GetPosition(InComponent->MyBarrageBody))
+		{
+			bWillEverBeLit = false;
+		}
+
+		virtual void GetDynamicMeshElements(const TArray<const FSceneView*>& Views, const FSceneViewFamily& ViewFamily, uint32 VisibilityMap, FMeshElementCollector& Collector) const override
+		{
+			QUICK_SCOPE_CYCLE_COUNTER(STAT_GetDynamicMeshElements_DrawDynamicElements);
+
+			static constexpr FColor UEBoxColor(128, 255, 128);
+			static constexpr FColor BarrageColor(19, 240, 255);
+			static constexpr float UELineThickness = 1.0f;
+			static constexpr float BarrageLineThickness = .8f;
+
+			const FMatrix& LocalToWorld = GetLocalToWorld();
+			const int32 CapsuleSides = FMath::Clamp<int32>(CapsuleRadius / 4.f, 16, 64);
+
+			for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ViewIndex++)
+			{
+
+				if (VisibilityMap & (1 << ViewIndex))
+				{
+					const FSceneView* View = Views[ViewIndex];
+					const FLinearColor DrawCapsuleColor = GetViewSelectionColor(UEBoxColor, *View, IsSelected(), IsHovered(), false, IsIndividuallySelected());
+
+					FPrimitiveDrawInterface* PDI = Collector.GetPDI(ViewIndex);
+					DrawWireCapsule(PDI, LocalToWorld.GetOrigin(), LocalToWorld.GetUnitAxis(EAxis::X), LocalToWorld.GetUnitAxis(EAxis::Y), LocalToWorld.GetUnitAxis(EAxis::Z), DrawCapsuleColor, CapsuleRadius, CapsuleHalfHeight, CapsuleSides, SDPG_World, UELineThickness);
+					if (bHasBarrageBody)
+					{
+						DrawWireCapsule(PDI, FVector(BarragePosition), LocalToWorld.GetUnitAxis(EAxis::X), LocalToWorld.GetUnitAxis(EAxis::Y), LocalToWorld.GetUnitAxis(EAxis::Z), BarrageColor, CapsuleRadius, CapsuleHalfHeight, CapsuleSides, SDPG_World, BarrageLineThickness);
+					}
+				}
+			}
+		}
+
+		virtual FPrimitiveViewRelevance GetViewRelevance(const FSceneView* View) const override
+		{
+			// Should we draw this because collision drawing is enabled, and we have collision
+			const bool bShowForCollision = View->Family->EngineShowFlags.Collision && IsCollisionEnabled();
+
+			FPrimitiveViewRelevance Result;
+			Result.bDrawRelevance = IsShown(View) || bShowForCollision;
+			Result.bDynamicRelevance = true;
+			Result.bShadowRelevance = IsShadowCast(View);
+			Result.bEditorPrimitiveRelevance = UseEditorCompositing(View);
+			return Result;
+		}
+		virtual uint32 GetMemoryFootprint(void) const override { return(sizeof(*this) + GetAllocatedSize()); }
+		uint32 GetAllocatedSize(void) const { return(FPrimitiveSceneProxy::GetAllocatedSize()); }
+
+	private:
+		const float		CapsuleRadius;
+		const float		CapsuleHalfHeight;
+		const uint32	bHasBarrageBody : 1;
+		const FVector3f	BarragePosition;
+	};
+
+	return new FMySceneProxy(this);
+}
+
+FBoxSphereBounds UBarragePlayerAgent::CalcBounds(const FTransform& LocalToWorld) const
+{
+	FVector BoxPoint = FVector(radius, radius, extent);
+	return FBoxSphereBounds(FVector::ZeroVector, BoxPoint, extent).TransformBy(LocalToWorld);
+}

@@ -241,6 +241,65 @@ struct DrawConvexHullCommand : public FDrawShapeCommand
 	}
 };
 
+struct DrawMeshCommand : public FDrawShapeCommand
+{
+	TArray<TStaticArray<FVector, 3>> Triangles;
+	DrawMeshCommand(FTransform Transform, const JPH::MeshShape* MeshShape)
+		: FDrawShapeCommand(NSLOCTEXT("joltbarrage", "mesh", "Mesh"), Transform)
+	{
+		JPH::Shape::GetTrianglesContext TriContext;
+		MeshShape->GetTrianglesStart(
+			TriContext,
+			JPH::AABox::sBiggest(), // we want all triangles
+			JPH::Vec3::sZero(),   // position COM
+			JPH::Quat::sIdentity(), // rotation
+			JPH::Vec3::sReplicate(1.0f) // scale
+		);
+
+		// grab like 256 triangles at a time
+		TStaticArray<JPH::Float3, 3 * 256> RawTriangles;
+		while(true)
+		{
+			const int32 TrianglesFetched = MeshShape->GetTrianglesNext(TriContext, 256, RawTriangles.GetData());
+			if (TrianglesFetched <= 0)
+			{
+				break;
+			}
+			for (int32 TriangleIndex = 0; TriangleIndex < TrianglesFetched; ++TriangleIndex)
+			{
+				const int32 BaseIndex = TriangleIndex * 3;
+				
+				const auto Vertex0 = JPH::Vec3(RawTriangles[BaseIndex + 0]);
+				const auto Vertex1 = JPH::Vec3(RawTriangles[BaseIndex + 1]);
+				const auto Vertex2 = JPH::Vec3(RawTriangles[BaseIndex + 2]);
+
+				TStaticArray<FVector, 3> Triangle = {
+					FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(Vertex0)),
+					FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(Vertex1)),
+					FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(Vertex2))
+				};
+				Triangles.Add(MoveTemp(Triangle));
+			}
+		}
+		
+	}
+	virtual void Draw(FPrimitiveDrawInterface* PDI) const override
+	{
+		const auto Color = UBarrageJoltVisualDebuggerSettings::Get().GetTriangleMeshColliderColor();
+		const auto Thickness = UBarrageJoltVisualDebuggerSettings::Get().GetTriangleMeshColliderLineThickness();
+		for (const auto& Triangle : Triangles)
+		{
+			const TStaticArray<FVector, 3> WorldTriangle = {
+				Transform.TransformPosition(Triangle[0]),
+				Transform.TransformPosition(Triangle[1]),
+				Transform.TransformPosition(Triangle[2])
+			};
+			PDI->DrawLine(WorldTriangle[0], WorldTriangle[1], Color, SDPG_World, Thickness);
+			PDI->DrawLine(WorldTriangle[1], WorldTriangle[2], Color, SDPG_World, Thickness);
+			PDI->DrawLine(WorldTriangle[2], WorldTriangle[0], Color, SDPG_World, Thickness);
+		}
+	}
+};
 
 // This macro function will log the debug message of the shape type and sub shape type
 #ifndef LOG_UNHANDLED_SHAPE_SUB_SHAPE
@@ -442,6 +501,14 @@ void GatherScalarShapes(const FTransform& LocalToWorld, const JPH::Shape* BodySh
 		switch (ShapeSubType)
 		{
 		case JPH::EShapeSubType::Mesh:
+		{
+			const JPH::MeshShape* MeshShape = reinterpret_cast<const JPH::MeshShape*>(BodyShape);
+			if (MeshShape != nullptr)
+			{
+				CollectedScalarShapes.Add(new DrawMeshCommand(LocalToWorld, MeshShape));
+			}
+			break;
+		}
 		default:
 			// Unknown mesh shape subtype
 			LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
@@ -570,8 +637,11 @@ FDebugRenderSceneProxy* UBarrageJoltVisualDebugger::CreateDebugSceneProxy()
 
 		virtual FPrimitiveViewRelevance GetViewRelevance(const FSceneView* View) const override
 		{
+			// Assume Collision is always enabled
+			bool bShowForCollision = View->Family->EngineShowFlags.Collision;
+
 			FPrimitiveViewRelevance Result;
-			Result.bDrawRelevance = IsShown(View);
+			Result.bDrawRelevance = IsShown(View) && bShowForCollision;
 			Result.bDynamicRelevance = true;
 			// ideally the TranslucencyRelevance should be filled out by the material, here we do it conservative
 			Result.bSeparateTranslucency = Result.bNormalTranslucency = IsShown(View);

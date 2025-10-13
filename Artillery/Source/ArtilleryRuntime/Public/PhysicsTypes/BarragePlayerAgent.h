@@ -181,6 +181,12 @@ public:
 
 	bool CalculateAimVector(const ActorKey& ActorsKey, const FVector3d& ActorLocation, const FVector& Direction, FVector& OutTargetAimAtLocation, FSkeletonKey& TargetKey, AActor*& TargetActor) const;
 	
+	/**
+	* Rendering shape visualization.
+	**/
+	virtual FPrimitiveSceneProxy* CreateSceneProxy() override;
+	virtual FBoxSphereBounds CalcBounds(const FTransform& LocalToWorld) const override;
+
 protected:
 	UPROPERTY(BlueprintReadOnly)
 	FVector CHAOS_LastGameFrameRightVector = FVector::ZeroVector;
