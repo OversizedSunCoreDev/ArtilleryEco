@@ -584,7 +584,8 @@ UBarrageJoltVisualDebugger::UBarrageJoltVisualDebugger()
 FBoxSphereBounds UBarrageJoltVisualDebugger::CalcBounds(const FTransform& LocalToWorld) const
 {
 	// This component is global, so just return a huge bounds
-	return FBoxSphereBounds(FVector::ZeroVector, FVector(1000000.f), 1000000.f);
+	const FVector BoxExtent(HALF_WORLD_MAX);
+	return FBoxSphereBounds(FVector::ZeroVector, BoxExtent, BoxExtent.Size());
 }
 
 // TODO:
@@ -654,43 +655,37 @@ FDebugRenderSceneProxy* UBarrageJoltVisualDebugger::CreateDebugSceneProxy()
 
 			FDebugRenderSceneProxy::GetDynamicMeshElements(Views, ViewFamily, VisibilityMap, Collector);
 
-			// Get a lock to get a list of all the bodies in the JOLT simulation
 			JPH::BodyIDVector RigidBodies;
 			TArray<const FDrawShapeCommand*> CollectedScalarShapes;
-
-			PhysicsSystem->GetBodies(RigidBodies);
-			for (const JPH::BodyID& BodyID : RigidBodies)
 			{
-
-				FTransform LocalToWorld = FTransform::Identity;
+				QUICK_SCOPE_CYCLE_COUNTER(STAT_BarrageJolt_GetDynamicMeshElements_GetBodies);
+				PhysicsSystem->GetBodies(RigidBodies);
+				TArray<TArray<const FDrawShapeCommand*>> ThreadShapeArrays;
+				ThreadShapeArrays.SetNum(RigidBodies.size());
+				ParallelFor(RigidBodies.size(), [this, &RigidBodies, &ThreadShapeArrays](int32 BodyIndex)
 				{
-					JPH::BodyLockRead BodyReadLock(PhysicsSystem->GetBodyLockInterface(), BodyID);
-					if (BodyReadLock.Succeeded())
-					{
-						const JPH::Body& Body = BodyReadLock.GetBody();
-						FVector BodyPosition = FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(Body.GetPosition()));
-						FQuat BodyRotation = FBarragePrimitive::UpConvertFloatQuat(CoordinateUtils::FromJoltRotation(Body.GetRotation()));
-
-						LocalToWorld = FTransform(BodyRotation, BodyPosition);
-						GatherScalarShapes(LocalToWorld, Body.GetShape(), CollectedScalarShapes);
-
-					}
+					GatherBodyShapeCommands(RigidBodies[BodyIndex], ThreadShapeArrays[BodyIndex]);
+				});
+				for (const TArray<const FDrawShapeCommand*>& LocalArray : ThreadShapeArrays)
+				{
+					CollectedScalarShapes.Append(LocalArray);
 				}
 			}
-
-			for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ViewIndex++)
 			{
-				if (VisibilityMap & (1 << ViewIndex))
+				QUICK_SCOPE_CYCLE_COUNTER(STAT_BarrageJolt_GetDynamicMeshElements_DrawViews);
+				for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ViewIndex++)
 				{
-					const FSceneView* View = Views[ViewIndex];
-
-					FPrimitiveDrawInterface* PDI = Collector.GetPDI(ViewIndex);
-					for (const FDrawShapeCommand* DrawCommand : CollectedScalarShapes)
+					if (VisibilityMap & (1 << ViewIndex))
 					{
-						if (DrawCommand != nullptr)
+						const FSceneView* View = Views[ViewIndex];
+						FPrimitiveDrawInterface* PDI = Collector.GetPDI(ViewIndex);
+						for (const FDrawShapeCommand* DrawCommand : CollectedScalarShapes)
 						{
-							DrawCommand->Draw(PDI);
-							delete DrawCommand;
+							if (DrawCommand != nullptr)
+							{
+								DrawCommand->Draw(PDI);
+								delete DrawCommand;
+							}
 						}
 					}
 				}
@@ -708,6 +703,20 @@ FDebugRenderSceneProxy* UBarrageJoltVisualDebugger::CreateDebugSceneProxy()
 
 	private:
 		TSharedPtr<JPH::PhysicsSystem> PhysicsSystem;
+
+		void GatherBodyShapeCommands(const JPH::BodyID& BodyID, TArray<const FDrawShapeCommand*>& OutShapeCommands) const
+		{
+			FTransform LocalToWorld = FTransform::Identity;
+			JPH::BodyLockRead BodyReadLock(PhysicsSystem->GetBodyLockInterface(), BodyID);
+			if (BodyReadLock.Succeeded())
+			{
+				const JPH::Body& Body = BodyReadLock.GetBody();
+				FVector BodyPosition = FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(Body.GetPosition()));
+				FQuat BodyRotation = FBarragePrimitive::UpConvertFloatQuat(CoordinateUtils::FromJoltRotation(Body.GetRotation()));
+				LocalToWorld = FTransform(BodyRotation, BodyPosition);
+				GatherScalarShapes(LocalToWorld, Body.GetShape(), OutShapeCommands);
+			}
+		}
 	};
 
 	return new FProxy(this, PhysicsSystem);
