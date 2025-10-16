@@ -4,6 +4,11 @@
 #include "CoordinateUtils.h"
 #include "PrimitiveDrawingUtils.h"
 #include "PrimitiveSceneProxyDesc.h"
+#include "Misc/ScopeLock.h"
+#include "DynamicMeshBuilder.h"
+#include "SceneView.h"
+#include "UObject/UObjectIterator.h"
+#include "StaticMeshResources.h"
 #include "BarrageJoltVisualDebuggerSettings.h"
 
 // include all the shapes
@@ -63,6 +68,10 @@ struct FDrawShapeCommand
 	}
 
 	virtual ~FDrawShapeCommand() = default;
+
+	/**
+	* Occurs in render thread
+	**/
 	virtual void Draw(FPrimitiveDrawInterface* PDI) const = 0;
 
 	FDrawShapeCommand(const FDrawShapeCommand&) = delete;
@@ -241,343 +250,21 @@ struct DrawConvexHullCommand : public FDrawShapeCommand
 	}
 };
 
-struct DrawMeshCommand : public FDrawShapeCommand
-{
-	TArray<TStaticArray<FVector, 3>> Triangles;
-	DrawMeshCommand(FTransform Transform, const JPH::MeshShape* MeshShape)
-		: FDrawShapeCommand(NSLOCTEXT("joltbarrage", "mesh", "Mesh"), Transform)
-	{
-		JPH::Shape::GetTrianglesContext TriContext;
-		MeshShape->GetTrianglesStart(
-			TriContext,
-			JPH::AABox::sBiggest(), // we want all triangles
-			JPH::Vec3::sZero(),   // position COM
-			JPH::Quat::sIdentity(), // rotation
-			JPH::Vec3::sReplicate(1.0f) // scale
-		);
-
-		// grab like 256 triangles at a time
-		TStaticArray<JPH::Float3, 3 * 256> RawTriangles;
-		while(true)
-		{
-			const int32 TrianglesFetched = MeshShape->GetTrianglesNext(TriContext, 256, RawTriangles.GetData());
-			if (TrianglesFetched <= 0)
-			{
-				break;
-			}
-			for (int32 TriangleIndex = 0; TriangleIndex < TrianglesFetched; ++TriangleIndex)
-			{
-				const int32 BaseIndex = TriangleIndex * 3;
-				
-				const auto Vertex0 = JPH::Vec3(RawTriangles[BaseIndex + 0]);
-				const auto Vertex1 = JPH::Vec3(RawTriangles[BaseIndex + 1]);
-				const auto Vertex2 = JPH::Vec3(RawTriangles[BaseIndex + 2]);
-
-				TStaticArray<FVector, 3> Triangle = {
-					FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(Vertex0)),
-					FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(Vertex1)),
-					FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(Vertex2))
-				};
-				Triangles.Add(MoveTemp(Triangle));
-			}
-		}
-		
-	}
-	virtual void Draw(FPrimitiveDrawInterface* PDI) const override
-	{
-		const auto Color = UBarrageJoltVisualDebuggerSettings::Get().GetTriangleMeshColliderColor();
-		const auto Thickness = UBarrageJoltVisualDebuggerSettings::Get().GetTriangleMeshColliderLineThickness();
-		for (const auto& Triangle : Triangles)
-		{
-			const TStaticArray<FVector, 3> WorldTriangle = {
-				Transform.TransformPosition(Triangle[0]),
-				Transform.TransformPosition(Triangle[1]),
-				Transform.TransformPosition(Triangle[2])
-			};
-			PDI->DrawLine(WorldTriangle[0], WorldTriangle[1], Color, SDPG_World, Thickness);
-			PDI->DrawLine(WorldTriangle[1], WorldTriangle[2], Color, SDPG_World, Thickness);
-			PDI->DrawLine(WorldTriangle[2], WorldTriangle[0], Color, SDPG_World, Thickness);
-		}
-	}
-};
-
 // This macro function will log the debug message of the shape type and sub shape type
 #ifndef LOG_UNHANDLED_SHAPE_SUB_SHAPE
 #define LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType) \
 	UE_LOG(LogTemp, Warning, TEXT("BarrageJoltVisualDebugger: Encountered unknown shape type %d and sub shape type %s, cannot visualize"), static_cast<int32>(ShapeType), *FString(JPH::sSubShapeTypeNames[static_cast<int32>(ShapeSubType)]));
 #endif
-// Helper recursive function to decompose BodyShapes to a core set of "scalar" shapes that we can draw
-void GatherScalarShapes(const FTransform& LocalToWorld, const JPH::Shape* BodyShape, TArray<const FDrawShapeCommand*>& CollectedScalarShapes)
-{
-	if (BodyShape == nullptr)
-	{
-		return;
-	}
-
-	const JPH::EShapeType ShapeType = BodyShape->GetType();
-	const JPH::EShapeSubType ShapeSubType = BodyShape->GetSubType();
-
-	switch (ShapeType)
-	{
-	case JPH::EShapeType::Convex:
-		switch (ShapeSubType)
-		{
-		case JPH::EShapeSubType::Sphere:
-		{
-			const JPH::SphereShape* SphereShape = reinterpret_cast<const JPH::SphereShape*>(BodyShape);
-			if (SphereShape != nullptr)
-			{
-				CollectedScalarShapes.Add(new DrawSphereCommand(LocalToWorld, SphereShape));
-			}
-			break;
-		}
-		case JPH::EShapeSubType::Box:
-		{
-			const JPH::BoxShape* BoxShape = reinterpret_cast<const JPH::BoxShape*>(BodyShape);
-			if (BoxShape != nullptr)
-			{
-				CollectedScalarShapes.Add(new DrawBoxCommand(LocalToWorld, BoxShape));
-			}
-			break;
-		}
-		case JPH::EShapeSubType::Triangle:
-		{
-			const JPH::TriangleShape* TriangleShape = reinterpret_cast<const JPH::TriangleShape*>(BodyShape);
-			if (TriangleShape != nullptr)
-			{
-				CollectedScalarShapes.Add(new DrawTriangleCommand(LocalToWorld, TriangleShape));
-			}
-			break;
-		}
-		case JPH::EShapeSubType::Capsule:
-		{
-			const JPH::CapsuleShape* CapsuleShape = reinterpret_cast<const JPH::CapsuleShape*>(BodyShape);
-			if (CapsuleShape != nullptr)
-			{
-				CollectedScalarShapes.Add(new DrawCapsuleCommand(LocalToWorld, CapsuleShape));
-			}
-			break;
-		}
-		case JPH::EShapeSubType::TaperedCapsule:
-		{
-			const JPH::TaperedCapsuleShape* CapsuleShape = reinterpret_cast<const JPH::TaperedCapsuleShape*>(BodyShape);
-			if (CapsuleShape != nullptr)
-			{
-				CollectedScalarShapes.Add(new DrawTaperedCapsuleCommand(LocalToWorld, CapsuleShape));
-			}
-			break;
-		}
-		case JPH::EShapeSubType::Cylinder:
-		{
-			const JPH::CylinderShape* CylinderShape = reinterpret_cast<const JPH::CylinderShape*>(BodyShape);
-			if (CylinderShape != nullptr)
-			{
-				CollectedScalarShapes.Add(new DrawCylinderCommand(LocalToWorld, CylinderShape));
-			}
-			break;
-		}
-		case JPH::EShapeSubType::ConvexHull:
-		{
-			const JPH::ConvexHullShape* ConvexHullShape = reinterpret_cast<const JPH::ConvexHullShape*>(BodyShape);
-			if (ConvexHullShape != nullptr)
-			{
-				CollectedScalarShapes.Add(new DrawConvexHullCommand(LocalToWorld, ConvexHullShape));
-			}
-			break;
-		}
-			// TODO: Implement other convex shapes as needed
-		case JPH::EShapeSubType::UserConvex1:
-		case JPH::EShapeSubType::UserConvex2:
-		case JPH::EShapeSubType::UserConvex3:
-		case JPH::EShapeSubType::UserConvex4:
-		case JPH::EShapeSubType::UserConvex5:
-		case JPH::EShapeSubType::UserConvex6:
-		case JPH::EShapeSubType::UserConvex7:
-		case JPH::EShapeSubType::UserConvex8:
-			// These are convex shapes we don't yet support drawing
-			LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
-			CollectedScalarShapes.Add(new DrawPointCommand(LocalToWorld));
-			break;
-		default:
-			// Unknown convex shape subtype
-			LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
-			CollectedScalarShapes.Add(new DrawPointCommand(LocalToWorld));
-			break;
-		}
-		break;
-	case JPH::EShapeType::Compound:
-		switch (ShapeSubType)
-		{
-		case JPH::EShapeSubType::StaticCompound:
-		{
-			const JPH::StaticCompoundShape* CompoundShape = reinterpret_cast<const JPH::StaticCompoundShape*>(BodyShape);
-			if (CompoundShape != nullptr)
-			{
-				const int32 ChildCount = CompoundShape->GetNumSubShapes();
-				JPH::Vec3 Scale3D = CoordinateUtils::ToJoltCoordinates(LocalToWorld.GetScale3D());
-				for (int32 ChildIndex = 0; ChildIndex < ChildCount; ++ChildIndex)
-				{
-					const auto& Sub = CompoundShape->GetSubShape(ChildIndex);
-					const auto T = Sub.GetLocalTransformNoScale(Scale3D);
-					FVector Position = FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(T.GetTranslation()));
-					FQuat Rotation = FBarragePrimitive::UpConvertFloatQuat(CoordinateUtils::FromJoltRotation(T.GetQuaternion()));
-					FTransform NewLocalToWorld = FTransform(Rotation, Position) * LocalToWorld;
-					GatherScalarShapes(NewLocalToWorld, Sub.mShape, CollectedScalarShapes);
-				}
-			}
-			break;
-		}
-		case JPH::EShapeSubType::MutableCompound:
-		{
-			const JPH::MutableCompoundShape* CompoundShape = reinterpret_cast<const JPH::MutableCompoundShape*>(BodyShape);
-			if (CompoundShape != nullptr)
-			{
-				const int32 ChildCount = CompoundShape->GetNumSubShapes();
-				JPH::Vec3 Scale3D = CoordinateUtils::ToJoltCoordinates(LocalToWorld.GetScale3D());
-				for (int32 ChildIndex = 0; ChildIndex < ChildCount; ++ChildIndex)
-				{
-					const auto& Sub = CompoundShape->GetSubShape(ChildIndex);
-					const auto T = Sub.GetLocalTransformNoScale(Scale3D);
-					FVector Position = FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(T.GetTranslation()));
-					FQuat Rotation = FBarragePrimitive::UpConvertFloatQuat(CoordinateUtils::FromJoltRotation(T.GetQuaternion()));
-					FTransform NewLocalToWorld = FTransform(Rotation, Position) * LocalToWorld;
-					GatherScalarShapes(NewLocalToWorld, Sub.mShape, CollectedScalarShapes);
-				}
-			}
-			break;
-		}
-		default:
-			// Unknown convex shape subtype
-			LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
-			CollectedScalarShapes.Add(new DrawPointCommand(LocalToWorld));
-			break;
-		}
-		break;
-	case JPH::EShapeType::Decorated:
-		switch (ShapeSubType)
-		{
-		case JPH::EShapeSubType::RotatedTranslated:
-		{
-			const JPH::RotatedTranslatedShape* DecoratedShape = reinterpret_cast<const JPH::RotatedTranslatedShape*>(BodyShape);
-			if (DecoratedShape != nullptr)
-			{
-				FVector Position = FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(DecoratedShape->GetPosition()));
-				FQuat Rotation = FBarragePrimitive::UpConvertFloatQuat(CoordinateUtils::FromJoltRotation(DecoratedShape->GetRotation()));
-				FTransform NewLocalToWorld = FTransform(Rotation, Position) * LocalToWorld;
-				GatherScalarShapes(NewLocalToWorld, DecoratedShape->GetInnerShape(), CollectedScalarShapes);
-			}
-			break;
-		}
-		case JPH::EShapeSubType::Scaled:
-		{
-			const JPH::ScaledShape* DecoratedShape = reinterpret_cast<const JPH::ScaledShape*>(BodyShape);
-			if (DecoratedShape != nullptr)
-			{
-				FVector Scale = FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(DecoratedShape->GetScale()));
-				FTransform NewLocalToWorld = FTransform(FQuat::Identity, FVector::ZeroVector, Scale) * LocalToWorld;
-				GatherScalarShapes(NewLocalToWorld, DecoratedShape->GetInnerShape(), CollectedScalarShapes);
-			}
-			break;
-		}
-		case JPH::EShapeSubType::OffsetCenterOfMass:
-		{
-			const JPH::OffsetCenterOfMassShape* DecoratedShape = reinterpret_cast<const JPH::OffsetCenterOfMassShape*>(BodyShape);
-			if (DecoratedShape != nullptr)
-			{
-				const FVector PositionOffset = FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(DecoratedShape->GetOffset()));
-				FTransform NewLocalToWorld = FTransform(PositionOffset) * LocalToWorld;
-				GatherScalarShapes(NewLocalToWorld, DecoratedShape->GetInnerShape(), CollectedScalarShapes);
-			}
-			break;
-		}
-		default:
-			// Unknown decorator shape subtype
-			LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
-			CollectedScalarShapes.Add(new DrawPointCommand(LocalToWorld));
-			break;
-		}
-		break;
-	case JPH::EShapeType::Mesh:
-		switch (ShapeSubType)
-		{
-		case JPH::EShapeSubType::Mesh:
-		{
-			const JPH::MeshShape* MeshShape = reinterpret_cast<const JPH::MeshShape*>(BodyShape);
-			if (MeshShape != nullptr)
-			{
-				CollectedScalarShapes.Add(new DrawMeshCommand(LocalToWorld, MeshShape));
-			}
-			break;
-		}
-		default:
-			// Unknown mesh shape subtype
-			LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
-			CollectedScalarShapes.Add(new DrawPointCommand(LocalToWorld));
-			break;
-		}
-		break;
-	case JPH::EShapeType::HeightField:
-		switch (ShapeSubType)
-		{
-		case JPH::EShapeSubType::HeightField:
-		default:
-			// Unknown heightfield shape subtype
-			LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
-			CollectedScalarShapes.Add(new DrawPointCommand(LocalToWorld));
-			break;
-		}
-		break;
-	case JPH::EShapeType::SoftBody:
-		switch (ShapeSubType)
-		{
-		case JPH::EShapeSubType::SoftBody:
-		default:
-			// Unknown softbody shape subtype
-			LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
-			CollectedScalarShapes.Add(new DrawPointCommand(LocalToWorld));
-			break;
-		}
-		break;
-	case JPH::EShapeType::Plane:
-		switch (ShapeSubType)
-		{
-		case JPH::EShapeSubType::Plane:
-		default:
-			LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
-			break;
-		}
-		break;
-	case JPH::EShapeType::Empty:
-		switch (ShapeSubType)
-		{
-		case JPH::EShapeSubType::Empty:
-			CollectedScalarShapes.Add(new DrawPointCommand(LocalToWorld));
-			break;
-		default:
-			LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
-			break;
-		}
-		break;
-	case JPH::EShapeType::User1:
-	case JPH::EShapeType::User2:
-	case JPH::EShapeType::User3:
-	case JPH::EShapeType::User4:
-		// These are user defined shapes, we don't know how to draw them
-		LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
-		CollectedScalarShapes.Add(new DrawPointCommand(LocalToWorld));
-		break;
-	default:
-		// Unknown shape type
-		LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
-		CollectedScalarShapes.Add(new DrawPointCommand(LocalToWorld));
-		break;
-	}
-}
-
-
 
 UBarrageJoltVisualDebugger::UBarrageJoltVisualDebugger()
 {
+	PrimaryComponentTick.bCanEverTick = true; // Always mark render state dirty for simulation updates.
+}
+
+void UBarrageJoltVisualDebugger::TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+	MarkRenderStateDirty();
 }
 
 
@@ -634,6 +321,32 @@ FDebugRenderSceneProxy* UBarrageJoltVisualDebugger::CreateDebugSceneProxy()
 			bIsAlwaysVisible = true;
 			DrawType = EDrawType::SolidAndWireMeshes;
 			ViewFlagName = TEXT("BarrageJolt");
+			// idk spawn a thread that updates stuff
+
+			JPH::BodyIDVector RigidBodies;
+			{
+				QUICK_SCOPE_CYCLE_COUNTER(STAT_BarrageJolt_GetDynamicMeshElements_GetBodies);
+				PhysicsSystem->GetBodies(RigidBodies);
+				TArray<TArray<const FDrawShapeCommand*>> ThreadShapeArrays;
+				ThreadShapeArrays.SetNum(RigidBodies.size());
+				ParallelFor(RigidBodies.size(), [this, &RigidBodies, &ThreadShapeArrays](int32 BodyIndex)
+					{
+						GatherBodyShapeCommands(RigidBodies[BodyIndex], ThreadShapeArrays[BodyIndex]);
+					});
+				for (const TArray<const FDrawShapeCommand*>& LocalArray : ThreadShapeArrays)
+				{
+					_CollectedScalarShapes.Append(LocalArray);
+				}
+			}
+		}
+
+		~FProxy()
+		{
+			for (int32 Idx = 0; Idx < _CollectedScalarShapes.Num(); ++Idx)
+			{
+				delete _CollectedScalarShapes[Idx];
+				_CollectedScalarShapes[Idx] = nullptr;
+			}
 		}
 
 		virtual FPrimitiveViewRelevance GetViewRelevance(const FSceneView* View) const override
@@ -644,7 +357,6 @@ FDebugRenderSceneProxy* UBarrageJoltVisualDebugger::CreateDebugSceneProxy()
 			FPrimitiveViewRelevance Result;
 			Result.bDrawRelevance = IsShown(View) && bShowForCollision;
 			Result.bDynamicRelevance = true;
-			// ideally the TranslucencyRelevance should be filled out by the material, here we do it conservative
 			Result.bSeparateTranslucency = Result.bNormalTranslucency = IsShown(View);
 			return Result;
 		}
@@ -654,24 +366,10 @@ FDebugRenderSceneProxy* UBarrageJoltVisualDebugger::CreateDebugSceneProxy()
 			QUICK_SCOPE_CYCLE_COUNTER(STAT_BarrageJolt_GetDynamicMeshElements);
 
 			FDebugRenderSceneProxy::GetDynamicMeshElements(Views, ViewFamily, VisibilityMap, Collector);
-
-			JPH::BodyIDVector RigidBodies;
-			TArray<const FDrawShapeCommand*> CollectedScalarShapes;
 			{
-				QUICK_SCOPE_CYCLE_COUNTER(STAT_BarrageJolt_GetDynamicMeshElements_GetBodies);
-				PhysicsSystem->GetBodies(RigidBodies);
-				TArray<TArray<const FDrawShapeCommand*>> ThreadShapeArrays;
-				ThreadShapeArrays.SetNum(RigidBodies.size());
-				ParallelFor(RigidBodies.size(), [this, &RigidBodies, &ThreadShapeArrays](int32 BodyIndex)
-				{
-					GatherBodyShapeCommands(RigidBodies[BodyIndex], ThreadShapeArrays[BodyIndex]);
-				});
-				for (const TArray<const FDrawShapeCommand*>& LocalArray : ThreadShapeArrays)
-				{
-					CollectedScalarShapes.Append(LocalArray);
-				}
-			}
-			{
+				//TODO: we can probably replace all of this with the refactor to just add shapes that are a part of the 
+				//FDebugRenderSceneProxy members... that I missed, because UE docs SUCK! However.... those do not support
+				//recording, which *may* be needed... perhaps a blend of both?
 				QUICK_SCOPE_CYCLE_COUNTER(STAT_BarrageJolt_GetDynamicMeshElements_DrawViews);
 				for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ViewIndex++)
 				{
@@ -679,12 +377,11 @@ FDebugRenderSceneProxy* UBarrageJoltVisualDebugger::CreateDebugSceneProxy()
 					{
 						const FSceneView* View = Views[ViewIndex];
 						FPrimitiveDrawInterface* PDI = Collector.GetPDI(ViewIndex);
-						for (const FDrawShapeCommand* DrawCommand : CollectedScalarShapes)
+						for (const FDrawShapeCommand* DrawCommand : _CollectedScalarShapes)
 						{
 							if (DrawCommand != nullptr)
 							{
 								DrawCommand->Draw(PDI);
-								delete DrawCommand;
 							}
 						}
 					}
@@ -703,8 +400,10 @@ FDebugRenderSceneProxy* UBarrageJoltVisualDebugger::CreateDebugSceneProxy()
 
 	private:
 		TSharedPtr<JPH::PhysicsSystem> PhysicsSystem;
+		TArray<const FDrawShapeCommand*> _CollectedScalarShapes;
+		FCriticalSection _MeshLocker; // used for the parallel builder, specific only to when a mesh is rendered.
 
-		void GatherBodyShapeCommands(const JPH::BodyID& BodyID, TArray<const FDrawShapeCommand*>& OutShapeCommands) const
+		void GatherBodyShapeCommands(const JPH::BodyID& BodyID, TArray<const FDrawShapeCommand*>& OutShapeCommands)
 		{
 			FTransform LocalToWorld = FTransform::Identity;
 			JPH::BodyLockRead BodyReadLock(PhysicsSystem->GetBodyLockInterface(), BodyID);
@@ -717,6 +416,331 @@ FDebugRenderSceneProxy* UBarrageJoltVisualDebugger::CreateDebugSceneProxy()
 				GatherScalarShapes(LocalToWorld, Body.GetShape(), OutShapeCommands);
 			}
 		}
+
+		// Helper recursive function to decompose BodyShapes to a core set of "scalar" shapes that we can draw
+		void GatherScalarShapes(const FTransform& JoltLocalToWorld, const JPH::Shape* BodyShape, TArray<const FDrawShapeCommand*>& CollectedScalarShapes)
+		{
+			if (BodyShape == nullptr)
+			{
+				return;
+			}
+
+			const JPH::EShapeType ShapeType = BodyShape->GetType();
+			const JPH::EShapeSubType ShapeSubType = BodyShape->GetSubType();
+
+			switch (ShapeType)
+			{
+			case JPH::EShapeType::Convex:
+				switch (ShapeSubType)
+				{
+				case JPH::EShapeSubType::Sphere:
+				{
+					const JPH::SphereShape* SphereShape = reinterpret_cast<const JPH::SphereShape*>(BodyShape);
+					if (SphereShape != nullptr)
+					{
+						CollectedScalarShapes.Add(new DrawSphereCommand(JoltLocalToWorld, SphereShape));
+					}
+					break;
+				}
+				case JPH::EShapeSubType::Box:
+				{
+					const JPH::BoxShape* BoxShape = reinterpret_cast<const JPH::BoxShape*>(BodyShape);
+					if (BoxShape != nullptr)
+					{
+						CollectedScalarShapes.Add(new DrawBoxCommand(JoltLocalToWorld, BoxShape));
+					}
+					break;
+				}
+				case JPH::EShapeSubType::Triangle:
+				{
+					const JPH::TriangleShape* TriangleShape = reinterpret_cast<const JPH::TriangleShape*>(BodyShape);
+					if (TriangleShape != nullptr)
+					{
+						CollectedScalarShapes.Add(new DrawTriangleCommand(JoltLocalToWorld, TriangleShape));
+					}
+					break;
+				}
+				case JPH::EShapeSubType::Capsule:
+				{
+					const JPH::CapsuleShape* CapsuleShape = reinterpret_cast<const JPH::CapsuleShape*>(BodyShape);
+					if (CapsuleShape != nullptr)
+					{
+						CollectedScalarShapes.Add(new DrawCapsuleCommand(JoltLocalToWorld, CapsuleShape));
+					}
+					break;
+				}
+				case JPH::EShapeSubType::TaperedCapsule:
+				{
+					const JPH::TaperedCapsuleShape* CapsuleShape = reinterpret_cast<const JPH::TaperedCapsuleShape*>(BodyShape);
+					if (CapsuleShape != nullptr)
+					{
+						CollectedScalarShapes.Add(new DrawTaperedCapsuleCommand(JoltLocalToWorld, CapsuleShape));
+					}
+					break;
+				}
+				case JPH::EShapeSubType::Cylinder:
+				{
+					const JPH::CylinderShape* CylinderShape = reinterpret_cast<const JPH::CylinderShape*>(BodyShape);
+					if (CylinderShape != nullptr)
+					{
+						CollectedScalarShapes.Add(new DrawCylinderCommand(JoltLocalToWorld, CylinderShape));
+					}
+					break;
+				}
+				case JPH::EShapeSubType::ConvexHull:
+				{
+					const JPH::ConvexHullShape* ConvexHullShape = reinterpret_cast<const JPH::ConvexHullShape*>(BodyShape);
+					if (ConvexHullShape != nullptr)
+					{
+						CollectedScalarShapes.Add(new DrawConvexHullCommand(JoltLocalToWorld, ConvexHullShape));
+					}
+					break;
+				}
+				// TODO: Implement other convex shapes as needed
+				case JPH::EShapeSubType::UserConvex1:
+				case JPH::EShapeSubType::UserConvex2:
+				case JPH::EShapeSubType::UserConvex3:
+				case JPH::EShapeSubType::UserConvex4:
+				case JPH::EShapeSubType::UserConvex5:
+				case JPH::EShapeSubType::UserConvex6:
+				case JPH::EShapeSubType::UserConvex7:
+				case JPH::EShapeSubType::UserConvex8:
+					// These are convex shapes we don't yet support drawing
+					LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
+					CollectedScalarShapes.Add(new DrawPointCommand(JoltLocalToWorld));
+					break;
+				default:
+					// Unknown convex shape subtype
+					LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
+					CollectedScalarShapes.Add(new DrawPointCommand(JoltLocalToWorld));
+					break;
+				}
+				break;
+			case JPH::EShapeType::Compound:
+				switch (ShapeSubType)
+				{
+				case JPH::EShapeSubType::StaticCompound:
+				{
+					const JPH::StaticCompoundShape* CompoundShape = reinterpret_cast<const JPH::StaticCompoundShape*>(BodyShape);
+					if (CompoundShape != nullptr)
+					{
+						const int32 ChildCount = CompoundShape->GetNumSubShapes();
+						JPH::Vec3 Scale3D = CoordinateUtils::ToJoltCoordinates(JoltLocalToWorld.GetScale3D());
+						for (int32 ChildIndex = 0; ChildIndex < ChildCount; ++ChildIndex)
+						{
+							const auto& Sub = CompoundShape->GetSubShape(ChildIndex);
+							const auto T = Sub.GetLocalTransformNoScale(Scale3D);
+							FVector Position = FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(T.GetTranslation()));
+							FQuat Rotation = FBarragePrimitive::UpConvertFloatQuat(CoordinateUtils::FromJoltRotation(T.GetQuaternion()));
+							FTransform NewLocalToWorld = FTransform(Rotation, Position) * JoltLocalToWorld;
+							GatherScalarShapes(NewLocalToWorld, Sub.mShape, CollectedScalarShapes);
+						}
+					}
+					break;
+				}
+				case JPH::EShapeSubType::MutableCompound:
+				{
+					const JPH::MutableCompoundShape* CompoundShape = reinterpret_cast<const JPH::MutableCompoundShape*>(BodyShape);
+					if (CompoundShape != nullptr)
+					{
+						const int32 ChildCount = CompoundShape->GetNumSubShapes();
+						JPH::Vec3 Scale3D = CoordinateUtils::ToJoltCoordinates(JoltLocalToWorld.GetScale3D());
+						for (int32 ChildIndex = 0; ChildIndex < ChildCount; ++ChildIndex)
+						{
+							const auto& Sub = CompoundShape->GetSubShape(ChildIndex);
+							const auto T = Sub.GetLocalTransformNoScale(Scale3D);
+							FVector Position = FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(T.GetTranslation()));
+							FQuat Rotation = FBarragePrimitive::UpConvertFloatQuat(CoordinateUtils::FromJoltRotation(T.GetQuaternion()));
+							FTransform NewLocalToWorld = FTransform(Rotation, Position) * JoltLocalToWorld;
+							GatherScalarShapes(NewLocalToWorld, Sub.mShape, CollectedScalarShapes);
+						}
+					}
+					break;
+				}
+				default:
+					// Unknown convex shape subtype
+					LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
+					CollectedScalarShapes.Add(new DrawPointCommand(JoltLocalToWorld));
+					break;
+				}
+				break;
+			case JPH::EShapeType::Decorated:
+				switch (ShapeSubType)
+				{
+				case JPH::EShapeSubType::RotatedTranslated:
+				{
+					const JPH::RotatedTranslatedShape* DecoratedShape = reinterpret_cast<const JPH::RotatedTranslatedShape*>(BodyShape);
+					if (DecoratedShape != nullptr)
+					{
+						FVector Position = FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(DecoratedShape->GetPosition()));
+						FQuat Rotation = FBarragePrimitive::UpConvertFloatQuat(CoordinateUtils::FromJoltRotation(DecoratedShape->GetRotation()));
+						FTransform NewLocalToWorld = FTransform(Rotation, Position) * JoltLocalToWorld;
+						GatherScalarShapes(NewLocalToWorld, DecoratedShape->GetInnerShape(), CollectedScalarShapes);
+					}
+					break;
+				}
+				case JPH::EShapeSubType::Scaled:
+				{
+					const JPH::ScaledShape* DecoratedShape = reinterpret_cast<const JPH::ScaledShape*>(BodyShape);
+					if (DecoratedShape != nullptr)
+					{
+						FVector Scale = FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(DecoratedShape->GetScale()));
+						FTransform NewLocalToWorld = FTransform(FQuat::Identity, FVector::ZeroVector, Scale) * JoltLocalToWorld;
+						GatherScalarShapes(NewLocalToWorld, DecoratedShape->GetInnerShape(), CollectedScalarShapes);
+					}
+					break;
+				}
+				case JPH::EShapeSubType::OffsetCenterOfMass:
+				{
+					const JPH::OffsetCenterOfMassShape* DecoratedShape = reinterpret_cast<const JPH::OffsetCenterOfMassShape*>(BodyShape);
+					if (DecoratedShape != nullptr)
+					{
+						const FVector PositionOffset = FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(DecoratedShape->GetOffset()));
+						FTransform NewLocalToWorld = FTransform(PositionOffset) * JoltLocalToWorld;
+						GatherScalarShapes(NewLocalToWorld, DecoratedShape->GetInnerShape(), CollectedScalarShapes);
+					}
+					break;
+				}
+				default:
+					// Unknown decorator shape subtype
+					LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
+					CollectedScalarShapes.Add(new DrawPointCommand(JoltLocalToWorld));
+					break;
+				}
+				break;
+			case JPH::EShapeType::Mesh:
+				switch (ShapeSubType)
+				{
+				case JPH::EShapeSubType::Mesh:
+				{
+					const JPH::MeshShape* MeshShape = reinterpret_cast<const JPH::MeshShape*>(BodyShape);
+					if (MeshShape != nullptr)
+					{
+						JPH::Shape::GetTrianglesContext TriContext;
+						MeshShape->GetTrianglesStart(
+							TriContext,
+							JPH::AABox::sBiggest(), // we want all triangles
+							JPH::Vec3::sZero(),   // position COM
+							JPH::Quat::sIdentity(), // rotation
+							JPH::Vec3::sReplicate(1.0f) // scale
+						);
+
+						// grab like 256 triangles at a time
+						uint32 CurrentTriangleVertexIndex = 0U;
+						TStaticArray<JPH::Float3, 3 * 256> RawTriangles;
+						FDebugRenderSceneProxy::FMesh DebugMesh;
+
+						const auto Bounds = MeshShape->GetLocalBounds();
+						DebugMesh.Box = FBox::BuildAABB(JoltLocalToWorld.GetLocation(), FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(Bounds.GetExtent())));
+						DebugMesh.Color = UBarrageJoltVisualDebuggerSettings::Get().GetTriangleMeshColliderColor();
+
+						while (true)
+						{
+							const int32 TrianglesFetched = MeshShape->GetTrianglesNext(TriContext, 256, RawTriangles.GetData());
+							if (TrianglesFetched <= 0)
+							{
+								break;
+							}
+							for (int32 TriangleIndex = 0; TriangleIndex < TrianglesFetched; ++TriangleIndex)
+							{
+								const int32 BaseIndex = TriangleIndex * 3;
+
+								const auto Vertex0 = JPH::Vec3(RawTriangles[BaseIndex + 0]);
+								const auto Vertex1 = JPH::Vec3(RawTriangles[BaseIndex + 1]);
+								const auto Vertex2 = JPH::Vec3(RawTriangles[BaseIndex + 2]);
+								
+								FDynamicMeshVertex& A = DebugMesh.Vertices.AddDefaulted_GetRef();
+								A.Position = FVector3f(FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(Vertex0)));
+								
+								FDynamicMeshVertex& B = DebugMesh.Vertices.AddDefaulted_GetRef();
+								B.Position = FVector3f(FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(Vertex1)));
+
+								FDynamicMeshVertex& C = DebugMesh.Vertices.AddDefaulted_GetRef();
+								C.Position = FVector3f(FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(Vertex2)));
+
+								const auto I1 = CurrentTriangleVertexIndex + BaseIndex + 0U;
+								const auto I2 = CurrentTriangleVertexIndex + BaseIndex + 1U;
+								const auto I3 = CurrentTriangleVertexIndex + BaseIndex + 2U;
+								CurrentTriangleVertexIndex += 3U;
+
+								DebugMesh.Indices.Add(I1);
+								DebugMesh.Indices.Add(I2);
+								DebugMesh.Indices.Add(I3);
+							}
+						}
+
+						{
+							FScopeLock L(&_MeshLocker); // only because we do this in parallel for many bodies... we could build a collector like the commands...
+							Meshes.Add(MoveTemp(DebugMesh));
+						}
+					}
+					break;
+				}
+				default:
+					// Unknown mesh shape subtype
+					LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
+					CollectedScalarShapes.Add(new DrawPointCommand(JoltLocalToWorld));
+					break;
+				}
+				break;
+			case JPH::EShapeType::HeightField:
+				switch (ShapeSubType)
+				{
+				case JPH::EShapeSubType::HeightField:
+				default:
+					// Unknown heightfield shape subtype
+					LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
+					CollectedScalarShapes.Add(new DrawPointCommand(JoltLocalToWorld));
+					break;
+				}
+				break;
+			case JPH::EShapeType::SoftBody:
+				switch (ShapeSubType)
+				{
+				case JPH::EShapeSubType::SoftBody:
+				default:
+					// Unknown softbody shape subtype
+					LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
+					CollectedScalarShapes.Add(new DrawPointCommand(JoltLocalToWorld));
+					break;
+				}
+				break;
+			case JPH::EShapeType::Plane:
+				switch (ShapeSubType)
+				{
+				case JPH::EShapeSubType::Plane:
+				default:
+					LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
+					break;
+				}
+				break;
+			case JPH::EShapeType::Empty:
+				switch (ShapeSubType)
+				{
+				case JPH::EShapeSubType::Empty:
+					CollectedScalarShapes.Add(new DrawPointCommand(JoltLocalToWorld));
+					break;
+				default:
+					LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
+					break;
+				}
+				break;
+			case JPH::EShapeType::User1:
+			case JPH::EShapeType::User2:
+			case JPH::EShapeType::User3:
+			case JPH::EShapeType::User4:
+				// These are user defined shapes, we don't know how to draw them
+				LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
+				CollectedScalarShapes.Add(new DrawPointCommand(JoltLocalToWorld));
+				break;
+			default:
+				// Unknown shape type
+				LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType);
+				CollectedScalarShapes.Add(new DrawPointCommand(JoltLocalToWorld));
+				break;
+			}
+		}
+
 	};
 
 	return new FProxy(this, PhysicsSystem);

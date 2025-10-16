@@ -24,6 +24,7 @@ public:
 	UBarrageJoltVisualDebugger();
 
 	virtual FBoxSphereBounds CalcBounds(const FTransform& LocalToWorld) const override;
+	virtual void TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 protected:
 #if UE_ENABLE_DEBUG_DRAWING
