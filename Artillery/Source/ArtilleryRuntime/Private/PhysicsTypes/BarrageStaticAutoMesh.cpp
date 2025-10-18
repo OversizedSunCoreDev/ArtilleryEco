@@ -11,7 +11,7 @@ inline UBarrageStaticAutoMesh::UBarrageStaticAutoMesh(const FObjectInitializer& 
 	// off to improve performance if you don't need them.
 	bWantsInitializeComponent = true;
 	PrimaryComponentTick.bCanEverTick = true;
-	MyObjectKey = 0;
+	MyParentObjectKey = 0;
 	bAlwaysCreatePhysicsState = false;
 	UPrimitiveComponent::SetNotifyRigidBodyCollision(false);
 	bCanEverAffectNavigation = false;
@@ -20,50 +20,52 @@ inline UBarrageStaticAutoMesh::UBarrageStaticAutoMesh(const FObjectInitializer& 
 	Super::SetSimulatePhysics(false);
 }
 
-inline void UBarrageStaticAutoMesh::Register()
+inline bool UBarrageStaticAutoMesh::RegistrationImplementation()
 {
 	if (GetOwner())
 	{
-		if (MyObjectKey == 0)
+		if(MyParentObjectKey ==0 )
 		{
-			if (GetOwner())
+			if(GetOwner())
 			{
-				if (GetOwner()->GetComponentByClass<UKeyCarry>())
+				if(GetOwner()->GetComponentByClass<UKeyCarry>())
 				{
-					MyObjectKey = GetOwner()->GetComponentByClass<UKeyCarry>()->GetMyKey();
+					MyParentObjectKey = GetOwner()->GetComponentByClass<UKeyCarry>()->GetMyKey();
 				}
-
-				if (MyObjectKey == 0)
+			
+				if(MyParentObjectKey == 0)
 				{
 					uint32 val = PointerHash(GetOwner());
-					MyObjectKey = ActorKey(val);
+					MyParentObjectKey = ActorKey(val);
 				}
 			}
 		}
-
-		if (!IsReady && MyObjectKey != 0) // this could easily be just the !=, but it's better to have the whole idiom in the example
+	
+		if(!IsReady && MyParentObjectKey != 0) // this could easily be just the !=, but it's better to have the whole idiom in the example
 		{
 			AActor* Actor = GetOwner();
 			SetTransform(Actor->GetActorTransform());
-
+		
 			UStaticMeshComponent* MeshPtr = Actor->GetComponentByClass<UStaticMeshComponent>();
-			if (MeshPtr)
+			if(MeshPtr)
 			{
 				// remember, jolt coords are X,Z,Y. BUT we don't want to scale the scale. this breaks our coord guidelines
 				// by storing the jolted ver in the params but oh well.
 				UBarrageDispatch* Physics = GetWorld()->GetSubsystem<UBarrageDispatch>();
-				MyBarrageBody = Physics->LoadComplexStaticMesh(Transform, MeshPtr, MyObjectKey);
+				MyBarrageBody = Physics->LoadComplexStaticMesh(Transform, MeshPtr, MyParentObjectKey);
 			}
-
-			if (MyBarrageBody)
+			
+			if(MyBarrageBody)
 			{
 				IsReady = true;
 			}
 		}
 	}
-
-	if (IsReady)
+	
+	if(IsReady)
 	{
 		PrimaryComponentTick.SetTickFunctionEnable(false);
+		return true;
 	}
+	return false;
 }

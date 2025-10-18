@@ -2,14 +2,16 @@
 
 #include "FWorldSimOwner.h"
 
-void UBarragePlayerAgent::UpdateDetailedGroundState(FVector3d& ground)
+
+
+inline void UBarragePlayerAgent::UpdateDetailedGroundState(FVector3d& ground)
 {
 	// If Barrage says they're on the ground, they're on the ground, period.
-	if (GetGroundState() == FBarragePrimitive::FBGroundState::OnGround)
+	if(GetGroundState() == FBarragePrimitive::FBGroundState::OnGround)
 	{
 		return States.Ground(States.GroundTouching);
 	}
-
+	
 	// Check directional down casts to see if the player might be pretty close to the ground
 	float downD = ShortCastTo(FVector3d::DownVector);
 	float forwardD = ShortCastTo((FVector3d::DownVector + CHAOS_LastGameFrameForwardVector.GetSafeNormal()).GetSafeNormal());
@@ -18,47 +20,47 @@ void UBarragePlayerAgent::UpdateDetailedGroundState(FVector3d& ground)
 	float rearD = ShortCastTo((FVector3d::DownVector - CHAOS_LastGameFrameForwardVector.GetSafeNormal()).GetSafeNormal());
 
 	float max = FMath::Max3(FMath::Max(rightD, leftD), FMath::Max(forwardD, rearD), downD);
-	float min = FMath::Min3(FMath::Min(rightD, leftD), forwardD, rearD);
+	float min = FMath::Min3( FMath::Min(rightD, leftD), forwardD, rearD);
 
 	char value = States.GroundNone;//start by assuming we're in the air.
-
-	if (min == -1)//degraded state, assume ground close!!! we must revert to normal gravity and begin to fall.
+	
+	if(min == -1)//degraded state, assume ground close!!! we must revert to normal gravity and begin to fall.
 	{
 		value |= States.GroundContactPoor;
 		value |= States.GroundClose;// we don't actually know WHERE we are.
 	}
-
+	
 	if (max < HowCloseIsGroundWithinError) //if we're very close to the ground, treat us as grounded.
 	{
-		value |= States.GroundTouching;
+		value |= States.GroundTouching; 
 	}
 	else if (max < HowCloseIsGroundClose)
 	{
 		value |= States.GroundClose;
 	}
-
-	if (max > min * ContactErrorMarginMultiplier)
+	
+	if( max > min * ContactErrorMarginMultiplier)
 	{
 		value |= States.GroundSlanted;
 	}
-
-	if (max > ShortcastMaxRange && downD < ShortcastMaxRange && min < ShortcastMaxRange)
+	
+	if( max > ShortcastMaxRange && downD < ShortcastMaxRange && min < ShortcastMaxRange)
 	{
 		value |= States.GroundContactPoor;
 	}
-
+	
 	return States.Ground(value);
 }
 
-void UBarragePlayerAgent::UpdateDetailedWallState(FVector3d& WallNormal)
+inline void UBarragePlayerAgent::UpdateDetailedWallState(FVector3d& WallNormal)
 {
 	// If the player is on the ground or close to the ground, return empty wall state as groundedness takes priority over being "on a wall"
 	if ((States.Ground() & States.GroundTouching) || (States.Ground() & States.GroundClose))
 	{
 		return States.Wall(States.WallNone);
 	}
-
-	if (!WallNormal.IsNearlyZero())
+	
+	if(!WallNormal.IsNearlyZero())
 	{
 		return States.Wall(States.WallTouching);
 	}
@@ -71,16 +73,16 @@ void UBarragePlayerAgent::UpdateDetailedWallState(FVector3d& WallNormal)
 //do not invoke the default constructor unless you have a really good plan. in general, let UE initialize your components.
 
 // Sets default values for this component's properties
-UBarragePlayerAgent::UBarragePlayerAgent(const FObjectInitializer& ObjectInitializer)
+inline UBarragePlayerAgent::UBarragePlayerAgent(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer), BroadPhaseFilter(ExclusionFilters), ObjectLayerFilter(ExclusionFilters)
 {
 	// Set this component to be initialized when the game starts, and to be ticked every frame.  You can turn these features
 	// off to improve performance if you don't need them.
 	MyBarrageBody = nullptr;
-	ShortcastMaxRange = 2 * (this->extent + this->NormalGravity);
+	ShortcastMaxRange =  2 * (this->extent + this->NormalGravity);
 	PrimaryComponentTick.bCanEverTick = true;
-	MyObjectKey = 0;
-	ThrottleModel = FQuat4d(1, 1, 1, 1);
+	MyParentObjectKey = 0;
+	ThrottleModel = FQuat4d(1,1,1,1);
 	bAlwaysCreatePhysicsState = false;
 	UPrimitiveComponent::SetNotifyRigidBodyCollision(false);
 	bCanEverAffectNavigation = false;
@@ -91,7 +93,7 @@ UBarragePlayerAgent::UBarragePlayerAgent(const FObjectInitializer& ObjectInitial
 
 //Of these, get velo is the only one that could be considered kinda risky given when it's called. the others could need a hold open.
 //inlining them means that you don't get quite the effects you might expect from a copy-by-value of a shared pointer.
-FBarragePrimitive::FBGroundState UBarragePlayerAgent::GetGroundState() const
+inline FBarragePrimitive::FBGroundState UBarragePlayerAgent::GetGroundState() const
 {
 	return FBarragePrimitive::GetCharacterGroundState(MyBarrageBody);
 }
@@ -99,51 +101,53 @@ FBarragePrimitive::FBGroundState UBarragePlayerAgent::GetGroundState() const
 //KEY REGISTER, initializer, and failover.
 //----------------------------------
 
-void UBarragePlayerAgent::Register()
+inline bool UBarragePlayerAgent::RegistrationImplementation()
 {
-	if (MyObjectKey == 0 && GetOwner())
+	if(MyParentObjectKey ==0 && GetOwner())
 	{
-		if (GetOwner()->GetComponentByClass<UKeyCarry>())
+		if(GetOwner()->GetComponentByClass<UKeyCarry>())
 		{
-			MyObjectKey = GetOwner()->GetComponentByClass<UKeyCarry>()->GetMyKey();
+			MyParentObjectKey = GetOwner()->GetComponentByClass<UKeyCarry>()->GetMyKey();
 		}
 
-		if (MyObjectKey == 0)
+		if(MyParentObjectKey == 0)
 		{
-			MyObjectKey = MAKE_ACTORKEY(GetOwner());
-			ThrottleModel = FQuat4d(1, 1, 1, 1);
+			MyParentObjectKey = MAKE_ACTORKEY(GetOwner());
+			ThrottleModel = FQuat4d(1,1,1,1);
 		}
 	}
-
-	if (!IsReady && MyObjectKey != 0 && !GetOwner()->GetActorLocation().ContainsNaN()) // this could easily be just the !=, but it's better to have the whole idiom in the example
+	
+	if(!IsReady && MyParentObjectKey != 0 && !GetOwner()->GetActorLocation().ContainsNaN()) // this could easily be just the !=, but it's better to have the whole idiom in the example
 	{
 		FBCharParams params = FBarrageBounder::GenerateCharacterBounds(GetOwner()->GetActorLocation(), radius, extent, HardMaxVelocity);
-		MyBarrageBody = GetWorld()->GetSubsystem<UBarrageDispatch>()->CreatePrimitive(params, MyObjectKey, Layers::MOVING);
-		if (MyBarrageBody && MyBarrageBody->tombstone == 0 && MyBarrageBody->Me != FBShape::Uninitialized)
+		MyBarrageBody = GetWorld()->GetSubsystem<UBarrageDispatch>()->CreatePrimitive(params, MyParentObjectKey, Layers::MOVING);
+		if(MyBarrageBody && MyBarrageBody->tombstone == 0 && MyBarrageBody->Me != FBShape::Uninitialized)
 		{
 			IsReady = true;
+			return true;
 		}
 	}
+	return false;
 }
 
-void UBarragePlayerAgent::AddBarrageForce(float Duration)
+inline void UBarragePlayerAgent::AddBarrageForce(float Duration)
 {
 	//I'll be back for youuuu.
 	throw;
 }
 
 //returns distance to target as magnitude (always positive) or -1 for no hit.
-float UBarragePlayerAgent::ShortCastTo(const FVector3d& Direction)
+inline float UBarragePlayerAgent::ShortCastTo(const FVector3d& Direction)
 {
 	UBarrageDispatch* Physics = GetWorld()->GetSubsystem<UBarrageDispatch>();
 	check(Physics);
 	FVector3f MyPos = FBarragePrimitive::GetPosition(MyBarrageBody);
-	if (!MyBarrageBody || MyPos.ContainsNaN())
+	if(!MyBarrageBody || MyPos.ContainsNaN())
 	{
 		return -1; // please, leave us be.
 	}// The actor calling this sure as hell better be allocated already
-
-	if (Hitmark::ShortCast)
+	
+	if(Hitmark::ShortCast)
 	{
 		Hitmark::ShortCast->Init();
 	}
@@ -151,13 +155,13 @@ float UBarragePlayerAgent::ShortCastTo(const FVector3d& Direction)
 	{
 		Hitmark::ShortCast = MakeShared<FHitResult>();
 	}
-
+	
 	//we shoot a lil pill. lmao.
 	JPH::BodyID CastingBodyID;
 	Physics->JoltGameSim->GetBodyIDOrDefault(MyBarrageBody->KeyIntoBarrage, CastingBodyID);
 	const JPH::IgnoreSingleBodyFilter default_body_filter(CastingBodyID);
-
-	Physics->SphereCast(
+	
+	Physics->SphereCast( 
 		0.01f,
 		ShortcastMaxRange,
 		FVector3d(MyPos.X, MyPos.Y, MyPos.Z),
@@ -166,23 +170,23 @@ float UBarragePlayerAgent::ShortCastTo(const FVector3d& Direction)
 		BroadPhaseFilter,
 		ObjectLayerFilter,
 		default_body_filter);
-
+	
 	const int32 TestVar = Hitmark::ShortCast->MyItem;
-	return  TestVar == JPH::BodyID::cInvalidBodyID || TestVar == MungeSafety ? ShortcastMaxRange * 2 : Hitmark::ShortCast->Distance;
+	return  TestVar == JPH::BodyID::cInvalidBodyID || TestVar == MungeSafety ?  ShortcastMaxRange * 2 : Hitmark::ShortCast->Distance;
 }
 
-void UBarragePlayerAgent::ApplyRotation(float Duration, FQuat4f Rotation)
+inline void UBarragePlayerAgent::ApplyRotation(float Duration, FQuat4f Rotation)
 {
 	//I'll be back for youuuu.
 	throw;
 }
 
-void UBarragePlayerAgent::AddOneTickOfForce(FVector3d Force)
+inline void UBarragePlayerAgent::AddOneTickOfForce(FVector3d Force)
 {
 	FBarragePrimitive::ApplyForce(Force, MyBarrageBody);
 }
 
-void UBarragePlayerAgent::AddOneTickOfForce_LocomotionOnly(FVector3d Force)
+inline void UBarragePlayerAgent::AddOneTickOfForce_LocomotionOnly(FVector3d Force)
 {
 	FBarragePrimitive::ApplyForce(Force, MyBarrageBody, PhysicsInputType::SelfMovement);
 }
@@ -190,7 +194,7 @@ void UBarragePlayerAgent::AddOneTickOfForce_LocomotionOnly(FVector3d Force)
 // negatives are ignored. I'm not dealing with that. As a result, -1 can be used to inherit
 //the current throttle setting for that value. Please use this very carefully, as it can fuck movement up entirely.
 //This is mostly used for instantly canceling momentum or reducing directional control during slides.
-void UBarragePlayerAgent::SetThrottleModel(double carryover, double gravity, double locomotion, double forces)
+inline void UBarragePlayerAgent::SetThrottleModel(double carryover, double gravity, double locomotion, double forces)
 {
 	FQuat4d DANGER = FQuat4d(carryover >= 0 ? carryover : ThrottleModel.X,
 		gravity >= 0 ? gravity : ThrottleModel.Y,
@@ -200,41 +204,41 @@ void UBarragePlayerAgent::SetThrottleModel(double carryover, double gravity, dou
 	FBarragePrimitive::Apply_Unsafe(DANGER, MyBarrageBody, PhysicsInputType::Throttle);
 }
 
-void UBarragePlayerAgent::AddOneTickOfForce(FVector3f Force)
+inline void UBarragePlayerAgent::AddOneTickOfForce(FVector3f Force)
 {
 	FBarragePrimitive::ApplyForce(FVector3d(Force.X, Force.Y, Force.Z), MyBarrageBody);
 }
 
-void UBarragePlayerAgent::SetCharacterGravity(FVector3f NewGravity)
+inline void UBarragePlayerAgent::SetCharacterGravity(FVector3f NewGravity)
 {
 	FBarragePrimitive::SetCharacterGravity(FVector3d(NewGravity.X, NewGravity.Y, NewGravity.Z), MyBarrageBody);
 }
 
-void UBarragePlayerAgent::SetCharacterGravity(FVector3d NewGravity)
+inline void UBarragePlayerAgent::SetCharacterGravity(FVector3d NewGravity)
 {
 	FBarragePrimitive::SetCharacterGravity(NewGravity, MyBarrageBody);
 }
 
 // Called when the game starts
-void UBarragePlayerAgent::BeginPlay()
+inline void UBarragePlayerAgent::BeginPlay()
 {
 	Super::BeginPlay();
-	Register();
+	RegistrationImplementation();
 }
 
-void UBarragePlayerAgent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+inline void UBarragePlayerAgent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-	if (!IsReady)
+	if(!IsReady)
 	{
-		Register();// ...
+		RegistrationImplementation();// ...
 	}
 
 	CHAOS_LastGameFrameRightVector = GetOwner()->GetActorRightVector();
 	CHAOS_LastGameFrameForwardVector = GetOwner()->GetActorForwardVector();
 }
 
-void UBarragePlayerAgent::ApplyAimFriction(
+inline void UBarragePlayerAgent::ApplyAimFriction(
 	const ActorKey& ActorsKey,
 	const FVector3d& ActorLocation,
 	const FVector3d& Direction,
@@ -243,17 +247,17 @@ void UBarragePlayerAgent::ApplyAimFriction(
 	FRotator& OutAimRotatorDelta)
 {
 	check(GEngine);
-
+	
 	double FrictionMultiplier = 1.0f;
-
+	
 	UBarrageDispatch* Physics = GetWorld()->GetSubsystem<UBarrageDispatch>();
 	check(Physics);
-
+	
 	FBLet MyFiblet = Physics->GetShapeRef(ActorsKey);
 	check(MyFiblet); // The actor calling this sure as hell better be allocated already
 
 	//hitmark is threadlocal.
-	if (Hitmark::AimFriction)
+	if(Hitmark::AimFriction)
 	{
 		Hitmark::AimFriction->Init();
 	}
@@ -265,7 +269,7 @@ void UBarragePlayerAgent::ApplyAimFriction(
 	JPH::BodyID CastingBodyID;
 	Physics->JoltGameSim->GetBodyIDOrDefault(MyFiblet->KeyIntoBarrage, CastingBodyID);
 	const JPH::IgnoreSingleBodyFilter default_body_filter(CastingBodyID);
-
+	
 	Physics->SphereCast(
 		0.01f,
 		1000.0f, // Hard-coding range for now until we determine how we want to handle range on this
@@ -309,10 +313,10 @@ void UBarragePlayerAgent::ApplyAimFriction(
 		FVector CockpitWorldLocation;
 		// Grab important points on target
 		UStaticMeshComponent* ActorStaticMesh = TargetPtr->GetComponentByClass<UStaticMeshComponent>();
-		if (ActorStaticMesh)
+		if(ActorStaticMesh)
 		{
 			CritWorldLocation = ActorStaticMesh->GetSocketLocation(FName("Mount_Top"));
-			CockpitWorldLocation = ActorStaticMesh->GetSocketLocation(FName("Mount_Cockpit"));
+			CockpitWorldLocation  = ActorStaticMesh->GetSocketLocation(FName("Mount_Cockpit"));
 		}
 		else
 		{
@@ -322,7 +326,7 @@ void UBarragePlayerAgent::ApplyAimFriction(
 
 		FVector VectorToTargetCrit = (CritWorldLocation - ActorLocation).GetSafeNormal();
 		FVector VectorToTargetCockpit = (CockpitWorldLocation - ActorLocation).GetSafeNormal();
-
+		
 		if (IsAimMovingTowardPoint(StartingAimVec, DesiredAimVec, VectorToTargetCrit))
 		{
 			FrictionMultiplier = MovingTowardsCritMultiplier; // Keep it easy to aim towards the crit spot
@@ -340,7 +344,7 @@ void UBarragePlayerAgent::ApplyAimFriction(
 	OutAimRotatorDelta *= FrictionMultiplier;
 }
 
-bool UBarragePlayerAgent::CalculateAimVector(
+inline bool UBarragePlayerAgent::CalculateAimVector(
 	const ActorKey& ActorsKey,
 	const FVector3d& ActorLocation,
 	const FVector& Direction,
@@ -351,10 +355,10 @@ bool UBarragePlayerAgent::CalculateAimVector(
 	UBarrageDispatch* Physics = GetWorld()->GetSubsystem<UBarrageDispatch>();
 	check(Physics);
 	FBLet MyFiblet = Physics->GetShapeRef(ActorsKey);
-	if (MyFiblet)
+	if(MyFiblet)
 	{
 		const JPH::IgnoreSingleBodyFilter BodyFilter = Physics->GetFilterToIgnoreSingleBody(MyFiblet);
-
+		
 		TSharedPtr<FHitResult> HitObjectResult = MakeShared<FHitResult>();
 		Physics->SphereCast(
 			0.1f,
@@ -376,7 +380,7 @@ bool UBarragePlayerAgent::CalculateAimVector(
 			{
 				UTransformDispatch* TransformDispatch = GetWorld()->GetSubsystem<UTransformDispatch>();
 				check(TransformDispatch);
-
+		
 				TWeakObjectPtr<AActor> AimTarget = TransformDispatch->GetAActorByObjectKey(AimAtFiblet->KeyOutOfBarrage);
 				UArtilleryDispatch* ADispatch = GetWorld()->GetSubsystem<UArtilleryDispatch>();
 
@@ -437,7 +441,7 @@ bool UBarragePlayerAgent::CalculateAimVector(
 						TargetActor = TransformDispatch->GetAActorByObjectKey(ClosestCurrent).Get();
 					}
 				}
-
+		
 				OutTargetAimAtLocation = HitObjectResult->Location;
 				return false;
 			}
@@ -447,6 +451,7 @@ bool UBarragePlayerAgent::CalculateAimVector(
 	}
 	return false;
 }
+
 
 FPrimitiveSceneProxy* UBarragePlayerAgent::CreateSceneProxy()
 {
