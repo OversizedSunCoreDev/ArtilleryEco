@@ -106,7 +106,7 @@ namespace Arty
 		//This trigger effects and this is borderline necessary for some semantics, like popping a poison tag off
 		//when an effect ends. where possible, we should prefer ArtilleryEvents for this, but it won't always be viable.
 		//use your best judgment.
-		virtual void OnExpireTickable() = 0;
+		virtual bool OnExpireTickable() = 0;
 		virtual void ApplyTickable() = 0;
 		virtual void ReturnToPool() = 0;
 

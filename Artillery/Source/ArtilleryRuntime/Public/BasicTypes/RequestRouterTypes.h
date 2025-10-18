@@ -20,7 +20,7 @@ enum ArtilleryRequestType
 	SpawnParticleSystemAttached,
 	SpawnParticleSystemAtLocation,
 	// Meshes
-	SpawnStaticMesh,
+	SpawnInstancedStaticMesh,
 	TagReferenceModel,
 	NoTagReferenceModel,
 };

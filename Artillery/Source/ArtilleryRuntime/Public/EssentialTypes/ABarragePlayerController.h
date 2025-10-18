@@ -32,9 +32,6 @@ class ARTILLERYRUNTIME_API ABarragePlayerController : public AArtilleryControlle
 {
 	GENERATED_BODY()
 public:
-	using Typal = float;
-	using RAQ = TCircularQueue<Typal>;
-	using RotationAxisQueue = TSharedPtr<RAQ>;
 	TObjectPtr<UIArtilleryLocomotionDefault> DefaultInstance;
 
 	//changing this is a powerful and dangerous option for repossessing very very very fast.
@@ -133,7 +130,7 @@ public:
 			
 			VectorAttributes->Add(Arty::Attr3::UControllerOnlyLookVector, MakeShareable(new FConservedVector()));
 			VectorAttributes->Add(Arty::Attr3::TrueLookVector, MakeShareable(new FConservedVector()));
-			MyDispatch->RegisterVecAttribs(GetMyKey(), VectorAttributes);
+			MyDispatch->RegisterOrAddVecAttribs(GetMyKey(), VectorAttributes);
 
 		}
 		else
@@ -189,8 +186,29 @@ protected:
 					if (PossibleBindablePawn)
 					{
 						BindablePawn = PossibleBindablePawn;
-						RegisterWithDispatch(BindablePawn->GetMyKey());
-						IdentPtr TheirControllerAttrib = MyDispatch->GetIdent(BindablePawn->GetMyKey(), Ident::CurrentController);
+						auto Key = BindablePawn->GetMyKey();
+						RegisterWithDispatch(Key);
+						auto InitialRotationIfAny = MyDispatch->GetVecAttr(GetMyKey(), E_VectorAttrib::InitialRotationVec);
+						
+						auto PhysicsDispatch = GetWorld()->GetSubsystem<UBarrageDispatch>(); //be real sure.
+						if (InitialRotationIfAny && PhysicsDispatch)
+						{
+							auto FBLease = UArtilleryLibrary::GetLocalPlayerBarrageAgent();
+							auto RotVec = InitialRotationIfAny->CurrentValue;
+							//this allows the specification of an initial rotation for any possessed object. if the value is absent,
+							//we just keep going. if the value is present, we check if it's a unit vector. If not, it's consumed or invalid.
+							//if it's a unit vector, we rotate to it. easy peasy lemon lemon thing.
+							//TODO: VERY IMPORTANT. Fix NLT 6/1/26
+							//WARNING WARNING WARNING DETERMINISM HAZARD. THIS CODE MUST EVENTUALLY BE REPLACED OR
+							//RUN AT A DETERMINISTIC POINT IN TIME.
+							if (!InitialRotationIfAny->CurrentValue.IsZero())
+							{
+								MyDispatch->GetVecAttr(GetMyKey(), E_VectorAttrib::UControllerOnlyLookVector)->SetCurrentValue(RotVec);
+								MyDispatch->GetVecAttr(GetMyKey(), E_VectorAttrib::TrueLookVector)->SetCurrentValue(RotVec);
+								InitialRotationIfAny->SetCurrentValue(FVector3d::ZeroVector);//unit vectors are never zero. this indicates consumed.
+							}
+						}
+						IdentPtr TheirControllerAttrib = MyDispatch->GetIdent(Key, Ident::CurrentController);
 						if(TheirControllerAttrib && TheirControllerAttrib->CurrentValue != GetMyKey())
 						{
 							TheirControllerAttrib->SetCurrentValue(GetMyKey());
@@ -310,7 +328,7 @@ public:
 	{};
 	
 	/**
-	* Consumes the accumulated rotation records. Unlike the default player controller, we queue our rotations
+	* Consumes the accumulated rotation records. Unlike the default player controller, we queue-ish our rotations
 	* because this is a two-sided controller that hides the threadedness.
 	*/
 	virtual void UpdateRotation(float DeltaTime) override

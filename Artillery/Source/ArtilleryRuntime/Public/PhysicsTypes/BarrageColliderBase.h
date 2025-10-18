@@ -10,23 +10,21 @@
 #include "BarrageColliderBase.generated.h"
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
-class UBarrageColliderBase : public UPrimitiveComponent
+class UBarrageColliderBase : public UPrimitiveComponent, public ICanReady
 {
 	GENERATED_BODY()
 
 public:
 	FBLet MyBarrageBody = nullptr;
-	FSkeletonKey MyObjectKey;
-	bool IsReady = false;
+	FSkeletonKey MyParentObjectKey;
 	
 	// Sets default values for this component's properties
 	UBarrageColliderBase(const FObjectInitializer& ObjectInitializer);
 	virtual void InitializeComponent() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void BeforeBeginPlay(FSkeletonKey TransformOwner);
-
 	//Colliders must override this.
-	virtual void Register();
+	virtual bool RegistrationImplementation() override;
 
 	virtual void OnDestroyPhysicsState() override;
 	
@@ -52,7 +50,7 @@ inline UBarrageColliderBase::UBarrageColliderBase(const FObjectInitializer& Obje
 	// off to improve performance if you don't need them.
 	PrimaryComponentTick.bCanEverTick = true;
 	bWantsInitializeComponent = true;
-	MyObjectKey = 0;
+	MyParentObjectKey = 0;
 	bAlwaysCreatePhysicsState = false;
 	UPrimitiveComponent::SetNotifyRigidBodyCollision(false);
 	bCanEverAffectNavigation = false;
@@ -71,27 +69,28 @@ inline void UBarrageColliderBase::InitializeComponent()
 //SETTER: Unused example of how you might set up a registration for an arbitrary key.
 inline void UBarrageColliderBase::BeforeBeginPlay(FSkeletonKey TransformOwner)
 {
-	MyObjectKey = TransformOwner;
+	MyParentObjectKey = TransformOwner;
 }
 
 //Colliders must override this.
-inline void UBarrageColliderBase::Register()
+inline bool UBarrageColliderBase::RegistrationImplementation()
 {
 	PrimaryComponentTick.SetTickFunctionEnable(false);
+	return true;
 }
 
 inline void UBarrageColliderBase::TickComponent(float DeltaTime, ELevelTick TickType,
                                                 FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-	Register(); // ...
+	AttemptRegister(); // ...
 }
 
 // Called when the game starts
 inline void UBarrageColliderBase::BeginPlay()
 {
 	Super::BeginPlay();
-	Register();
+	AttemptRegister();
 }
 
 //TOMBSTONERS

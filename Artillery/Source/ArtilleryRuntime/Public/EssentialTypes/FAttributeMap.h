@@ -46,10 +46,25 @@ struct ARTILLERYRUNTIME_API FAttributeMap
 			NewData->SetCurrentValue(x.Value);
 		}
 
-		MyDispatch->RegisterAttributes(ParentKey, MyAttributes);
+		MyDispatch->RegisterOrAddAttributes(ParentKey, MyAttributes);
 
 		ReadyToUse = true;
 	}
+
+	void Add(TMap<AttribKey, double> DefaultAttributesIn)
+	{
+		for(TPair<AttribKey, double> x : DefaultAttributesIn)
+		{
+			TSharedPtr<FConservedAttributeData>& NewData = MyAttributes->Add(x.Key, MakeShareable(new FConservedAttributeData));
+			NewData->SetBaseValue(x.Value);
+			NewData->SetCurrentValue(x.Value);
+		}
+
+		MyDispatch->RegisterOrAddAttributes(ParentKey, MyAttributes);
+
+		ReadyToUse = true;
+	}
+	
 	
 	~FAttributeMap()
 	{

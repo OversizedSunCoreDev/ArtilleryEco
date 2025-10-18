@@ -16,17 +16,18 @@ JPH::BodyID FBCharacter::Create(JPH::CharacterVsCharacterCollision* CVCColliderS
 			Ref<Shape> capsule = new CapsuleShape(0.5f * mHeightStanding, mRadiusStanding);
 			Ref<Shape> capsuleB = new CapsuleShape(0.5f * mHeightStanding, mRadiusStanding);
 			mCharacterSettings.mEnhancedInternalEdgeRemoval = true;
-			
 			mCharacterSettings.mShape = RotatedTranslatedShapeSettings(
 				Vec3(0, 0.5f * mHeightStanding + mRadiusStanding, 0), Quat::sIdentity(), capsule).Create().Get();
 			// Configure supporting volume
 			mCharacterSettings.mSupportingVolume = Plane(Vec3::sAxisY(), -mHeightStanding);
 			mForcesUpdate = Vec3::sZero();
 			mCharacterSettings.mInnerBodyLayer = Layers::EJoltPhysicsLayer::MOVING;
+			auto SettingsForInnerShape = RotatedTranslatedShapeSettings(
+				Vec3(0, 0.5f * mHeightStanding + mRadiusStanding, 0), Quat::sIdentity(), capsuleB);
 			// Accept contacts that touch the lower sphere of the capsule
 			// If you want to create character WITH innerbodyshape - don't try to reduce, reuse, or recycle here.
-			InnerStandingShape =  RotatedTranslatedShapeSettings(
-				Vec3(0, 0.5f * mHeightStanding + mRadiusStanding, 0), Quat::sIdentity(), capsuleB).Create().Get();
+			InnerStandingShape =  SettingsForInnerShape.Create().Get();
+			//TODO: set up mInnerBodyIDOverride once we get to full determinism. all other shapes are ordered using queuing.
 			mCharacterSettings.mInnerBodyShape = InnerStandingShape;
 			mCharacter = new CharacterVirtual(&mCharacterSettings, mInitialPosition, Quat::sIdentity(), 0, World.Get());
 			mCharacter->SetCharacterVsCharacterCollision(CVCColliderSystem); // see https://github.com/jrouwe/JoltPhysics/blob/e3ed3b1d33f3a0e7195fbac8b45b30f0a5c8a55b/UnitTests/Physics/CharacterVirtualTests.cpp#L759

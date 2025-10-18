@@ -106,7 +106,8 @@ public:
 
 	FBLet GetFBLetByObjectKey(FSkeletonKey Target, ArtilleryTime Now)
 	{
-		return DispatchOwner->GetFBLetByObjectKey(Target,  Now);
+		auto temp = DispatchOwner->GetFBLetByObjectKey(Target,  Now);
+		return FBarragePrimitive::IsNotNull(temp) ? temp : nullptr;
 	}
 	
 	FArtilleryTicklitesWorker(): LocalNow(0), DispatchOwner(nullptr), running(false)
@@ -249,7 +250,7 @@ public:
 					//either a ticklite expires, and the count remaining drops by one, or we process it and move to next.
 					if(Group[index]->ShouldExpireTickable())
 					{
-						Group[index]->OnExpireTickable();
+						 Group[index]->OnExpireTickable();
 						//TODO good chance we must save the ticklites from older frames that have expired if we want any hope at determinism
 						//TODO THIS VIOLATES ORDERING. ...kinda. it's complicated. look, you almost certainly don't want it here.
 						//we probably need to use sorted array anyway.

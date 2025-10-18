@@ -42,7 +42,7 @@ public:
 
 	UBarrageAutoBox(const FObjectInitializer& ObjectInitializer);
 	
-	virtual void Register() override;
+	virtual bool RegistrationImplementation() override;
 };
 
 //CONSTRUCTORS
@@ -64,7 +64,7 @@ inline UBarrageAutoBox::UBarrageAutoBox(const FObjectInitializer& ObjectInitiali
 
 	bWantsInitializeComponent = true;
 	PrimaryComponentTick.bCanEverTick = true;
-	MyObjectKey = 0;
+	MyParentObjectKey = 0;
 	bAlwaysCreatePhysicsState = false;
 	UPrimitiveComponent::SetNotifyRigidBodyCollision(false);
 	bCanEverAffectNavigation = false;
@@ -76,25 +76,25 @@ inline UBarrageAutoBox::UBarrageAutoBox(const FObjectInitializer& ObjectInitiali
 //KEY REGISTER, initializer, and failover.
 //----------------------------------
 
-inline void UBarrageAutoBox::Register()
+inline bool UBarrageAutoBox::RegistrationImplementation()
 {
 	if (GetOwner())
 	{
-		if(MyObjectKey ==0)
+		if(MyParentObjectKey ==0)
 		{
 			if(GetOwner()->GetComponentByClass<UKeyCarry>())
 			{
-				MyObjectKey = GetOwner()->GetComponentByClass<UKeyCarry>()->GetMyKey();
+				MyParentObjectKey = GetOwner()->GetComponentByClass<UKeyCarry>()->GetMyKey();
 			}
 		
-			if(MyObjectKey == 0)
+			if(MyParentObjectKey == 0)
 			{
 				uint32 val = PointerHash(GetOwner());
-				MyObjectKey = ActorKey(val);
+				MyParentObjectKey = ActorKey(val);
 			}
 		}
 	
-		if(!IsReady && MyObjectKey != 0) // this could easily be just the !=, but it's better to have the whole idiom in the example
+		if(!IsReady && MyParentObjectKey != 0) // this could easily be just the !=, but it's better to have the whole idiom in the example
 		{
 			UPrimitiveComponent* AnyMesh = GetOwner()->GetComponentByClass<UMeshComponent>(); 
 			AnyMesh = AnyMesh ? AnyMesh : GetOwner()->GetComponentByClass<UPrimitiveComponent>();
@@ -124,7 +124,7 @@ inline void UBarrageAutoBox::Register()
 					FMath::Max( extents.Z, 0.1),
 					FVector3d(OffsetCenterToMatchBoundedShapeX, OffsetCenterToMatchBoundedShapeY, OffsetCenterToMatchBoundedShapeZ),
 					MyMassClass.Category);
-				MyBarrageBody = Physics->CreatePrimitive(params, MyObjectKey, static_cast<uint16>(Layer), false, false, isMovable);
+				MyBarrageBody = Physics->CreatePrimitive(params, MyParentObjectKey, static_cast<uint16>(Layer), false, false, isMovable);
 				if(MyBarrageBody)
 				{
 					AnyMesh->WakeRigidBody(); 
@@ -138,5 +138,7 @@ inline void UBarrageAutoBox::Register()
 	if(IsReady)
 	{
 		PrimaryComponentTick.SetTickFunctionEnable(false);
+		return true;
 	}
+	return false;
 }

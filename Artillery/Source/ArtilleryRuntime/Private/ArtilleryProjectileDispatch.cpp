@@ -291,6 +291,17 @@ void UArtilleryProjectileDispatch::OnBarrageContactAdded(const BarrageContactEve
 	// We only care if one of the entities is a projectile
 	if (UBarrageDispatch::SelfPtr)
 	{
+		// If you're lost, here's a quick example of how you can make use of the various attributes we expose here.
+		// the point we hand along isn't guaranteed to be the only or best contact point, but it works well-ish.
+		// if (ContactEvent.ContactEntity1.bIsPureHitbox || ContactEvent.ContactEntity2.bIsPureHitbox)
+		// {
+		// 	UE_LOG(LogTemp, Log, TEXT("One of these is a hitbox."));
+		// 	if (ContactEvent.ContactEntity1.MyLayer == Layers::ENEMYHITBOX || ContactEvent.ContactEntity2.MyLayer == Layers::ENEMYHITBOX)
+		// 	{
+		// 		DrawDebugBox(GetWorld(), ContactEvent.PointIfAny, {40,40,40},FColor::Purple,false, 10);
+		// 		UE_LOG(LogTemp, Log, TEXT("One of these is an enemy hitbox."));
+		// 	}
+		// }
 		if (ContactEvent.IsEitherEntityAProjectile())
 		{
 			bool Body1_IsBullet = ContactEvent.ContactEntity1.bIsProjectile;

@@ -133,7 +133,7 @@ FGrantWith F_INeedA::Bullet(
 {
 	if (this)
 	{
-		FRequestGameThreadThing MyRequest(ArtilleryRequestType::SpawnStaticMesh);
+		FRequestGameThreadThing MyRequest(ArtilleryRequestType::SpawnInstancedStaticMesh);
 		MyRequest.ThingName = ThingName;
 		MyRequest.Stamp = Stamp;
 		MyRequest.ThingVector = Location;			// Start Location

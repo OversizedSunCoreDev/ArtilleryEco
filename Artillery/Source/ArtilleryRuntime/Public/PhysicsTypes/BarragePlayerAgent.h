@@ -146,7 +146,7 @@ public:
 	}
 	
 	UBarragePlayerAgent(const FObjectInitializer& ObjectInitializer);
-	virtual void Register() override;
+	virtual bool RegistrationImplementation() override;
 	void AddBarrageForce(float Duration);
 	float ShortCastTo(const FVector3d& Direction);
 	void ApplyRotation(float Duration, FQuat4f Rotation);
@@ -277,7 +277,7 @@ inline UBarragePlayerAgent::UBarragePlayerAgent(const FObjectInitializer& Object
 	MyBarrageBody = nullptr;
 	ShortcastMaxRange =  2 * (this->extent + this->NormalGravity);
 	PrimaryComponentTick.bCanEverTick = true;
-	MyObjectKey = 0;
+	MyParentObjectKey = 0;
 	ThrottleModel = FQuat4d(1,1,1,1);
 	bAlwaysCreatePhysicsState = false;
 	UPrimitiveComponent::SetNotifyRigidBodyCollision(false);
@@ -297,31 +297,33 @@ inline FBarragePrimitive::FBGroundState UBarragePlayerAgent::GetGroundState() co
 //KEY REGISTER, initializer, and failover.
 //----------------------------------
 
-inline void UBarragePlayerAgent::Register()
+inline bool UBarragePlayerAgent::RegistrationImplementation()
 {
-	if(MyObjectKey ==0 && GetOwner())
+	if(MyParentObjectKey ==0 && GetOwner())
 	{
 		if(GetOwner()->GetComponentByClass<UKeyCarry>())
 		{
-			MyObjectKey = GetOwner()->GetComponentByClass<UKeyCarry>()->GetMyKey();
+			MyParentObjectKey = GetOwner()->GetComponentByClass<UKeyCarry>()->GetMyKey();
 		}
 
-		if(MyObjectKey == 0)
+		if(MyParentObjectKey == 0)
 		{
-			MyObjectKey = MAKE_ACTORKEY(GetOwner());
+			MyParentObjectKey = MAKE_ACTORKEY(GetOwner());
 			ThrottleModel = FQuat4d(1,1,1,1);
 		}
 	}
 	
-	if(!IsReady && MyObjectKey != 0 && !GetOwner()->GetActorLocation().ContainsNaN()) // this could easily be just the !=, but it's better to have the whole idiom in the example
+	if(!IsReady && MyParentObjectKey != 0 && !GetOwner()->GetActorLocation().ContainsNaN()) // this could easily be just the !=, but it's better to have the whole idiom in the example
 	{
 		FBCharParams params = FBarrageBounder::GenerateCharacterBounds(GetOwner()->GetActorLocation(), radius, extent, HardMaxVelocity);
-		MyBarrageBody = GetWorld()->GetSubsystem<UBarrageDispatch>()->CreatePrimitive(params, MyObjectKey, Layers::MOVING);
+		MyBarrageBody = GetWorld()->GetSubsystem<UBarrageDispatch>()->CreatePrimitive(params, MyParentObjectKey, Layers::MOVING);
 		if(MyBarrageBody && MyBarrageBody->tombstone == 0 && MyBarrageBody->Me != FBShape::Uninitialized)
 		{
 			IsReady = true;
+			return true;
 		}
 	}
+	return false;
 }
 
 inline void UBarragePlayerAgent::AddBarrageForce(float Duration)
@@ -417,7 +419,7 @@ inline void UBarragePlayerAgent::SetCharacterGravity(FVector3d NewGravity)
 inline void UBarragePlayerAgent::BeginPlay()
 {
 	Super::BeginPlay();
-	Register();
+	RegistrationImplementation();
 }
 
 inline void UBarragePlayerAgent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -425,7 +427,7 @@ inline void UBarragePlayerAgent::TickComponent(float DeltaTime, ELevelTick TickT
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 	if(!IsReady)
 	{
-		Register();// ...
+		RegistrationImplementation();// ...
 	}
 
 	CHAOS_LastGameFrameRightVector = GetOwner()->GetActorRightVector();

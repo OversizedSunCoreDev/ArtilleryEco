@@ -22,7 +22,7 @@ static constexpr float cCapsuleProjectionSlop = 0.02f;
 constexpr int cMaxPhysicsJobs = 4096;
 
 /// Maximum amount of barriers to allow
-constexpr int cMaxPhysicsBarriers = 8;
+constexpr int cMaxPhysicsBarriers = 16;
 
 struct PhysicsSettings
 {
@@ -75,7 +75,7 @@ struct PhysicsSettings
 
 	/// Number of solver velocity iterations to run
 	/// Note that this needs to be >= 2 in order for friction to work (friction is applied using the non-penetration impulse from the previous iteration)
-	uint		mNumVelocitySteps = 6;
+	uint		mNumVelocitySteps = 10;
 
 	/// Number of solver position iterations to run
 	uint		mNumPositionSteps = 2;

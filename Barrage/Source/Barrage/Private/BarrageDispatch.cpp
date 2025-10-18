@@ -108,20 +108,20 @@ void UBarrageDispatch::Deinitialize()
 	}
 	HoldOpen = nullptr;
 
-	TSharedPtr<TCircularQueue<BarrageContactEvent>> HoldOpen2 = ContactEventPump;
+	TSharedPtr<TCircularQueue<BarrageContactEvent>> EventPumpHoldOpen = ContactEventPump;
 	ContactEventPump = nullptr;
-	if (HoldOpen2)
+	if (EventPumpHoldOpen)
 	{
-		if (HoldOpen2.GetSharedReferenceCount() > 1)
+		if (EventPumpHoldOpen.GetSharedReferenceCount() > 1)
 		{
 			UE_LOG(LogTemp, Warning,
 			       TEXT(
 				       "Hey, so something's holding live references to the contact queue. Maybe. Shared Ref Count is not reliable."
 			       ));
 		}
-		HoldOpen2->Empty();
+		EventPumpHoldOpen->Empty();
 	}
-	HoldOpen2 = nullptr;
+	EventPumpHoldOpen = nullptr;
 }
 
 void UBarrageDispatch::SphereCast(
@@ -254,17 +254,42 @@ FBLet UBarrageDispatch::ManagePointers(FSkeletonKey OutKey, FBarrageKey temp, FB
 //probably worth reviewing how indexed triangles work, too : https://www.youtube.com/watch?v=dOjZw5VU6aM
 FBLet UBarrageDispatch::LoadComplexStaticMesh(FBTransform& MeshTransform,
                                               const UStaticMeshComponent* StaticMeshComponent,
-                                              FSkeletonKey OutKey) const
+                                              FSkeletonKey OutKey,
+                                              bool IsSensor)
 {
 	if (JoltGameSim)
 	{
 		FBLet shared = JoltGameSim->LoadComplexStaticMesh(MeshTransform, StaticMeshComponent, OutKey);
-		if (shared)
+		if (shared && shared.IsValid())
 		{
+			shared->Me = FBShape::Static;
 			JoltBodyLifecycleMapping->insert_or_assign(shared->KeyIntoBarrage, shared);
-			TranslationMapping->insert_or_assign(OutKey, shared->KeyIntoBarrage);
+			TranslationMapping->insert_or_assign(shared->KeyOutOfBarrage, shared->KeyIntoBarrage);
+			return shared;
 		}
-		return shared;
+	}
+	return nullptr;
+}
+
+
+//https://github.com/jrouwe/JoltPhysics/blob/master/Samples/Tests/Shapes/MeshShapeTest.cpp
+//probably worth reviewing how indexed triangles work, too : https://www.youtube.com/watch?v=dOjZw5VU6aM
+FBLet UBarrageDispatch::LoadEnemyHitboxFromStaticMesh(FBTransform& MeshTransform,
+											  const UStaticMeshComponent* StaticMeshComponent,
+											  FSkeletonKey OutKey, bool IsSensor, bool UseRawMeshForCollision, FVector CenterOfMassTranslation) 
+{
+	if (JoltGameSim)
+	{
+		FBLet shared = JoltGameSim->LoadComplexStaticMesh(MeshTransform, StaticMeshComponent, OutKey,
+			Layers::ENEMYHITBOX, JoltGameSim->LayerToMotionTypeMapping(Layers::ENEMYHITBOX), IsSensor, UseRawMeshForCollision, CenterOfMassTranslation);
+		if (shared && shared.IsValid())
+		{
+			FBarragePrimitive::SetGravityFactor(0, shared);
+			shared->Me= FBShape::Complex;
+			JoltBodyLifecycleMapping->insert_or_assign(shared->KeyIntoBarrage, shared);
+			TranslationMapping->insert_or_assign( shared->KeyOutOfBarrage, shared->KeyIntoBarrage);
+			return shared;
+		}
 	}
 	return nullptr;
 }
@@ -551,11 +576,11 @@ bool UBarrageDispatch::BroadcastContactEvents() const
 
 inline BarrageContactEvent ConstructContactEvent(EBarrageContactEventType EventType, UBarrageDispatch* BarrageDispatch,
                                                  const JPH::Body& inBody1, const JPH::Body& inBody2,
-                                                 JPH::ContactSettings& ioSettings)
+                                                 JPH::ContactSettings& ioSettings, FVector point = {0,0,0})
 {
 	return BarrageContactEvent(
 		EventType, BarrageContactEntity(BarrageDispatch->GenerateBarrageKeyFromBodyId(inBody1.GetID()), inBody1),
-		BarrageContactEntity(BarrageDispatch->GenerateBarrageKeyFromBodyId(inBody2.GetID()), inBody2));
+		BarrageContactEntity(BarrageDispatch->GenerateBarrageKeyFromBodyId(inBody2.GetID()), inBody2), point);
 }
 
 //retains the presence of the contact manifold, as we will eventually need to use this.
@@ -563,7 +588,7 @@ void UBarrageDispatch::HandleContactAdded(const JPH::Body& inBody1, const JPH::B
                                           const JPH::ContactManifold& inManifold,
                                           JPH::ContactSettings& ioSettings)
 {
-	HandleContactAdded(inBody1, inBody2, ioSettings);
+	HandleContactAdded(inBody1, inBody2, ioSettings, FVector(CoordinateUtils::FromJoltCoordinates(inManifold.mBaseOffset + inManifold.mRelativeContactPointsOn1[0])));
 }
 
 void UBarrageDispatch::HandleContactAdded(const BarrageContactEntity Ent1, const BarrageContactEntity Ent2)
@@ -574,10 +599,10 @@ void UBarrageDispatch::HandleContactAdded(const BarrageContactEntity Ent1, const
 }
 
 void UBarrageDispatch::HandleContactAdded(const JPH::Body& inBody1, const JPH::Body& inBody2,
-										  JPH::ContactSettings& ioSettings)
+										  JPH::ContactSettings& ioSettings, FVector point)
 {
 	BarrageContactEvent ContactEventToEnqueue = ConstructContactEvent(EBarrageContactEventType::ADDED, this, inBody1,
-																	  inBody2, ioSettings);
+																	  inBody2, ioSettings, point);
 	ContactEventPump->Enqueue(ContactEventToEnqueue);
 }
 
@@ -592,6 +617,7 @@ void UBarrageDispatch::HandleContactPersisted(const JPH::Body& inBody1, const JP
 
 void UBarrageDispatch::HandleContactRemoved(const JPH::SubShapeIDPair& inSubShapePair) const
 {
+	//this is busted now prolly.
 	FBarrageKey BK1 = this->GenerateBarrageKeyFromBodyId(inSubShapePair.GetBody1ID());
 	FBarrageKey BK2 = this->GenerateBarrageKeyFromBodyId(inSubShapePair.GetBody2ID());
 	BarrageContactEvent ContactEventToEnqueue(
