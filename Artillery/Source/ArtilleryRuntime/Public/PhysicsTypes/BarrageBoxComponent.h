@@ -37,6 +37,8 @@ public:
 	
 	UBarrageBoxComponent(const FObjectInitializer& ObjectInitializer);
 	virtual bool RegistrationImplementation() override;
+	virtual FPrimitiveSceneProxy* CreateSceneProxy() override;
+	virtual FBoxSphereBounds CalcBounds(const FTransform& LocalToWorld) const override;
 };
 
 //CONSTRUCTORS
