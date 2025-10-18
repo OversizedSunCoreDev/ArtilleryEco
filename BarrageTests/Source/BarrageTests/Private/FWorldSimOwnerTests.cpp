@@ -227,7 +227,7 @@ void FWorldSimOwnerTests::Define()
 							break;
 						case Layers::MOVING:
 						case Layers::ENEMY:
-						case Layers::BONKFREEENEMY:
+						case Layers::ENEMYHITBOX:
 						case Layers::HITBOX:
 						case Layers::PROJECTILE:
 						case Layers::ENEMYPROJECTILE:
@@ -267,7 +267,7 @@ void FWorldSimOwnerTests::Define()
 				{ Layers::PROJECTILE, T{ JOLT::BroadPhaseLayers::NON_MOVING, JOLT::BroadPhaseLayers::MOVING } },
 				{ Layers::ENEMYPROJECTILE, T{ JOLT::BroadPhaseLayers::NON_MOVING, JOLT::BroadPhaseLayers::MOVING } },
 				{ Layers::ENEMY, T{ JOLT::BroadPhaseLayers::NON_MOVING, JOLT::BroadPhaseLayers::MOVING } },
-				{ Layers::BONKFREEENEMY, T{ JOLT::BroadPhaseLayers::NON_MOVING, JOLT::BroadPhaseLayers::MOVING } },
+				{ Layers::ENEMYHITBOX, T{ JOLT::BroadPhaseLayers::MOVING } },
 				{ Layers::CAST_QUERY, T{ JOLT::BroadPhaseLayers::NON_MOVING, JOLT::BroadPhaseLayers::MOVING } },
 				{ Layers::CAST_QUERY_LEVEL_GEOMETRY_ONLY, T{ JOLT::BroadPhaseLayers::NON_MOVING, JOLT::BroadPhaseLayers::MOVING } },
 				{ Layers::DEBRIS, T{ JOLT::BroadPhaseLayers::NON_MOVING } }
@@ -281,7 +281,7 @@ void FWorldSimOwnerTests::Define()
 				{ Layers::PROJECTILE, T{ JOLT::BroadPhaseLayers::DEBRIS } },
 				{ Layers::ENEMYPROJECTILE, T{ JOLT::BroadPhaseLayers::DEBRIS } },
 				{ Layers::ENEMY, T{ JOLT::BroadPhaseLayers::DEBRIS } },
-				{ Layers::BONKFREEENEMY, T{ JOLT::BroadPhaseLayers::DEBRIS } },
+				{ Layers::ENEMYHITBOX, T{ JOLT::BroadPhaseLayers::NON_MOVING, JOLT::BroadPhaseLayers::DEBRIS } },
 				{ Layers::CAST_QUERY, T{ JOLT::BroadPhaseLayers::DEBRIS } },
 				{ Layers::CAST_QUERY_LEVEL_GEOMETRY_ONLY, T{ JOLT::BroadPhaseLayers::DEBRIS } },
 				{ Layers::DEBRIS, T{ JOLT::BroadPhaseLayers::MOVING, JOLT::BroadPhaseLayers::DEBRIS } }
@@ -323,14 +323,14 @@ void FWorldSimOwnerTests::Define()
 
 			P PositiveExpectations
 			{
-				{ Layers::MOVING, T{ Layers::NON_MOVING, Layers::BONKFREEENEMY, Layers::MOVING, Layers::ENEMY, Layers::ENEMYPROJECTILE, Layers::CAST_QUERY } },
-				{ Layers::NON_MOVING, T{ Layers::MOVING, Layers::BONKFREEENEMY, Layers::CAST_QUERY, Layers::CAST_QUERY_LEVEL_GEOMETRY_ONLY, Layers::DEBRIS, Layers::ENEMY, Layers::ENEMYPROJECTILE, Layers::MOVING, Layers::PROJECTILE } },
+				{ Layers::MOVING, T{ Layers::NON_MOVING, Layers::MOVING, Layers::ENEMY, Layers::ENEMYPROJECTILE, Layers::CAST_QUERY } },
+				{ Layers::NON_MOVING, T{ Layers::MOVING, Layers::CAST_QUERY, Layers::CAST_QUERY_LEVEL_GEOMETRY_ONLY, Layers::DEBRIS, Layers::ENEMY, Layers::ENEMYPROJECTILE, Layers::MOVING, Layers::PROJECTILE } },
 				{ Layers::ENEMY, T{ Layers::NON_MOVING, Layers::MOVING, Layers::ENEMY, Layers::PROJECTILE, Layers::CAST_QUERY }},
-				{ Layers::BONKFREEENEMY, T{ Layers::NON_MOVING, Layers::MOVING, Layers::PROJECTILE, Layers::CAST_QUERY }},
+				{ Layers::ENEMYHITBOX, T{ Layers::MOVING, Layers::PROJECTILE, Layers::CAST_QUERY }},
 				{ Layers::HITBOX, T{ Layers::PROJECTILE, Layers::ENEMYPROJECTILE, Layers::CAST_QUERY } },
-				{ Layers::PROJECTILE, T{ Layers::NON_MOVING, Layers::BONKFREEENEMY, Layers::ENEMY, Layers::HITBOX, Layers::CAST_QUERY } },
+				{ Layers::PROJECTILE, T{ Layers::NON_MOVING, Layers::ENEMYHITBOX, Layers::ENEMY, Layers::HITBOX, Layers::CAST_QUERY } },
 				{ Layers::ENEMYPROJECTILE, T{ Layers::NON_MOVING, Layers::MOVING, Layers::HITBOX } },
-				{ Layers::CAST_QUERY, T{ Layers::NON_MOVING, Layers::MOVING, Layers::ENEMY, Layers::BONKFREEENEMY, Layers::HITBOX, Layers::PROJECTILE, Layers::ENEMYPROJECTILE } },
+				{ Layers::CAST_QUERY, T{ Layers::NON_MOVING, Layers::MOVING, Layers::ENEMY, Layers::ENEMYHITBOX, Layers::HITBOX, Layers::PROJECTILE, Layers::ENEMYPROJECTILE } },
 				{ Layers::CAST_QUERY_LEVEL_GEOMETRY_ONLY, T{ Layers::NON_MOVING } },
 				{ Layers::DEBRIS, T{ Layers::NON_MOVING }}
 			};
@@ -339,13 +339,13 @@ void FWorldSimOwnerTests::Define()
 			{
 				{ Layers::MOVING, T{ Layers::HITBOX, Layers::DEBRIS, Layers::CAST_QUERY_LEVEL_GEOMETRY_ONLY, Layers::PROJECTILE } },
 				{ Layers::NON_MOVING, T{ Layers::NON_MOVING, Layers::HITBOX } },
-				{ Layers::ENEMY, T{ Layers::ENEMYPROJECTILE, Layers::BONKFREEENEMY } },
-				{ Layers::BONKFREEENEMY, T{ Layers::ENEMY, Layers::ENEMYPROJECTILE, Layers::HITBOX, Layers::BONKFREEENEMY } },
-				{ Layers::HITBOX, T{ Layers::NON_MOVING, Layers::MOVING, Layers::ENEMY, Layers::BONKFREEENEMY, Layers::HITBOX } },
+				{ Layers::ENEMY, T{ Layers::ENEMYPROJECTILE, Layers::ENEMYHITBOX } },
+				{ Layers::ENEMYHITBOX, T{Layers::NON_MOVING, Layers::ENEMY, Layers::ENEMYPROJECTILE, Layers::HITBOX, Layers::ENEMYHITBOX } },
+				{ Layers::HITBOX, T{  Layers::NON_MOVING, Layers::MOVING, Layers::ENEMY, Layers::ENEMYHITBOX, Layers::HITBOX } },
 				{ Layers::PROJECTILE, T{ Layers::PROJECTILE, Layers::DEBRIS } },
-				{ Layers::ENEMYPROJECTILE, T{ Layers::ENEMYPROJECTILE, Layers::BONKFREEENEMY, Layers::PROJECTILE, Layers::CAST_QUERY_LEVEL_GEOMETRY_ONLY, Layers::DEBRIS } },
+				{ Layers::ENEMYPROJECTILE, T{ Layers::ENEMYPROJECTILE, Layers::ENEMYHITBOX, Layers::PROJECTILE, Layers::CAST_QUERY_LEVEL_GEOMETRY_ONLY, Layers::DEBRIS } },
 				{ Layers::CAST_QUERY, T{ } },
-				{ Layers::CAST_QUERY_LEVEL_GEOMETRY_ONLY, T{ Layers::MOVING, Layers::BONKFREEENEMY, Layers::HITBOX, Layers::PROJECTILE, Layers::ENEMYPROJECTILE, Layers::CAST_QUERY_LEVEL_GEOMETRY_ONLY, Layers::DEBRIS } },
+				{ Layers::CAST_QUERY_LEVEL_GEOMETRY_ONLY, T{ Layers::MOVING, Layers::ENEMYHITBOX, Layers::HITBOX, Layers::PROJECTILE, Layers::ENEMYPROJECTILE, Layers::CAST_QUERY_LEVEL_GEOMETRY_ONLY, Layers::DEBRIS } },
 				{ Layers::DEBRIS, T{ Layers::MOVING, Layers::HITBOX, Layers::PROJECTILE, Layers::ENEMYPROJECTILE, Layers::CAST_QUERY, Layers::CAST_QUERY_LEVEL_GEOMETRY_ONLY,Layers::DEBRIS } }
 			};
 
