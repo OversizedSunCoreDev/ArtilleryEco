@@ -45,6 +45,7 @@ void UBarrageJoltVisualDebugWorldSubsystem::PostInitialize()
 	AActor* DummyActor = GetWorld()->SpawnActor<AActor>(SpawnParams);
 	if (IsValid(DummyActor))
 	{
+		DummyActor->DisableComponentsSimulatePhysics();
 		DummyActor->SetFlags(RF_Transient); // We don't want to save this actor
 		DebuggerComponent = NewObject<UBarrageJoltVisualDebugger>(DummyActor, TEXT("DebuggerVisualization"), RF_Transient);
 		if (IsValid(DebuggerComponent))
