@@ -4,7 +4,7 @@
 #include "Engine/DeveloperSettings.h"
 #include "BarrageJoltVisualDebuggerSettings.generated.h"
 
-UCLASS(Config = Editor, DefaultConfig, meta=(DisplayName = "Barrage Visual Debugger"), MinimalAPI)
+UCLASS(Config = Editor, meta=(DisplayName = "Barrage Visual Debugger"), MinimalAPI)
 class UBarrageJoltVisualDebuggerSettings : public UDeveloperSettings
 {
 	GENERATED_BODY()

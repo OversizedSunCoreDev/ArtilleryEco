@@ -72,7 +72,13 @@ struct FDrawShapeCommand
 	/**
 	* Occurs in render thread
 	**/
-	virtual void Draw(FPrimitiveDrawInterface* PDI) const = 0;
+	virtual void Draw(FPrimitiveDrawInterface* PDI) const {}
+
+	/**
+	* Use this if you want the culling for these shape types and just make Draw Empty.
+	* True means it was added and should not be drawn again.
+	**/
+	virtual bool AddToDebugRenderProxy(FDebugRenderSceneProxy* Proxy) const { return false; }
 
 	FDrawShapeCommand(const FDrawShapeCommand&) = delete;
 	FDrawShapeCommand& operator=(const FDrawShapeCommand&) = delete;
@@ -250,11 +256,84 @@ struct DrawConvexHullCommand : public FDrawShapeCommand
 	}
 };
 
+struct DrawMeshCommand : public FDrawShapeCommand
+{
+	FDebugRenderSceneProxy::FMesh DebugMesh;
+	DrawMeshCommand(FTransform Transform, const JPH::MeshShape* MeshShape)
+		: FDrawShapeCommand(NSLOCTEXT("joltbarrage", "mesh", "Mesh"), Transform)
+	{
+		JPH::Shape::GetTrianglesContext TriContext;
+		MeshShape->GetTrianglesStart(
+			TriContext,
+			JPH::AABox::sBiggest(), // we want all triangles
+			JPH::Vec3::sZero(),   // position COM
+			JPH::Quat::sIdentity(), // rotation
+			JPH::Vec3::sReplicate(1.0f) // scale
+		);
+
+		// grab like 256 triangles at a time
+		uint32 CurrentTriangleVertexIndex = 0U;
+		TStaticArray<JPH::Float3, 3 * 256> RawTriangles;
+
+		const auto Bounds = MeshShape->GetLocalBounds();
+		DebugMesh.Box = FBox::BuildAABB(Transform.GetLocation(), FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(Bounds.GetExtent())));
+		DebugMesh.Color = UBarrageJoltVisualDebuggerSettings::Get().GetTriangleMeshColliderColor();
+
+		while (true)
+		{
+			const int32 TrianglesFetched = MeshShape->GetTrianglesNext(TriContext, 256, RawTriangles.GetData());
+			if (TrianglesFetched <= 0)
+			{
+				break;
+			}
+			for (int32 TriangleIndex = 0; TriangleIndex < TrianglesFetched; ++TriangleIndex)
+			{
+				const int32 BaseIndex = TriangleIndex * 3;
+
+				const auto Vertex0 = JPH::Vec3(RawTriangles[BaseIndex + 0]);
+				const auto Vertex1 = JPH::Vec3(RawTriangles[BaseIndex + 1]);
+				const auto Vertex2 = JPH::Vec3(RawTriangles[BaseIndex + 2]);
+
+				DebugMesh.Vertices.Add(FDynamicMeshVertex(
+					FVector3f(Transform.TransformPositionNoScale(FVector(FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(Vertex0))))),
+					FVector2f::ZeroVector,
+					UBarrageJoltVisualDebuggerSettings::Get().GetTriangleMeshColliderColor()
+				));
+				DebugMesh.Vertices.Add(FDynamicMeshVertex(
+					FVector3f(Transform.TransformPositionNoScale(FVector(FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(Vertex1))))),
+					FVector2f::ZeroVector,
+					UBarrageJoltVisualDebuggerSettings::Get().GetTriangleMeshColliderColor()
+				));
+				DebugMesh.Vertices.Add(FDynamicMeshVertex(
+					FVector3f(Transform.TransformPositionNoScale(FVector(FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(Vertex2))))),
+					FVector2f::ZeroVector,
+					UBarrageJoltVisualDebuggerSettings::Get().GetTriangleMeshColliderColor()
+				));
+
+				DebugMesh.Indices.Add(CurrentTriangleVertexIndex++);
+				DebugMesh.Indices.Add(CurrentTriangleVertexIndex++);
+				DebugMesh.Indices.Add(CurrentTriangleVertexIndex++);
+			}
+		}
+	}
+
+	virtual bool AddToDebugRenderProxy(FDebugRenderSceneProxy* Proxy) const override
+	{
+		Proxy->Meshes.Add(DebugMesh);
+		return true;
+	}
+};
+
 // This macro function will log the debug message of the shape type and sub shape type
 #ifndef LOG_UNHANDLED_SHAPE_SUB_SHAPE
 #define LOG_UNHANDLED_SHAPE_SUB_SHAPE(ShapeType, ShapeSubType) \
 	UE_LOG(LogTemp, Warning, TEXT("BarrageJoltVisualDebugger: Encountered unknown shape type %d and sub shape type %s, cannot visualize"), static_cast<int32>(ShapeType), *FString(JPH::sSubShapeTypeNames[static_cast<int32>(ShapeSubType)]));
 #endif
+
+static TAutoConsoleVariable<bool> CVarDebugRenderBarrage(
+	TEXT("r.DebugRender.Barrage"), false,
+	TEXT("Depends on Engine Show Flag for Collision. Use this to view all Barrage bodies regardless of UE side components."),
+	ECVF_RenderThreadSafe);
 
 UBarrageJoltVisualDebugger::UBarrageJoltVisualDebugger()
 {
@@ -264,7 +343,8 @@ UBarrageJoltVisualDebugger::UBarrageJoltVisualDebugger()
 void UBarrageJoltVisualDebugger::TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-	MarkRenderStateDirty();
+	if (!CVarDebugRenderBarrage.GetValueOnGameThread()) return;
+	MarkRenderStateDirty(); // force redraw every frame
 }
 
 
@@ -280,6 +360,7 @@ FBoxSphereBounds UBarrageJoltVisualDebugger::CalcBounds(const FTransform& LocalT
 
 FDebugRenderSceneProxy* UBarrageJoltVisualDebugger::CreateDebugSceneProxy()
 {
+	if (!CVarDebugRenderBarrage.GetValueOnGameThread()) return nullptr;
 	// This subsystem requires a UBarrageDispatch Subsystem to be present and valid.
 	UWorld* World = GetWorld();
 	if (!IsValid(World))
@@ -325,8 +406,11 @@ FDebugRenderSceneProxy* UBarrageJoltVisualDebugger::CreateDebugSceneProxy()
 
 			JPH::BodyIDVector RigidBodies;
 			{
-				QUICK_SCOPE_CYCLE_COUNTER(STAT_BarrageJolt_GetDynamicMeshElements_GetBodies);
+				QUICK_SCOPE_CYCLE_COUNTER(STAT_BarrageJolt_DBG_GetBodies);
 				PhysicsSystem->GetBodies(RigidBodies);
+			}
+			{
+				QUICK_SCOPE_CYCLE_COUNTER(STAT_BarrageJolt_DBG_BuildCommands);
 				TArray<TArray<const FDrawShapeCommand*>> ThreadShapeArrays;
 				ThreadShapeArrays.SetNum(RigidBodies.size());
 				ParallelFor(RigidBodies.size(), [this, &RigidBodies, &ThreadShapeArrays](int32 BodyIndex)
@@ -335,7 +419,18 @@ FDebugRenderSceneProxy* UBarrageJoltVisualDebugger::CreateDebugSceneProxy()
 					});
 				for (const TArray<const FDrawShapeCommand*>& LocalArray : ThreadShapeArrays)
 				{
-					_CollectedScalarShapes.Append(LocalArray);
+					for (const FDrawShapeCommand* ShapeCommand : LocalArray)
+					{
+						if (ShapeCommand != nullptr)
+						{
+							if (ShapeCommand->AddToDebugRenderProxy(this))
+							{
+								// added to proxy, do not add to collection
+								continue;
+							}
+							_CollectedScalarShapes.Add(ShapeCommand);
+						}
+					}
 				}
 			}
 		}
@@ -352,7 +447,7 @@ FDebugRenderSceneProxy* UBarrageJoltVisualDebugger::CreateDebugSceneProxy()
 		virtual FPrimitiveViewRelevance GetViewRelevance(const FSceneView* View) const override
 		{
 			// Assume Collision is always enabled
-			bool bShowForCollision = View->Family->EngineShowFlags.Collision;
+			bool bShowForCollision = View->Family->EngineShowFlags.Collision && CVarDebugRenderBarrage.GetValueOnRenderThread();
 
 			FPrimitiveViewRelevance Result;
 			Result.bDrawRelevance = IsShown(View) && bShowForCollision;
@@ -363,14 +458,12 @@ FDebugRenderSceneProxy* UBarrageJoltVisualDebugger::CreateDebugSceneProxy()
 
 		virtual void GetDynamicMeshElements(const TArray<const FSceneView*>& Views, const FSceneViewFamily& ViewFamily, uint32 VisibilityMap, FMeshElementCollector& Collector) const override
 		{
-			QUICK_SCOPE_CYCLE_COUNTER(STAT_BarrageJolt_GetDynamicMeshElements);
-
 			FDebugRenderSceneProxy::GetDynamicMeshElements(Views, ViewFamily, VisibilityMap, Collector);
 			{
 				//TODO: we can probably replace all of this with the refactor to just add shapes that are a part of the 
 				//FDebugRenderSceneProxy members... that I missed, because UE docs SUCK! However.... those do not support
 				//recording, which *may* be needed... perhaps a blend of both?
-				QUICK_SCOPE_CYCLE_COUNTER(STAT_BarrageJolt_GetDynamicMeshElements_DrawViews);
+				QUICK_SCOPE_CYCLE_COUNTER(STAT_BarrageJolt_DBG_DrawViews);
 				for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ViewIndex++)
 				{
 					if (VisibilityMap & (1 << ViewIndex))
@@ -616,63 +709,7 @@ FDebugRenderSceneProxy* UBarrageJoltVisualDebugger::CreateDebugSceneProxy()
 					const JPH::MeshShape* MeshShape = reinterpret_cast<const JPH::MeshShape*>(BodyShape);
 					if (MeshShape != nullptr)
 					{
-						JPH::Shape::GetTrianglesContext TriContext;
-						MeshShape->GetTrianglesStart(
-							TriContext,
-							JPH::AABox::sBiggest(), // we want all triangles
-							JPH::Vec3::sZero(),   // position COM
-							JPH::Quat::sIdentity(), // rotation
-							JPH::Vec3::sReplicate(1.0f) // scale
-						);
-
-						// grab like 256 triangles at a time
-						uint32 CurrentTriangleVertexIndex = 0U;
-						TStaticArray<JPH::Float3, 3 * 256> RawTriangles;
-						FDebugRenderSceneProxy::FMesh DebugMesh;
-
-						const auto Bounds = MeshShape->GetLocalBounds();
-						DebugMesh.Box = FBox::BuildAABB(JoltLocalToWorld.GetLocation(), FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(Bounds.GetExtent())));
-						DebugMesh.Color = UBarrageJoltVisualDebuggerSettings::Get().GetTriangleMeshColliderColor();
-
-						while (true)
-						{
-							const int32 TrianglesFetched = MeshShape->GetTrianglesNext(TriContext, 256, RawTriangles.GetData());
-							if (TrianglesFetched <= 0)
-							{
-								break;
-							}
-							for (int32 TriangleIndex = 0; TriangleIndex < TrianglesFetched; ++TriangleIndex)
-							{
-								const int32 BaseIndex = TriangleIndex * 3;
-
-								const auto Vertex0 = JPH::Vec3(RawTriangles[BaseIndex + 0]);
-								const auto Vertex1 = JPH::Vec3(RawTriangles[BaseIndex + 1]);
-								const auto Vertex2 = JPH::Vec3(RawTriangles[BaseIndex + 2]);
-								
-								FDynamicMeshVertex& A = DebugMesh.Vertices.AddDefaulted_GetRef();
-								A.Position = FVector3f(FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(Vertex0)));
-								
-								FDynamicMeshVertex& B = DebugMesh.Vertices.AddDefaulted_GetRef();
-								B.Position = FVector3f(FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(Vertex1)));
-
-								FDynamicMeshVertex& C = DebugMesh.Vertices.AddDefaulted_GetRef();
-								C.Position = FVector3f(FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(Vertex2)));
-
-								const auto I1 = CurrentTriangleVertexIndex + BaseIndex + 0U;
-								const auto I2 = CurrentTriangleVertexIndex + BaseIndex + 1U;
-								const auto I3 = CurrentTriangleVertexIndex + BaseIndex + 2U;
-								CurrentTriangleVertexIndex += 3U;
-
-								DebugMesh.Indices.Add(I1);
-								DebugMesh.Indices.Add(I2);
-								DebugMesh.Indices.Add(I3);
-							}
-						}
-
-						{
-							FScopeLock L(&_MeshLocker); // only because we do this in parallel for many bodies... we could build a collector like the commands...
-							Meshes.Add(MoveTemp(DebugMesh));
-						}
+						CollectedScalarShapes.Add(new DrawMeshCommand(JoltLocalToWorld, MeshShape));
 					}
 					break;
 				}
