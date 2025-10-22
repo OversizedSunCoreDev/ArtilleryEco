@@ -11,14 +11,6 @@ PRAGMA_PUSH_PLATFORM_DEFAULT_PACKING
 // jolt internals
 #include "Jolt/Core/Memory.h"
 #include <Memory/IntraTickThreadblindAlloc.h>
-
-// include all the shapes
-#include "Jolt/Physics/Collision/Shape/BoxShape.h"
-#include "Jolt/Physics/Collision/Shape/SphereShape.h"
-#include "Jolt/Physics/Collision/Shape/CapsuleShape.h"
-#include "Jolt/Physics/Collision/Shape/CylinderShape.h"
-#include "Jolt/Physics/Collision/Shape/EmptyShape.h"
-#include "Jolt/Physics/Collision/Shape/CompoundShape.h"
 JPH_SUPPRESS_WARNINGS
 
 PRAGMA_POP_PLATFORM_DEFAULT_PACKING
