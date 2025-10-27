@@ -1,7 +1,6 @@
 #include "BarrageJoltVisualDebugWorldSubsystem.h"
 #include "FWorldSimOwner.h"
 #include "CoordinateUtils.h"
-#include "PrimitiveDrawingUtils.h"
 #include "PrimitiveSceneProxyDesc.h"
 #include "HAL/Platform.h"
 THIRD_PARTY_INCLUDES_START

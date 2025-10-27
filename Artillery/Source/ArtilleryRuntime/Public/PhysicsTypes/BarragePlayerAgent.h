@@ -161,13 +161,13 @@ public:
 	UFUNCTION(BlueprintPure)
 	FVector3f GetVelocity() const
 	{
-		return IsReady && MyBarrageBody != nullptr ? FBarragePrimitive::GetVelocity(MyBarrageBody) : FVector3f::ZeroVector;
+		return IsReady && GetBarrageBody() != nullptr ? FBarragePrimitive::GetVelocity(GetBarrageBody()) : FVector3f::ZeroVector;
 	}
 	
 	UFUNCTION(BlueprintCallable)
 	FVector3f GetGroundNormal()
 	{
-		return IsReady && MyBarrageBody != nullptr ? FBarragePrimitive::GetCharacterGroundNormal(MyBarrageBody) : FVector3f::ZeroVector;
+		return IsReady && GetBarrageBody() != nullptr ? FBarragePrimitive::GetCharacterGroundNormal(GetBarrageBody()) : FVector3f::ZeroVector;
 	}
 	
 	FBarragePrimitive::FBGroundState GetGroundState() const;

@@ -2,7 +2,6 @@
 #include "PrimitiveSceneProxy.h"
 #include "FWorldSimOwner.h"
 #include "CoordinateUtils.h"
-#include "PrimitiveDrawingUtils.h"
 #include "PrimitiveSceneProxyDesc.h"
 #include "Misc/ScopeLock.h"
 #include "DynamicMeshBuilder.h"
@@ -38,6 +37,7 @@ FBoxSphereBounds UBarrageJoltVisualDebugger::CalcBounds(const FTransform& LocalT
 	return FBoxSphereBounds(FVector::ZeroVector, BoxExtent, BoxExtent.Size());
 }
 
+#if UE_ENABLE_DEBUG_DRAWING
 // TODO:
 // Nice to haves: editor customized colors, ability to toggle specific shapes, ability to toggle active vs inactive bodies, ability to toggle constraints
 
@@ -97,3 +97,4 @@ FDebugRenderSceneProxy* UBarrageJoltVisualDebugger::CreateDebugSceneProxy()
 
 	return new FEveryBarrageDebugRenderProxy(this, PhysicsSystem);
 }
+#endif

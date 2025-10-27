@@ -7,6 +7,9 @@
 #include "SkeletonTypes.h"
 #include "FBarragePrimitive.h"
 #include "Components/ActorComponent.h"
+#if WITH_EDITORONLY_DATA
+#include "Debug/BarrageDebugComponent.h"
+#endif
 #include "BarrageColliderBase.generated.h"
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
@@ -14,9 +17,15 @@ class UBarrageColliderBase : public UPrimitiveComponent
 {
 	GENERATED_BODY()
 
+private:
+#if WITH_EDITORONLY_DATA
+	UPROPERTY()
+	UBarrageDebugComponent* DebugComponent;
+#endif
+
 public:
-	FBLet MyBarrageBody = nullptr;
 	FSkeletonKey MyObjectKey;
+	FBLet MyBarrageBody = nullptr;
 	bool IsReady = false;
 	
 	// Sets default values for this component's properties
@@ -36,6 +45,9 @@ public:
 	// Called every frame
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	void SetTransform(const FTransform& NewTransform);
+
+	void SetBarrageBody(FBLet NewBody);
+	FBLet GetBarrageBody() const { return MyBarrageBody; }
 
 protected:
 	FBTransform Transform;
@@ -60,6 +72,22 @@ inline UBarrageColliderBase::UBarrageColliderBase(const FObjectInitializer& Obje
 	Super::SetEnableGravity(false);
 	Super::SetSimulatePhysics(false);
 	bHiddenInGame = true;
+
+#if WITH_EDITORONLY_DATA
+	DebugComponent = CreateDefaultSubobject<UBarrageDebugComponent>(TEXT("Barrage Debug Component"));
+	DebugComponent->SetupAttachment(this);
+#endif
+}
+
+inline void UBarrageColliderBase::SetBarrageBody(FBLet NewBody)
+{
+	MyBarrageBody = NewBody;
+#if WITH_EDITORONLY_DATA
+	if (DebugComponent)
+	{
+		DebugComponent->SetTargetBody(MyBarrageBody);
+	}
+#endif
 }
 
 //---------------------------------

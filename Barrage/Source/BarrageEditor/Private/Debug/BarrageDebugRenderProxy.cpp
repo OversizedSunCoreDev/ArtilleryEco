@@ -1,7 +1,6 @@
 #include "Debug/BarrageDebugRenderProxy.h"
 #include "FWorldSimOwner.h"
 #include "CoordinateUtils.h"
-#include "PrimitiveDrawingUtils.h"
 #include "PrimitiveSceneProxyDesc.h"
 #include "Misc/ScopeLock.h"
 #include "DynamicMeshBuilder.h"
@@ -38,6 +37,7 @@
 FBarrageDebugRenderProxy::FBarrageDebugRenderProxy(const UPrimitiveComponent* Component, TSharedPtr<JPH::PhysicsSystem> Simulation)
 	: FDebugRenderSceneProxy(Component)
 	, PhysicsSystem(Simulation)
+	, bDrawOnlyIfSelected(false)
 {
 	bWillEverBeLit = false;
 	bIsAlwaysVisible = true;
@@ -57,9 +57,13 @@ FPrimitiveViewRelevance FBarrageDebugRenderProxy::GetViewRelevance(const FSceneV
 	bool bShowForCollision = View->Family->EngineShowFlags.Collision;
 
 	FPrimitiveViewRelevance Result;
-	Result.bDrawRelevance = IsShown(View) && bShowForCollision;
+	Result.bDrawRelevance = IsShown(View) && bShowForCollision && (!bDrawOnlyIfSelected || IsSelected());
 	Result.bDynamicRelevance = true;
 	Result.bSeparateTranslucency = Result.bNormalTranslucency = IsShown(View);
+#if WITH_EDITOR
+	Result.bShadowRelevance = IsShadowCast(View);
+	Result.bEditorPrimitiveRelevance = UseEditorCompositing(View);
+#endif // WITH_EDITOR
 	return Result;
 }
 
@@ -267,7 +271,9 @@ void FBarrageDebugRenderProxy::GatherScalarShapes(const FTransform& JoltLocalToW
 				const auto Faces = ConvexHullShape->GetNumFaces();
 				FDebugRenderSceneProxy::FMesh DebugMesh;
 				DebugMesh.Color = UBarrageJoltVisualDebuggerSettings::Get().GetConvexColliderColor();
+#if (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 6)
 				DebugMesh.Box = FBox(UE::Math::TSphere<double>(JoltLocalToWorld.GetLocation(), ConvexHullShape->GetConvexRadius()));
+#endif
 				for (uint32 FaceIndex = 0; FaceIndex < Faces; ++FaceIndex)
 				{
 					const auto Vertices = ConvexHullShape->GetNumVerticesInFace(FaceIndex);
@@ -437,7 +443,9 @@ void FBarrageDebugRenderProxy::GatherScalarShapes(const FTransform& JoltLocalToW
 
 				const auto B = MeshShape->GetLocalBounds();
 				FDebugRenderSceneProxy::FMesh DebugMesh;
+#if (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 6)
 				DebugMesh.Box = FBox::BuildAABB(JoltLocalToWorld.GetLocation(), FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(B.GetExtent())));
+#endif
 				DebugMesh.Color = UBarrageJoltVisualDebuggerSettings::Get().GetTriangleMeshColliderColor();
 
 				while (true)

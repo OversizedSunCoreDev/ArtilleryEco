@@ -1,10 +1,16 @@
+#pragma once
+
 #include "CoreMinimal.h"
 #include "DebugRenderSceneProxy.h"
 #include "Debug/DebugDrawComponent.h"
 #include "PrimitiveSceneProxy.h"
 #include "FWorldSimOwner.h"
 #include "CoordinateUtils.h"
+#if (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 6)
 #include "PrimitiveDrawingUtils.h"
+#else
+#include "Engine.h"
+#endif
 #include "PrimitiveSceneProxyDesc.h"
 #include "Misc/ScopeLock.h"
 #include "DynamicMeshBuilder.h"
@@ -57,6 +63,8 @@ protected:
 
 	void AddInvalidShapePointStar(FTransform Transform);
 	void GatherBodyShapeCommands(const JPH::BodyID& BodyID);
+
+	bool bDrawOnlyIfSelected;
 
 private:
 	TSharedPtr<JPH::PhysicsSystem> PhysicsSystem;

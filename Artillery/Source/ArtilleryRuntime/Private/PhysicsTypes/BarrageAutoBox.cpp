@@ -80,9 +80,10 @@ void UBarrageAutoBox::Register()
 					FMath::Max(extents.Z, 0.1),
 					FVector3d(OffsetCenterToMatchBoundedShapeX, OffsetCenterToMatchBoundedShapeY, OffsetCenterToMatchBoundedShapeZ),
 					MyMassClass.Category);
-				MyBarrageBody = Physics->CreatePrimitive(params, MyObjectKey, static_cast<uint16>(Layer), false, false, isMovable);
-				if (MyBarrageBody)
+				FBLet NewBarrageBody = Physics->CreatePrimitive(params, MyObjectKey, static_cast<uint16>(Layer), false, false, isMovable);
+				if (NewBarrageBody)
 				{
+					SetBarrageBody(NewBarrageBody);
 					AnyMesh->WakeRigidBody();
 					IsReady = true;
 					AnyMesh->SetSimulatePhysics(false);
@@ -121,7 +122,7 @@ FPrimitiveSceneProxy* UBarrageAutoBox::CreateSceneProxy()
 			, bDrawOnlyIfSelected(false)
 			, BarragePosition(MoveTemp(BarragePosition))
 			, BoxExtents(InComponent->DiameterXYZ)
-			, bHasBarrageBody(InComponent->MyBarrageBody.IsValid())
+			, bHasBarrageBody(InComponent->GetBarrageBody().IsValid())
 		{
 			bWillEverBeLit = false;
 
@@ -233,5 +234,5 @@ FPrimitiveSceneProxy* UBarrageAutoBox::CreateSceneProxy()
 #endif // WITH_EDITOR
 	};
 
-	return new FBarrageBoxSceneProxy(this, FBarragePrimitive::GetPosition(MyBarrageBody));
+	return new FBarrageBoxSceneProxy(this, FBarragePrimitive::GetPosition(GetBarrageBody()));
 }

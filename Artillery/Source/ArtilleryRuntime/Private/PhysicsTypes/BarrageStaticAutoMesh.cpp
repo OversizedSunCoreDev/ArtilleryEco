@@ -47,16 +47,18 @@ inline void UBarrageStaticAutoMesh::Register()
 			SetTransform(Actor->GetActorTransform());
 
 			UStaticMeshComponent* MeshPtr = Actor->GetComponentByClass<UStaticMeshComponent>();
+			FBLet NewBarrageBody = nullptr;
 			if (MeshPtr)
 			{
 				// remember, jolt coords are X,Z,Y. BUT we don't want to scale the scale. this breaks our coord guidelines
 				// by storing the jolted ver in the params but oh well.
 				UBarrageDispatch* Physics = GetWorld()->GetSubsystem<UBarrageDispatch>();
-				MyBarrageBody = Physics->LoadComplexStaticMesh(Transform, MeshPtr, MyObjectKey);
+				NewBarrageBody = Physics->LoadComplexStaticMesh(Transform, MeshPtr, MyObjectKey);
 			}
 
-			if (MyBarrageBody)
+			if (NewBarrageBody)
 			{
+				SetBarrageBody(NewBarrageBody);
 				IsReady = true;
 			}
 		}

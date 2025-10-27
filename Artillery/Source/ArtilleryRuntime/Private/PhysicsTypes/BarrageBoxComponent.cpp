@@ -55,9 +55,10 @@ inline void UBarrageBoxComponent::Register()
 			YDiam,
 			ZDiam,
 			FVector3d(OffsetCenterToMatchBoundedShapeX, OffsetCenterToMatchBoundedShapeY, OffsetCenterToMatchBoundedShapeZ));
-		MyBarrageBody = Physics->CreatePrimitive(params, MyObjectKey, Layers::MOVING);
-		if (MyBarrageBody)
+		FBLet NewBarrageBody = Physics->CreatePrimitive(params, MyObjectKey, Layers::MOVING);
+		if (NewBarrageBody)
 		{
+			SetBarrageBody(NewBarrageBody);
 			IsReady = true;
 		}
 	}
@@ -93,7 +94,7 @@ FPrimitiveSceneProxy* UBarrageBoxComponent::CreateSceneProxy()
 			, bDrawOnlyIfSelected(false)
 			, BarragePosition(MoveTemp(BarragePosition))
 			, BoxExtents(InComponent->XDiam, InComponent->YDiam, InComponent->ZDiam)
-			, bHasBarrageBody(InComponent->MyBarrageBody.IsValid())
+			, bHasBarrageBody(InComponent->GetBarrageBody().IsValid())
 		{
 			bWillEverBeLit = false;
 
@@ -205,5 +206,5 @@ FPrimitiveSceneProxy* UBarrageBoxComponent::CreateSceneProxy()
 #endif // WITH_EDITOR
 	};
 
-	return new FBarrageBoxSceneProxy(this, FBarragePrimitive::GetPosition(MyBarrageBody));
+	return new FBarrageBoxSceneProxy(this, FBarragePrimitive::GetPosition(GetBarrageBody()));
 }
