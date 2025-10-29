@@ -125,6 +125,73 @@ void FBarrageDebugRenderProxy::GatherBodyShapeCommands(const JPH::BodyID& BodyID
 	}
 }
 
+void FBarrageDebugRenderProxy::DumpShapes()
+{
+	{
+		FScopeLock _(&SphereLocker);
+		Spheres.Empty();
+	}
+	{
+		FScopeLock _(&AABLocker);
+		AABs.Empty();
+	}
+	{
+		FScopeLock _(&ChoppedConeLocker);
+		ChoppedCones.Empty();
+	}
+	{
+		FScopeLock _(&LineLocker);
+		Lines.Empty();
+	}
+	{
+		FScopeLock _(&StarLocker);
+		Stars.Empty();
+	}
+	{
+		FScopeLock _(&CapsulLocker);
+		Capsules.Empty();
+	}
+	{
+		FScopeLock _(&MeshLocker);
+		Meshes.Empty();
+	}
+	{
+		FScopeLock _(&BoxLocker);
+		Boxes.Empty();
+	}
+	{
+		FScopeLock _(&ConeLocker);
+		Cones.Empty();
+	}
+	{
+		FScopeLock _(&CylinderLocker);
+		Cylinders.Empty();
+	}
+	{
+		FScopeLock _(&CoordinateSystemLocker);
+		CoordinateSystems.Empty();
+	}
+	{
+		FScopeLock _(&TextLocker);
+		Texts.Empty();
+	}
+	{
+		FScopeLock _(&ArrowLocker);
+		ArrowLines.Empty();
+	}
+	{
+		FScopeLock _(&DashedLocker);
+		DashedLines.Empty();
+	}
+	{
+		FScopeLock _(&ConeLocker);
+		Cones.Empty();
+	}
+	{
+		FScopeLock _(&CylinderLocker);
+		Cylinders.Empty();
+	}
+}
 
 void FBarrageDebugRenderProxy::GatherScalarShapes(const FTransform& JoltLocalToWorld, const JPH::Shape* BodyShape)
 {

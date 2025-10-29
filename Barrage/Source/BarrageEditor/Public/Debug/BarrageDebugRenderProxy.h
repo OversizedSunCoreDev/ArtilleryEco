@@ -65,9 +65,10 @@ protected:
 	void GatherBodyShapeCommands(const JPH::BodyID& BodyID);
 
 	bool bDrawOnlyIfSelected;
-
-private:
 	TSharedPtr<JPH::PhysicsSystem> PhysicsSystem;
+
+	void DumpShapes(); //clears all stored shapes
+private:
 
 	FCriticalSection LineLocker;
 	FCriticalSection DashedLocker;

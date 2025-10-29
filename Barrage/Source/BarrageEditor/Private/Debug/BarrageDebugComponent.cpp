@@ -11,8 +11,9 @@ UBarrageDebugComponent::UBarrageDebugComponent()
 
 FBoxSphereBounds UBarrageDebugComponent::CalcBounds(const FTransform& LocalToWorld) const
 {
-	static const FVector MinExtent(1.f);
-	static const auto Invalid = FBoxSphereBounds(FBox(-MinExtent, MinExtent)).TransformBy(LocalToWorld);
+	// defaults that will always render
+	static const FVector MinExtent(UE_LARGE_HALF_WORLD_MAX);
+	static const auto Invalid = FBoxSphereBounds(FBox(-MinExtent, MinExtent));
 
 	if(!FBarragePrimitive::IsNotNull(TargetBodyToVisualize))
 	{
@@ -108,16 +109,30 @@ FDebugRenderSceneProxy* UBarrageDebugComponent::CreateDebugSceneProxy()
 			JPH::BodyID BodyID;
 			if (BarrageDispatch->JoltGameSim->GetBodyIDOrDefault(Lease->KeyIntoBarrage, BodyID))
 			{
-				{
-					QUICK_SCOPE_CYCLE_COUNTER(STAT_BarrageJolt_DBG_GetSingleBody);
-					JPH::BodyLockRead BodyReadLock(Simulation->GetBodyLockInterface(), BodyID);
-				}
-				{
-					QUICK_SCOPE_CYCLE_COUNTER(STAT_BarrageJolt_DBG_BuildSingleCommands);
-					GatherBodyShapeCommands(BodyID);
-				}
+				TargetBodyID = BodyID;
+			}
+			else
+			{
+				TargetBodyID = JPH::BodyID(); // invalid
 			}
 			bDrawOnlyIfSelected = bDebugOnlyIfSelected;
+		}
+
+		virtual void GetDynamicMeshElements(const TArray<const FSceneView*>& Views, const FSceneViewFamily& ViewFamily, uint32 VisibilityMap, FMeshElementCollector& Collector) const override
+		{
+			// EVIL, EVIL, EVIIIL const_cast
+			FEveryBarrageDebugRenderProxy* EvilVileThis = const_cast<FEveryBarrageDebugRenderProxy*>(static_cast<const FEveryBarrageDebugRenderProxy*>(this));
+			EvilVileThis->DumpShapes();
+			{
+				QUICK_SCOPE_CYCLE_COUNTER(STAT_BarrageJolt_DBG_GetSingleBody);
+				JPH::BodyLockRead BodyReadLock(EvilVileThis->PhysicsSystem->GetBodyLockInterface(), TargetBodyID);
+			}
+			{
+				QUICK_SCOPE_CYCLE_COUNTER(STAT_BarrageJolt_DBG_BuildSingleCommands);
+				EvilVileThis->GatherBodyShapeCommands(TargetBodyID);
+			}
+
+			FBarrageDebugRenderProxy::GetDynamicMeshElements(Views, ViewFamily, VisibilityMap, Collector);
 		}
 
 	private:

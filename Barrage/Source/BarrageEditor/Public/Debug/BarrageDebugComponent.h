@@ -29,6 +29,7 @@ public:
 	UBarrageDebugComponent();
 
 	virtual FBoxSphereBounds CalcBounds(const FTransform& LocalToWorld) const override;
-	void SetTargetBody(FBLet InBodyToVisualize) { TargetBodyToVisualize = InBodyToVisualize; }
+	FORCEINLINE void SetTargetBody(FBLet InBodyToVisualize) { TargetBodyToVisualize = InBodyToVisualize; }
+	FORCEINLINE bool IsBodySame(FBLet InBodyToVisualize) const { return TargetBodyToVisualize == InBodyToVisualize; }
 };
 
