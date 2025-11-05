@@ -4,7 +4,7 @@
 //--------------------
 
 // Sets default values for this component's properties
-inline UBarrageStaticAutoMesh::UBarrageStaticAutoMesh(const FObjectInitializer& ObjectInitializer) : Super(
+UBarrageStaticAutoMesh::UBarrageStaticAutoMesh(const FObjectInitializer& ObjectInitializer) : Super(
 	ObjectInitializer)
 {
 	// Set this component to be initialized when the game starts, and to be ticked every frame.  You can turn these features
@@ -20,7 +20,7 @@ inline UBarrageStaticAutoMesh::UBarrageStaticAutoMesh(const FObjectInitializer& 
 	Super::SetSimulatePhysics(false);
 }
 
-inline void UBarrageStaticAutoMesh::Register()
+void UBarrageStaticAutoMesh::Register()
 {
 	if (GetOwner())
 	{

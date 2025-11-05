@@ -4,7 +4,7 @@
 
 #define LOCTEXT_NAMESPACE "FBarrageEditorModule"
 
-struct FBarrageEditorModule : public IBarrageEditorModule
+struct FBarrageEditorModule : public BarrageEditor
 {
     FBarrageEditorModule()
     {
@@ -22,6 +22,6 @@ struct FBarrageEditorModule : public IBarrageEditorModule
     }
 };
 
-IMPLEMENT_MODULE(FBarrageEditorModule, IBarrageEditorModule)
+IMPLEMENT_MODULE(FBarrageEditorModule, BarrageEditor)
 
 #undef LOCTEXT_NAMESPACE
