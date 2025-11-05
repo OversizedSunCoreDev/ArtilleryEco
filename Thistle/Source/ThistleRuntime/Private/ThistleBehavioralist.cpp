@@ -4,7 +4,9 @@
 #include "NativeGameplayTags.h"
 #include "SmartObjectComponent.h"
 #include "SmartObjectSubsystem.h"
+#if (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 6)
 #include "SmartObjectRequestTypes.h"
+#endif
 #include "ThistleDispatch.h"
 #include "TransformDispatch.h"
 #include "Public/GameplayTags.h"
