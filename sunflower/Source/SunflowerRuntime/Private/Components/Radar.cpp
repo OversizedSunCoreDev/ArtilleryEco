@@ -60,7 +60,7 @@ void URadarComponent::TickComponent(float DeltaTime, enum ELevelTick TickType, F
 }
 
 // TODO account for different texture sizes
-inline void URadarComponent::UpdateMinimapTexture()
+void URadarComponent::UpdateMinimapTexture()
 {
 	UKismetRenderingLibrary::ClearRenderTarget2D(this, RenderTarget2D);
 	UCanvas* Canvas;
@@ -84,7 +84,7 @@ inline void URadarComponent::UpdateMinimapTexture()
 	UKismetRenderingLibrary::EndDrawCanvasToRenderTarget(this, RenderTargetContext);
 }
 
-inline void URadarComponent::SetRadarWidget(UMaterialInstanceDynamic* NewMaterial)
+void URadarComponent::SetRadarWidget(UMaterialInstanceDynamic* NewMaterial)
 {
 	MinimapMaterialInstance = NewMaterial;
 	if (MinimapMaterialInstance != nullptr)

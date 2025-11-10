@@ -2,17 +2,15 @@
 
 #include "Engine.h"
 
-#include "Kismet2/KismetEditorUtilities.h"
 #include "Modules/ModuleInterface.h"
 #include "Modules/ModuleManager.h"
-#include "UnrealEd.h"
 
 DECLARE_LOG_CATEGORY_EXTERN(BarrageEditorLog, All, All)
 
 /**
 * The public interface to this module
 */
-class IBarrageEditorModule : public IModuleInterface
+class BarrageEditor : public IModuleInterface
 {
 
 public:
@@ -22,9 +20,9 @@ public:
     *
     * @return Returns singleton instance, loading the module on demand if needed
     */
-    static inline IBarrageEditorModule& Get()
+    static inline BarrageEditor& Get()
     {
-        return FModuleManager::LoadModuleChecked<IBarrageEditorModule>("BarrageEditor");
+        return FModuleManager::LoadModuleChecked<BarrageEditor>("BarrageEditor");
     }
 
     /**

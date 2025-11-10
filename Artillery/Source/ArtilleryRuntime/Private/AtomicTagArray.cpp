@@ -111,7 +111,7 @@ bool AtomicTagArray::SkeletonKeyExists(FSkeletonKey Top)
 	return HOpen ? HOpen->contains(Key) : false;
 }
 
-inline FConservedTags AtomicTagArray::GetReference(FSkeletonKey Top)
+FConservedTags AtomicTagArray::GetReference(FSkeletonKey Top)
 {
 	FTagsPtr into = nullptr;
 	uint32_t Key = KeyToHash(Top);

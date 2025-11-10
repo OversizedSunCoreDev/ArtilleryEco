@@ -84,7 +84,8 @@ inline bool UBarrageAutoBox::RegistrationImplementation()
 				MyBarrageBody = Physics->CreatePrimitive(params, MyParentObjectKey, static_cast<uint16>(Layer), false, false, isMovable);
 				if(MyBarrageBody)
 				{
-					AnyMesh->WakeRigidBody(); 
+					SetBarrageBody(MyBarrageBody);
+					AnyMesh->WakeRigidBody();
 					IsReady = true;
 					AnyMesh->SetSimulatePhysics(false);
 				}
@@ -126,7 +127,7 @@ FPrimitiveSceneProxy* UBarrageAutoBox::CreateSceneProxy()
 			, bDrawOnlyIfSelected(false)
 			, BarragePosition(MoveTemp(BarragePosition))
 			, BoxExtents(InComponent->DiameterXYZ)
-			, bHasBarrageBody(InComponent->MyBarrageBody.IsValid())
+			, bHasBarrageBody(InComponent->GetBarrageBody().IsValid())
 		{
 			bWillEverBeLit = false;
 
@@ -238,5 +239,5 @@ FPrimitiveSceneProxy* UBarrageAutoBox::CreateSceneProxy()
 #endif // WITH_EDITOR
 	};
 
-	return new FBarrageBoxSceneProxy(this, FBarragePrimitive::GetPosition(MyBarrageBody));
+	return new FBarrageBoxSceneProxy(this, FBarragePrimitive::GetPosition(GetBarrageBody()));
 }

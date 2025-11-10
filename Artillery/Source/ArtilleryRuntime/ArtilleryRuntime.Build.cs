@@ -45,6 +45,7 @@ public class ArtilleryRuntime : ModuleRules
 				"Bristlecone",
 				"SkeletonKey",
 				"Barrage",
+				"BarrageEditor",
 				"Cabling",
 				"LocomoCore",
 				"Niagara", 

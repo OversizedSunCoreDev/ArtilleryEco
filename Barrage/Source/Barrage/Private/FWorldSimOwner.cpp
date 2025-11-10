@@ -71,7 +71,7 @@ FWorldSimOwner::FWorldSimOwner(float cDeltaTime, InitExitFunction JobThreadIniti
 	//	https://youtu.be/jhCupKFly_M?si=umi0zvJer8NymGzX&t=438
 }
 
-inline void FWorldSimOwner::SphereCast(
+void FWorldSimOwner::SphereCast(
 	double Radius,
 	double Distance,
 	FVector3d CastFrom,
@@ -131,7 +131,7 @@ inline void FWorldSimOwner::SphereCast(
 	}
 }
 
-inline void FWorldSimOwner::SphereSearch(
+void FWorldSimOwner::SphereSearch(
 	const JPH::BodyID& CastingBody,
 	const FVector3d& Location,
 	double Radius,
@@ -153,7 +153,7 @@ inline void FWorldSimOwner::SphereSearch(
 	}
 }
 
-inline void FWorldSimOwner::CastRay(FVector3d CastFrom, FVector3d Direction, const BroadPhaseLayerFilter& BroadPhaseFilter, const ObjectLayerFilter& ObjectFilter, const BodyFilter& BodiesFilter, TSharedPtr<FHitResult> OutHit) const
+void FWorldSimOwner::CastRay(FVector3d CastFrom, FVector3d Direction, const BroadPhaseLayerFilter& BroadPhaseFilter, const ObjectLayerFilter& ObjectFilter, const BodyFilter& BodiesFilter, TSharedPtr<FHitResult> OutHit) const
 {
 	check(OutHit.IsValid());
 	OutHit->Init();
@@ -184,7 +184,7 @@ inline void FWorldSimOwner::CastRay(FVector3d CastFrom, FVector3d Direction, con
 	}
 }
 
-inline EMotionType FWorldSimOwner::LayerToMotionTypeMapping(uint16 Layer)
+EMotionType LayerToMotionTypeMapping(uint16 Layer)
 {
 	switch (Layer)
 	{
@@ -214,7 +214,7 @@ inline EMotionType FWorldSimOwner::LayerToMotionTypeMapping(uint16 Layer)
 	}
 }
 
-inline EMotionQuality LayerToMotionQualityMapping(uint16 Layer)
+EMotionQuality LayerToMotionQualityMapping(uint16 Layer)
 {
 	switch (Layer)
 	{
@@ -244,7 +244,7 @@ inline EMotionQuality LayerToMotionQualityMapping(uint16 Layer)
 	}
 }
 
-inline Ref<Shape> FWorldSimOwner::AttemptBoxCache(double JoltX, double JoltY, double JoltZ, float HEReduceMin)
+Ref<Shape> FWorldSimOwner::AttemptBoxCache(double JoltX, double JoltY, double JoltZ, float HEReduceMin)
 {
 	Vec3 Bounds(JoltX, JoltY, JoltZ);
 	void* At = &Bounds;
@@ -266,7 +266,7 @@ inline Ref<Shape> FWorldSimOwner::AttemptBoxCache(double JoltX, double JoltY, do
 }
 
 //we need the coordinate utils, but we don't really want to include them in the .h
-inline FBarrageKey FWorldSimOwner::CreatePrimitive(FBBoxParams& ToCreate, uint16 Layer, bool IsSensor, bool forceDynamic, bool isMovable)
+FBarrageKey FWorldSimOwner::CreatePrimitive(FBBoxParams& ToCreate, uint16 Layer, bool IsSensor, bool forceDynamic, bool isMovable)
 {
 	//if movable, check if dynamic. if not movable but dynamic, come on guys.
 	EMotionType MovementType = isMovable ?
@@ -330,7 +330,7 @@ inline FBarrageKey FWorldSimOwner::CreatePrimitive(FBBoxParams& ToCreate, uint16
 }
 
 //we need the coordinate utils, but we don't really want to include them in the .h
-inline FBarrageKey FWorldSimOwner::CreatePrimitive(FBCharParams& ToCreate, uint16 Layer)
+FBarrageKey FWorldSimOwner::CreatePrimitive(FBCharParams& ToCreate, uint16 Layer)
 {
 	TSharedPtr<FBCharacter> NewCharacter = MakeShareable<FBCharacter>(new FBCharacter);
 	NewCharacter->mHeightStanding = 2 * ToCreate.JoltHalfHeightOfCylinder;
@@ -355,7 +355,7 @@ inline FBarrageKey FWorldSimOwner::CreatePrimitive(FBCharParams& ToCreate, uint1
 	return FBK;
 }
 
-inline FBarrageKey FWorldSimOwner::CreatePrimitive(FBSphereParams& ToCreate, uint16 Layer, bool IsSensor)
+FBarrageKey FWorldSimOwner::CreatePrimitive(FBSphereParams& ToCreate, uint16 Layer, bool IsSensor)
 {
 	EMotionType MovementType = LayerToMotionTypeMapping(Layer);
 	BodyCreationSettings sphere_settings(new SphereShape(ToCreate.JoltRadius),
@@ -372,7 +372,7 @@ inline FBarrageKey FWorldSimOwner::CreatePrimitive(FBSphereParams& ToCreate, uin
 	return FBK;
 }
 
-inline FBarrageKey FWorldSimOwner::CreatePrimitive(FBCapParams& ToCreate, uint16 Layer, bool IsSensor, FMassByCategory::BMassCategories MassClass)
+FBarrageKey FWorldSimOwner::CreatePrimitive(FBCapParams& ToCreate, uint16 Layer, bool IsSensor, FMassByCategory::BMassCategories MassClass)
 {
 	EMotionType MovementType = LayerToMotionTypeMapping(Layer);
 	BodyCreationSettings cap_settings(new CapsuleShape(ToCreate.JoltHalfHeightOfCylinder, ToCreate.JoltRadius),

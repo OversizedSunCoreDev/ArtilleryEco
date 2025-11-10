@@ -7,7 +7,7 @@
 //do not invoke the default constructor unless you have a really good plan. in general, let UE initialize your components.
 
 // Sets default values for this component's properties
-inline UBarrageBoxComponent::UBarrageBoxComponent(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
+UBarrageBoxComponent::UBarrageBoxComponent(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
 	// Set this component to be initialized when the game starts, and to be ticked every frame.  You can turn these features
 	// off to improve performance if you don't need them.
@@ -25,7 +25,7 @@ inline UBarrageBoxComponent::UBarrageBoxComponent(const FObjectInitializer& Obje
 //KEY REGISTER, initializer, and failover.
 //----------------------------------
 
-inline bool UBarrageBoxComponent::RegistrationImplementation()
+void UBarrageBoxComponent::Register()
 {
 	if(MyParentObjectKey == 0)
 	{
@@ -53,9 +53,10 @@ inline bool UBarrageBoxComponent::RegistrationImplementation()
 			YDiam,
 			ZDiam,
 			FVector3d(OffsetCenterToMatchBoundedShapeX, OffsetCenterToMatchBoundedShapeY, OffsetCenterToMatchBoundedShapeZ));
-		MyBarrageBody = Physics->CreatePrimitive(params, MyParentObjectKey, Layers::MOVING);
-		if(MyBarrageBody)
+		FBLet NewBarrageBody = Physics->CreatePrimitive(params, MyParentObjectKey, Layers::MOVING);
+		if (NewBarrageBody)
 		{
+			SetBarrageBody(NewBarrageBody);
 			IsReady = true;
 		}
 	}
@@ -93,7 +94,7 @@ FPrimitiveSceneProxy* UBarrageBoxComponent::CreateSceneProxy()
 			, bDrawOnlyIfSelected(false)
 			, BarragePosition(MoveTemp(BarragePosition))
 			, BoxExtents(InComponent->XDiam, InComponent->YDiam, InComponent->ZDiam)
-			, bHasBarrageBody(InComponent->MyBarrageBody.IsValid())
+			, bHasBarrageBody(InComponent->GetBarrageBody().IsValid())
 		{
 			bWillEverBeLit = false;
 
@@ -205,5 +206,5 @@ FPrimitiveSceneProxy* UBarrageBoxComponent::CreateSceneProxy()
 #endif // WITH_EDITOR
 	};
 
-	return new FBarrageBoxSceneProxy(this, FBarragePrimitive::GetPosition(MyBarrageBody));
+	return new FBarrageBoxSceneProxy(this, FBarragePrimitive::GetPosition(GetBarrageBody()));
 }

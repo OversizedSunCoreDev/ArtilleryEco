@@ -4,7 +4,7 @@
 //--------------------
 
 // Sets default values for this component's properties
-inline UBarrageStaticAutoMesh::UBarrageStaticAutoMesh(const FObjectInitializer& ObjectInitializer) : Super(
+UBarrageStaticAutoMesh::UBarrageStaticAutoMesh(const FObjectInitializer& ObjectInitializer) : Super(
 	ObjectInitializer)
 {
 	// Set this component to be initialized when the game starts, and to be ticked every frame.  You can turn these features
@@ -20,7 +20,7 @@ inline UBarrageStaticAutoMesh::UBarrageStaticAutoMesh(const FObjectInitializer& 
 	Super::SetSimulatePhysics(false);
 }
 
-inline bool UBarrageStaticAutoMesh::RegistrationImplementation()
+void UBarrageStaticAutoMesh::Register()
 {
 	if (GetOwner())
 	{
@@ -47,16 +47,18 @@ inline bool UBarrageStaticAutoMesh::RegistrationImplementation()
 			SetTransform(Actor->GetActorTransform());
 		
 			UStaticMeshComponent* MeshPtr = Actor->GetComponentByClass<UStaticMeshComponent>();
-			if(MeshPtr)
+			FBLet NewBarrageBody = nullptr;
+			if (MeshPtr)
 			{
 				// remember, jolt coords are X,Z,Y. BUT we don't want to scale the scale. this breaks our coord guidelines
 				// by storing the jolted ver in the params but oh well.
 				UBarrageDispatch* Physics = GetWorld()->GetSubsystem<UBarrageDispatch>();
-				MyBarrageBody = Physics->LoadComplexStaticMesh(Transform, MeshPtr, MyParentObjectKey);
+				NewBarrageBody = Physics->LoadComplexStaticMesh(Transform, MeshPtr, MyParentObjectKey);
 			}
-			
-			if(MyBarrageBody)
+
+			if (NewBarrageBody)
 			{
+				SetBarrageBody(NewBarrageBody);
 				IsReady = true;
 			}
 		}
