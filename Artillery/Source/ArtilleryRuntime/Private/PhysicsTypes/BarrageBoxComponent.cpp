@@ -7,7 +7,7 @@
 //do not invoke the default constructor unless you have a really good plan. in general, let UE initialize your components.
 
 // Sets default values for this component's properties
-inline UBarrageBoxComponent::UBarrageBoxComponent(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
+UBarrageBoxComponent::UBarrageBoxComponent(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
 	// Set this component to be initialized when the game starts, and to be ticked every frame.  You can turn these features
 	// off to improve performance if you don't need them.
@@ -27,7 +27,7 @@ inline UBarrageBoxComponent::UBarrageBoxComponent(const FObjectInitializer& Obje
 //KEY REGISTER, initializer, and failover.
 //----------------------------------
 
-inline void UBarrageBoxComponent::Register()
+void UBarrageBoxComponent::Register()
 {
 	if (MyObjectKey == 0)
 	{

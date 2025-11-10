@@ -167,10 +167,12 @@ void FBarrageDebugRenderProxy::DumpShapes()
 		FScopeLock _(&CylinderLocker);
 		Cylinders.Empty();
 	}
+#if (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 6)
 	{
 		FScopeLock _(&CoordinateSystemLocker);
 		CoordinateSystems.Empty();
 	}
+#endif
 	{
 		FScopeLock _(&TextLocker);
 		Texts.Empty();
