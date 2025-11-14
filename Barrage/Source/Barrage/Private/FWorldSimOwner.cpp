@@ -184,7 +184,7 @@ void FWorldSimOwner::CastRay(FVector3d CastFrom, FVector3d Direction, const Broa
 	}
 }
 
-EMotionType LayerToMotionTypeMapping(uint16 Layer)
+EMotionType FWorldSimOwner::LayerToMotionTypeMapping(uint16 Layer)
 {
 	switch (Layer)
 	{

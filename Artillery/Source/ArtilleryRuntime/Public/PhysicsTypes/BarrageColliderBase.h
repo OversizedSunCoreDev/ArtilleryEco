@@ -21,8 +21,8 @@ private:
 	void UpdateDebugComponent();
 #endif
 
-	FBLet MyBarrageBody = nullptr;
 public:
+	FBLet MyBarrageBody = nullptr;
 	FSkeletonKey MyParentObjectKey;
 	FSkeletonKey MyObjectKey;
 	bool IsReady = false;

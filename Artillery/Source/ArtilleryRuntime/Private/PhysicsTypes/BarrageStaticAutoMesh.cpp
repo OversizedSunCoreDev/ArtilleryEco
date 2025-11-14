@@ -20,7 +20,7 @@ UBarrageStaticAutoMesh::UBarrageStaticAutoMesh(const FObjectInitializer& ObjectI
 	Super::SetSimulatePhysics(false);
 }
 
-void UBarrageStaticAutoMesh::Register()
+bool UBarrageStaticAutoMesh::RegistrationImplementation()
 {
 	if (GetOwner())
 	{

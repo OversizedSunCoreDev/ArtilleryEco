@@ -25,7 +25,7 @@ UBarrageBoxComponent::UBarrageBoxComponent(const FObjectInitializer& ObjectIniti
 //KEY REGISTER, initializer, and failover.
 //----------------------------------
 
-void UBarrageBoxComponent::Register()
+bool UBarrageBoxComponent::RegistrationImplementation()
 {
 	if(MyParentObjectKey == 0)
 	{
