@@ -84,7 +84,18 @@ public:
 	inline bool operator!=(FSkeletonKey const& rhs) {
 		return (Obj != rhs.Obj);
 	}
-
+	//This effectively embeds a "parent" in the metadata bits of a key, which has 2 effects.
+	//one, repeated primary keys with differing parent keys will work correctly.
+	//two, some key types may be notched by default, which would allow you to extract the meta value and use it directly as a key
+	//this gives us a limited hierarchical mechanism, but it's actually used mostly to avoid needing reverse lookups. after all,
+	//the parent key could be any key you needed to store, I suppose. if we see a lot of that, I'll rename the param.
+	static FSkeletonKey GenerateDependentKey(uint64_t parent, uint32_t localunique, uint64_t type = SKELLY::SFIX_ART_FACT)
+	{
+		auto ret = parent & SKELLY::SFIX_KEYTOMETA;
+		ret = (ret << 32) | localunique;
+		ret = FORGE_SKELETON_KEY(ret, type); // I forgot this and lost rather a lot of time.
+		return FSkeletonKey(ret);
+	};
 };
 
 template<>

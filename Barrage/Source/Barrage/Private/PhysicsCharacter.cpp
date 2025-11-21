@@ -34,6 +34,7 @@ JPH::BodyID FBCharacter::Create(JPH::CharacterVsCharacterCollision* CVCColliderS
 			mEffectiveVelocity = Vec3::sZero();
 			ret = mCharacter->GetInnerBodyID(); //I am going to regret this somehow. Update: I did.
 			mCharacter->SetListener(mListener.Get());
+			mUpdateSettings.mWalkStairsStepUp = {0.1, 0.6, 0.1};
 		}
 	}
 	return ret;
@@ -132,6 +133,10 @@ void FBCharacter::IngestUpdate(FBPhysicsInput& input)
 		break;
 	case PhysicsInputType::SetPosition:
 		SetPosition(input.State.GetXYZ());	
+		break;
+	case PhysicsInputType::ResetForces:
+		mLocomotionUpdate = JPH::Vec3::sZero();
+		mForcesUpdate = JPH::Vec3::sZero();
 		break;
 	default:
 		UE_LOG(LogTemp, Warning, TEXT("FBCharacter::IngestUpdate: Received unimplemented input.Action = [%d]"), input.Action);

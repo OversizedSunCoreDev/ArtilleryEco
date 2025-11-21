@@ -71,7 +71,7 @@ FWorldSimOwner::FWorldSimOwner(float cDeltaTime, InitExitFunction JobThreadIniti
 	//	https://youtu.be/jhCupKFly_M?si=umi0zvJer8NymGzX&t=438
 }
 
-void FWorldSimOwner::SphereCast(
+inline void FWorldSimOwner::SphereCast(
 	double Radius,
 	double Distance,
 	FVector3d CastFrom,
@@ -131,7 +131,7 @@ void FWorldSimOwner::SphereCast(
 	}
 }
 
-void FWorldSimOwner::SphereSearch(
+inline void FWorldSimOwner::SphereSearch(
 	const JPH::BodyID& CastingBody,
 	const FVector3d& Location,
 	double Radius,
@@ -153,7 +153,7 @@ void FWorldSimOwner::SphereSearch(
 	}
 }
 
-void FWorldSimOwner::CastRay(FVector3d CastFrom, FVector3d Direction, const BroadPhaseLayerFilter& BroadPhaseFilter, const ObjectLayerFilter& ObjectFilter, const BodyFilter& BodiesFilter, TSharedPtr<FHitResult> OutHit) const
+inline void FWorldSimOwner::CastRay(FVector3d CastFrom, FVector3d Direction, const BroadPhaseLayerFilter& BroadPhaseFilter, const ObjectLayerFilter& ObjectFilter, const BodyFilter& BodiesFilter, TSharedPtr<FHitResult> OutHit) const
 {
 	check(OutHit.IsValid());
 	OutHit->Init();
@@ -184,7 +184,7 @@ void FWorldSimOwner::CastRay(FVector3d CastFrom, FVector3d Direction, const Broa
 	}
 }
 
-EMotionType FWorldSimOwner::LayerToMotionTypeMapping(uint16 Layer)
+inline EMotionType FWorldSimOwner::LayerToMotionTypeMapping(uint16 Layer)
 {
 	switch (Layer)
 	{
@@ -214,7 +214,7 @@ EMotionType FWorldSimOwner::LayerToMotionTypeMapping(uint16 Layer)
 	}
 }
 
-EMotionQuality LayerToMotionQualityMapping(uint16 Layer)
+inline EMotionQuality LayerToMotionQualityMapping(uint16 Layer)
 {
 	switch (Layer)
 	{
@@ -244,7 +244,7 @@ EMotionQuality LayerToMotionQualityMapping(uint16 Layer)
 	}
 }
 
-Ref<Shape> FWorldSimOwner::AttemptBoxCache(double JoltX, double JoltY, double JoltZ, float HEReduceMin)
+inline Ref<Shape> FWorldSimOwner::AttemptBoxCache(double JoltX, double JoltY, double JoltZ, float HEReduceMin)
 {
 	Vec3 Bounds(JoltX, JoltY, JoltZ);
 	void* At = &Bounds;
@@ -266,7 +266,7 @@ Ref<Shape> FWorldSimOwner::AttemptBoxCache(double JoltX, double JoltY, double Jo
 }
 
 //we need the coordinate utils, but we don't really want to include them in the .h
-FBarrageKey FWorldSimOwner::CreatePrimitive(FBBoxParams& ToCreate, uint16 Layer, bool IsSensor, bool forceDynamic, bool isMovable)
+inline FBarrageKey FWorldSimOwner::CreatePrimitive(FBBoxParams& ToCreate, uint16 Layer, bool IsSensor, bool forceDynamic, bool isMovable)
 {
 	//if movable, check if dynamic. if not movable but dynamic, come on guys.
 	EMotionType MovementType = isMovable ?
@@ -281,15 +281,12 @@ FBarrageKey FWorldSimOwner::CreatePrimitive(FBBoxParams& ToCreate, uint16 Layer,
 	}
 
 	//not really sure how much our cache helps us, but it could in theory improve GJK perf? Removed for perf testing.
-	//Ref<Shape> CachedShape = AttemptBoxCache(ToCreate.JoltX, ToCreate.JoltY, ToCreate.JoltZ, FMath::Min(HEReduceMin / 2.f, 0.01));
-	Ref<Shape> NewShape = new BoxShape(Vec3(ToCreate.JoltX, ToCreate.JoltY, ToCreate.JoltZ), FMath::Min(HEReduceMin / 2.f, 0.02));
-	ShapeSettings::ShapeResult box = RotatedTranslatedShapeSettings(
-			 CoordinateUtils::ToJoltCoordinates(ToCreate.Offset.X, ToCreate.Offset.Y, ToCreate.Offset.Z), Quat::sIdentity(), NewShape).Create();
-	ShapeRefC box_shape = box.Get();
+	Ref<Shape> CachedShape = AttemptBoxCache(ToCreate.JoltX, ToCreate.JoltY, ToCreate.JoltZ, FMath::Min(HEReduceMin / 2.f, 0.02));
 
 	// We don't expect an error here, but you can check floor_shape_result for HasError() / GetError()
 	// Create the settings for the body itself. Note that here you can also set other properties like the restitution / friction.
-	BodyCreationSettings box_body_settings(box_shape,
+	BodyCreationSettings box_body_settings(CachedShape,
+			 CoordinateUtils::ToJoltCoordinates(ToCreate.Offset.X, ToCreate.Offset.Y, ToCreate.Offset.Z) +
 	                                       CoordinateUtils::ToJoltCoordinates(ToCreate.Point.GridSnap(1)),
 	                                       Quat::sIdentity(),
 	                                       MovementType, Layer);
@@ -299,13 +296,11 @@ FBarrageKey FWorldSimOwner::CreatePrimitive(FBBoxParams& ToCreate, uint16 Layer,
 	box_body_settings.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
 	box_body_settings.mIsSensor = IsSensor;
 	box_body_settings.mMotionQuality = MotionQuality;
-	box_body_settings.mRestitution = 0.08;
+	box_body_settings.mRestitution = 0.0;
 	
-
-	// IMPORTANT! If this isn't set, sensors don't collide with static stuff (like level geometry!)
-	if (IsSensor)
+	if (MovementType == EMotionType::Dynamic && (Layer == Layers::MOVING || Layer == Layers::ENEMY))
 	{
-		box_body_settings.mCollideKinematicVsNonDynamic = true;
+		box_body_settings.mAllowedDOFs = EAllowedDOFs::TranslationX | EAllowedDOFs::TranslationY | EAllowedDOFs::TranslationZ | EAllowedDOFs::RotationY;
 	}
 	
 	// Create the actual rigid body
@@ -329,8 +324,48 @@ FBarrageKey FWorldSimOwner::CreatePrimitive(FBBoxParams& ToCreate, uint16 Layer,
 	return FBK;
 }
 
+inline FBarrageKey FWorldSimOwner::CreatePrimitive(FBCapParams& ToCreate, uint16 Layer, bool IsSensor, bool forceDynamic, bool isMovable)
+{
+	//if movable, check if dynamic. if not movable but dynamic, come on guys.
+	EMotionType MovementType = isMovable ?
+		(forceDynamic ? EMotionType::Dynamic : LayerToMotionTypeMapping(Layer)) : EMotionType::Static;
+	EMotionQuality MotionQuality = LayerToMotionQualityMapping(Layer);
+	
+	//not really sure how much our cache helps us, but it could in theory improve GJK perf? Removed for perf testing.
+	//Ref<Shape> CachedShape = AttemptBoxCache(ToCreate.JoltX, ToCreate.JoltY, ToCreate.JoltZ, FMath::Min(HEReduceMin / 2.f, 0.01));
+	Ref<Shape> NewShape = new CapsuleShape(ToCreate.JoltHalfHeightOfCylinder, ToCreate.JoltRadius);
+	
+	// We don't expect an error here, but you can check floor_shape_result for HasError() / GetError()
+	// Create the settings for the body itself. Note that here you can also set other properties like the restitution / friction.
+	BodyCreationSettings cap_body_settings(NewShape,
+	                                       CoordinateUtils::ToJoltCoordinates((FVector3f(ToCreate.point) + ToCreate.Offset).GridSnap(1)),
+	                                       Quat::sIdentity(),
+	                                       MovementType, Layer);
+	JPH::MassProperties msp;
+	msp.ScaleToMass(ToCreate.MassClass); //actual mass in kg
+	cap_body_settings.mMassPropertiesOverride = msp;
+	cap_body_settings.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
+	cap_body_settings.mIsSensor = IsSensor;
+	cap_body_settings.mMotionQuality = MotionQuality;
+	cap_body_settings.mRestitution = 0.08;
+	cap_body_settings.mAllowedDOFs = EAllowedDOFs::TranslationX | EAllowedDOFs::TranslationY | EAllowedDOFs::TranslationZ | EAllowedDOFs::RotationX | EAllowedDOFs::RotationY | EAllowedDOFs::RotationZ;
+	
+	// Create the actual rigid body
+	Body* box_body = body_interface->CreateBody(cap_body_settings);
+	// Note that if we run out of bodies this can return nullptr
+
+	// Queue adding it
+	AddInternalQueuing(box_body->GetID(), 0);// TODO: consider your life choices. you don't wanna sell death sticks.
+	BodyID BodyIDTemp = box_body->GetID();
+	FBarrageKey FBK = GenerateBarrageKeyFromBodyId(BodyIDTemp);
+	//Barrage key is unique to WORLD and BODY. This is crushingly important.
+	BarrageToJoltMapping->insert(FBK, BodyIDTemp);
+
+	return FBK;
+}
+
 //we need the coordinate utils, but we don't really want to include them in the .h
-FBarrageKey FWorldSimOwner::CreatePrimitive(FBCharParams& ToCreate, uint16 Layer)
+inline FBarrageKey FWorldSimOwner::CreatePrimitive(FBCharParams& ToCreate, uint16 Layer)
 {
 	TSharedPtr<FBCharacter> NewCharacter = MakeShareable<FBCharacter>(new FBCharacter);
 	NewCharacter->mHeightStanding = 2 * ToCreate.JoltHalfHeightOfCylinder;
@@ -344,6 +379,7 @@ FBarrageKey FWorldSimOwner::CreatePrimitive(FBCharParams& ToCreate, uint16 Layer
 	NewCharacter->World = this->physics_system;
 	NewCharacter->mDeltaTime = DeltaTime;
 	NewCharacter->mForcesUpdate = Vec3::sZero();
+	NewCharacter->mCharacterSettings.mCharacterPadding = 0.08f;
 	NewCharacter->mListener = character_contact_listener;
 	// Create the shape
 	BodyID BodyIDTemp = NewCharacter->Create(&this->CharacterVsCharacterCollisionSimple);
@@ -355,7 +391,7 @@ FBarrageKey FWorldSimOwner::CreatePrimitive(FBCharParams& ToCreate, uint16 Layer
 	return FBK;
 }
 
-FBarrageKey FWorldSimOwner::CreatePrimitive(FBSphereParams& ToCreate, uint16 Layer, bool IsSensor)
+inline FBarrageKey FWorldSimOwner::CreatePrimitive(FBSphereParams& ToCreate, uint16 Layer, bool IsSensor)
 {
 	EMotionType MovementType = LayerToMotionTypeMapping(Layer);
 	BodyCreationSettings sphere_settings(new SphereShape(ToCreate.JoltRadius),
@@ -372,7 +408,7 @@ FBarrageKey FWorldSimOwner::CreatePrimitive(FBSphereParams& ToCreate, uint16 Lay
 	return FBK;
 }
 
-FBarrageKey FWorldSimOwner::CreatePrimitive(FBCapParams& ToCreate, uint16 Layer, bool IsSensor, FMassByCategory::BMassCategories MassClass)
+inline FBarrageKey FWorldSimOwner::CreatePrimitive(FBCapParams& ToCreate, uint16 Layer, bool IsSensor, FMassByCategory::BMassCategories MassClass)
 {
 	EMotionType MovementType = LayerToMotionTypeMapping(Layer);
 	BodyCreationSettings cap_settings(new CapsuleShape(ToCreate.JoltHalfHeightOfCylinder, ToCreate.JoltRadius),
@@ -495,7 +531,6 @@ FBLet FWorldSimOwner::LoadComplexStaticMesh(FBTransform& MeshTransform,
 		creation_settings.mFriction = 0.5f;
 		creation_settings.mOverrideMassProperties = EOverrideMassProperties::MassAndInertiaProvided;
 		creation_settings.mRestitution = 0;
-		creation_settings.mCollideKinematicVsNonDynamic = true;
 		creation_settings.mMassPropertiesOverride.SetMassAndInertiaOfSolidBox(shape->GetLocalBounds().GetExtent() *2, 1);
 		creation_settings.mMassPropertiesOverride.mMass = EBWeightClasses::HugeEnemy;
 		creation_settings.mMotionQuality = MotionQuality;
@@ -508,8 +543,15 @@ FBLet FWorldSimOwner::LoadComplexStaticMesh(FBTransform& MeshTransform,
 			throw;
 		}
 		//reminder: translation and position do differ.
-		Ref<Shape> OriginAndRotationApplied = new RotatedTranslatedShape(CoordinateUtils::ToJoltCoordinates(CenterOfMassTranslation), CoordinateUtils::ToJoltRotation(MeshTransform.GetRotationQuat()),  result.Get());
-		creation_settings.SetShape(OriginAndRotationApplied);
+		if (CenterOfMassTranslation == FVector::ZeroVector && MeshTransform.GetRotationQuat() == FQuat4f::Identity)
+		{
+			creation_settings.SetShape(result.Get());
+		}
+		else
+		{
+			Ref<Shape> OriginAndRotationApplied = new RotatedTranslatedShape(CoordinateUtils::ToJoltCoordinates(CenterOfMassTranslation), CoordinateUtils::ToJoltRotation(MeshTransform.GetRotationQuat()),  result.Get());
+			creation_settings.SetShape(OriginAndRotationApplied);
+		}
 		creation_settings.mPosition = CoordinateUtils::ToJoltCoordinates(MeshTransform.GetUnrealLocation());
 		BodyID bID = body_interface->CreateBody(creation_settings)->GetID();
 		AddInternalQueuing(bID, 0);// You know that scene where data tries alcohol, hates it, and immediately orders another?
@@ -538,6 +580,7 @@ void FWorldSimOwner::StepSimulation()
 
 		PhysicsHoldOpen->Update(DeltaTime, cCollisionSteps, AllocHoldOpen.Get(), JobHoldOpen.Get());
 		}
+	
 }
 
 bool FWorldSimOwner::OptimizeBroadPhase()

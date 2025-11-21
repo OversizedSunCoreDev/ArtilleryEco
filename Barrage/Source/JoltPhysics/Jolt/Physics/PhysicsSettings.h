@@ -47,13 +47,13 @@ struct PhysicsSettings
 	float		mSpeculativeContactDistance = 0.02f;
 
 	/// How much bodies are allowed to sink into each other (unit: meters)
-	float		mPenetrationSlop = 0.02f;
+	float		mPenetrationSlop = 0.020f;
 
 	/// Fraction of its inner radius a body must move per step to enable casting for the LinearCast motion quality
 	float		mLinearCastThreshold = 0.75f;
 
 	/// Fraction of its inner radius a body may penetrate another body for the LinearCast motion quality
-	float		mLinearCastMaxPenetration = 0.25f;
+	float		mLinearCastMaxPenetration = 0.20f;
 
 	/// Max distance to use to determine if two points are on the same plane for determining the contact manifold between two shape faces (unit: meter)
 	float		mManifoldTolerance = 1.0e-3f;
@@ -62,7 +62,7 @@ struct PhysicsSettings
 	float		mMaxPenetrationDistance = 0.2f;
 
 	/// Maximum relative delta position for body pairs to be able to reuse collision results from last frame (units: meter^2)
-	float		mBodyPairCacheMaxDeltaPositionSq = Square(0.001f); ///< 1 mm
+	float		mBodyPairCacheMaxDeltaPositionSq = Square(0.01f); ///< 1 mm
 
 	/// Maximum relative delta orientation for body pairs to be able to reuse collision results from last frame, stored as cos(max angle / 2)
 	float		mBodyPairCacheCosMaxDeltaRotationDiv2 = 0.9998476951f; ///< cos(2 degrees / 2)
@@ -71,11 +71,11 @@ struct PhysicsSettings
 	float		mContactNormalCosMaxDeltaRotation = 0.996194698091f; ///< cos(5 degree)
 
 	/// Maximum allowed distance between old and new contact point to preserve contact forces for warm start (units: meter^2)
-	float		mContactPointPreserveLambdaMaxDistSq = Square(0.01f); ///< 1 cm
+	float		mContactPointPreserveLambdaMaxDistSq = Square(0.03f); ///< 3 cm
 
 	/// Number of solver velocity iterations to run
 	/// Note that this needs to be >= 2 in order for friction to work (friction is applied using the non-penetration impulse from the previous iteration)
-	uint		mNumVelocitySteps = 10;
+	uint		mNumVelocitySteps = 6;
 
 	/// Number of solver position iterations to run
 	uint		mNumPositionSteps = 2;
@@ -83,7 +83,7 @@ struct PhysicsSettings
 	/// Minimal velocity needed before a collision can be elastic. If the relative velocity between colliding objects
 	/// in the direction of the contact normal is lower than this, the restitution will be zero regardless of the configured
 	/// value. This lets an object settle sooner. Must be a positive number. (unit: m)
-	float		mMinVelocityForRestitution = 1.0f;
+	float		mMinVelocityForRestitution = 0.3f;
 
 	/// Time before object is allowed to go to sleep (unit: seconds)
 	float		mTimeBeforeSleep = 0.5f;

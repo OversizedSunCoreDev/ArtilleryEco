@@ -31,15 +31,10 @@ EStateTreeRunStatus FMoveOrder::AttemptMovePath(
 			return EStateTreeRunStatus::Succeeded;
 		}
 
-		if (!UThistleBehavioralist::AttemptInvokePathingOnKey(InstanceData.KeyOf, location))
+		if (UThistleBehavioralist::AttemptInvokePathingOnKey(InstanceData.KeyOf, location))
 		{
-			if (found)
-			{
-				tagc->Add(TAG_Orders_Move_Needed);
-			}
-			return EStateTreeRunStatus::Failed;
+			return EStateTreeRunStatus::Succeeded;
 		}
-		return EStateTreeRunStatus::Succeeded;
 	}
 	return EStateTreeRunStatus::Failed;
 }
@@ -57,5 +52,10 @@ EStateTreeRunStatus FMoveOrder::Tick(FStateTreeExecutionContext& Context, const 
 
 	bool found = false;
 	FVector HereIAm = UArtilleryLibrary::implK2_GetLocation(InstanceData.KeyOf, found);
-	return found && (HereIAm - location).Length() > Tolerance ? AttemptMovePath(Context, location, HereIAm) : EStateTreeRunStatus::Succeeded;
+	if (found && (HereIAm - location).Length() <= Tolerance)
+	{
+		return EStateTreeRunStatus::Succeeded;
+	}
+
+	return AttemptMovePath(Context, location, HereIAm);
 }

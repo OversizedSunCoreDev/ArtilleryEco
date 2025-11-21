@@ -19,11 +19,6 @@
 			"Name": "Barrage",
 			"Type": "Runtime",
 			"LoadingPhase": "PostEngineInit"
-		},
-		{
-			"Name": "BarrageEditor",
-			"Type": "Editor",
-			"LoadingPhase": "PostEngineInit"
 		}
 	],
 	"Plugins": [

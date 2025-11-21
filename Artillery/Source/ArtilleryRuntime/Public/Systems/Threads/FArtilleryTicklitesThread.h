@@ -56,7 +56,7 @@ class FArtilleryTicklitesWorker : public FRunnable
 	friend class UArtilleryDispatch;
 	ArtilleryTime LocalNow;
 
-	static const int GroupCount = 4;
+	static const int GroupCount = TICKLITEPHASESCOUNT;
 	TickliteGroup ExecutionGroups[GroupCount];
 
 protected:
@@ -81,11 +81,16 @@ protected:
 				ExecutionGroups[2].Add(AllocatedTL);
 				return AllocatedTL;
 			}
-		case TicklitePhase::FINAL_TICK_RESOLVE :
+		case TicklitePhase::PASS_THROUGH :
 			{
 				ExecutionGroups[3].Add(AllocatedTL);
 				return AllocatedTL;
-			}	
+			}
+		case TicklitePhase::FINAL_TICK_RESOLVE:
+			{
+				ExecutionGroups[4].Add(AllocatedTL);
+				return AllocatedTL;
+			}
 		}
 		return nullptr;
 	}

@@ -13,6 +13,7 @@
 #include "FArtilleryBusyWorker.h"
 #include "LocomotionParams.h"
 #include "FArtilleryTicklitesThread.h"
+#include "FJThread.h"
 #include "GameplayTagContainer.h"
 #include "KeyCarry.h"
 #include "TransformDispatch.h"
@@ -407,7 +408,7 @@ private:
 	//it's dangerous as __________ _____________________ _ _________.
 	AIWorker ArtilleryAIWorker_LockstepToWorldSim;
 	TickliteWorker ArtilleryTicklitesWorker_LockstepToWorldSim;
-	TUniquePtr<FRunnableThread> WorldSim_Thread;
+	TUniquePtr<FJThread> WorldSim_Thread = MakeUnique<FJThread>();
 	TUniquePtr<FRunnableThread> WorldSim_AI_Thread;
 	TUniquePtr<FRunnableThread> WorldSim_Ticklites_Thread;
 	FSharedEventRef StartTicklitesSim;

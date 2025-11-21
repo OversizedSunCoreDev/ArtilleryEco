@@ -9,39 +9,42 @@
 #include "KeyCarry.h"
 #include "EPhysicsLayer.h"
 #include "Components/ActorComponent.h"
-#include "BarrageAutoBox.generated.h"
+#include "BarrageAutoCap.generated.h"
 
-UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent), DefaultToInstanced )
-class ARTILLERYRUNTIME_API UBarrageAutoBox : public UBarrageColliderBase
+UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent), DefaultToInstanced)
+class ARTILLERYRUNTIME_API UBarrageAutoCap : public UBarrageColliderBase
 {
 	GENERATED_BODY()
 
-public:	
+public:
 	// Sets default values for this component's properties
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	bool isMovable = true;
-	
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	float OffsetCenterToMatchBoundedShapeX = 0;
-	
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	float OffsetCenterToMatchBoundedShapeY = 0;
-	
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	float OffsetCenterToMatchBoundedShapeZ = 0;
-	
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	FVector DiameterXYZ = FVector::ZeroVector;
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite )
+	float Radius = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	float Height = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	TEnumAsByte<EBWeightClasses::Type> Weight;
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite )
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	EPhysicsLayer Layer;
 	FMassByCategory MyMassClass;
 
-	UBarrageAutoBox(const FObjectInitializer& ObjectInitializer);
-	
+	UBarrageAutoCap(const FObjectInitializer& ObjectInitializer);
+
 	virtual bool RegistrationImplementation() override;
 };
 
@@ -50,16 +53,21 @@ public:
 //do not invoke the default constructor unless you have a really good plan. in general, let UE initialize your components.
 
 // Sets default values for this component's properties
-inline UBarrageAutoBox::UBarrageAutoBox(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer), MyMassClass(Weights::NormalEnemy)
+inline UBarrageAutoCap::UBarrageAutoCap(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer),
+	MyMassClass(Weights::NormalEnemy)
 {
 	// Set this component to be initialized when the game starts, and to be ticked every frame.  You can turn these features
 	// off to improve performance if you don't need them.
 	switch (Weight)
 	{
-	case EBWeightClasses::NormalEnemy : MyMassClass = Weights::NormalEnemy; break;
-	case EBWeightClasses::BigEnemy : MyMassClass = Weights::BigEnemy; break;
-	case EBWeightClasses::HugeEnemy : MyMassClass = Weights::HugeEnemy; break;
-	default: MyMassClass = FMassByCategory(Weights::NormalEnemy); break;
+	case EBWeightClasses::NormalEnemy: MyMassClass = Weights::NormalEnemy;
+		break;
+	case EBWeightClasses::BigEnemy: MyMassClass = Weights::BigEnemy;
+		break;
+	case EBWeightClasses::HugeEnemy: MyMassClass = Weights::HugeEnemy;
+		break;
+	default: MyMassClass = FMassByCategory(Weights::NormalEnemy);
+		break;
 	}
 
 	bWantsInitializeComponent = true;
@@ -76,59 +84,56 @@ inline UBarrageAutoBox::UBarrageAutoBox(const FObjectInitializer& ObjectInitiali
 //KEY REGISTER, initializer, and failover.
 //----------------------------------
 
-inline bool UBarrageAutoBox::RegistrationImplementation()
+inline bool UBarrageAutoCap::RegistrationImplementation()
 {
 	if (GetOwner())
 	{
-		if(MyParentObjectKey ==0)
+		if (MyParentObjectKey == 0)
 		{
-			if(GetOwner()->GetComponentByClass<UKeyCarry>())
+			if (GetOwner()->GetComponentByClass<UKeyCarry>())
 			{
 				MyParentObjectKey = GetOwner()->GetComponentByClass<UKeyCarry>()->GetMyKey();
 			}
-		
-			if(MyParentObjectKey == 0)
+
+			if (MyParentObjectKey == 0)
 			{
 				uint32 val = PointerHash(GetOwner());
 				MyParentObjectKey = ActorKey(val);
 			}
 		}
-	
-		if(!IsReady && MyParentObjectKey != 0) // this could easily be just the !=, but it's better to have the whole idiom in the example
+
+		if (!IsReady && MyParentObjectKey != 0)
+		// this could easily be just the !=, but it's better to have the whole idiom in the example
 		{
-			UPrimitiveComponent* AnyMesh = GetOwner()->GetComponentByClass<UMeshComponent>(); 
+			UPrimitiveComponent* AnyMesh = GetOwner()->GetComponentByClass<UMeshComponent>();
 			AnyMesh = AnyMesh ? AnyMesh : GetOwner()->GetComponentByClass<UPrimitiveComponent>();
-			if(AnyMesh)
+			if (AnyMesh)
 			{
-				FVector extents = DiameterXYZ.IsNearlyZero() || DiameterXYZ.Length() <= 0.1 ? FVector::ZeroVector : DiameterXYZ;
-				if(extents.IsZero())
+				if (Radius == 0 || Height == 0)
 				{
 					FBoxSphereBounds Boxen = AnyMesh->GetLocalBounds();
-					if(Boxen.BoxExtent.GetMin() >= 0.01)
+					if (Boxen.BoxExtent.GetMin() >= 0.01)
 					{
 						// Multiply by the scale factor, then multiply by 2 since mesh bounds is radius not diameter
-						extents = Boxen.BoxExtent * AnyMesh->GetComponentScale() * 2;				
-					}
-					else
-					{
-						//I SAID BEHAAAAAAAAAAAVE.
-						extents = FVector(1,1,1);
+						Height = Boxen.GetSphere().W;
+						Radius = Height * 0.35;
 					}
 				}
-				auto offset = FVector3d(OffsetCenterToMatchBoundedShapeX, OffsetCenterToMatchBoundedShapeY, OffsetCenterToMatchBoundedShapeZ);
-				UBarrageDispatch* Physics =  GetWorld()->GetSubsystem<UBarrageDispatch>();
-				FBBoxParams params = FBarrageBounder::GenerateBoxBounds(
+				auto offset = FVector(OffsetCenterToMatchBoundedShapeX, OffsetCenterToMatchBoundedShapeY,
+											  OffsetCenterToMatchBoundedShapeZ);
+				UBarrageDispatch* Physics = GetWorld()->GetSubsystem<UBarrageDispatch>();
+				FBCapParams params = FBarrageBounder::GenerateCapsuleBounds(
 					GetOwner()->GetActorLocation(),
-					FMath::Max(extents.X, .1),
-					FMath::Max(extents.Y, 0.1),
-					FMath::Max( extents.Z, 0.1),
-					offset,
-					MyMassClass.Category);
-				
-				MyBarrageBody = Physics->CreatePrimitive(params, MyParentObjectKey, static_cast<uint16>(Layer), false, false, isMovable);
-				if(MyBarrageBody)
+					Radius,
+					Height,
+					MyMassClass.Category,
+					FVector3f(offset)
+				);
+				MyBarrageBody = Physics->CreatePrimitive(params, MyParentObjectKey, static_cast<uint16>(Layer), false,
+				                                         false, isMovable);
+				if (MyBarrageBody)
 				{
-					AnyMesh->WakeRigidBody(); 
+					AnyMesh->WakeRigidBody();
 					IsReady = true;
 					AnyMesh->SetSimulatePhysics(false);
 					for ( auto Child : this->GetAttachChildren())
@@ -139,8 +144,8 @@ inline bool UBarrageAutoBox::RegistrationImplementation()
 			}
 		}
 	}
-	
-	if(IsReady)
+
+	if (IsReady)
 	{
 		PrimaryComponentTick.SetTickFunctionEnable(false);
 		return true;

@@ -37,6 +37,70 @@ public:
 	
 	UBarrageBoxComponent(const FObjectInitializer& ObjectInitializer);
 	virtual bool RegistrationImplementation() override;
-	virtual FPrimitiveSceneProxy* CreateSceneProxy() override;
-	virtual FBoxSphereBounds CalcBounds(const FTransform& LocalToWorld) const override;
 };
+
+//CONSTRUCTORS
+//--------------------
+//do not invoke the default constructor unless you have a really good plan. in general, let UE initialize your components.
+
+// Sets default values for this component's properties
+inline UBarrageBoxComponent::UBarrageBoxComponent(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
+{
+	// Set this component to be initialized when the game starts, and to be ticked every frame.  You can turn these features
+	// off to improve performance if you don't need them.
+	bWantsInitializeComponent = true;
+	PrimaryComponentTick.bCanEverTick = true;
+	MyParentObjectKey = 0;
+	bAlwaysCreatePhysicsState = false;
+	UPrimitiveComponent::SetNotifyRigidBodyCollision(false);
+	bCanEverAffectNavigation = false;
+	Super::SetCollisionEnabled(ECollisionEnabled::Type::NoCollision);
+	Super::SetEnableGravity(false);
+	Super::SetSimulatePhysics(false);
+}
+
+//KEY REGISTER, initializer, and failover.
+//----------------------------------
+
+inline bool UBarrageBoxComponent::RegistrationImplementation()
+{
+	if(MyParentObjectKey == 0)
+	{
+		if(GetOwner())
+		{
+			if(GetOwner()->GetComponentByClass<UKeyCarry>())
+			{
+				MyParentObjectKey = GetOwner()->GetComponentByClass<UKeyCarry>()->GetMyKey();
+			}
+
+			if(MyParentObjectKey == 0)
+			{
+				uint32 val = PointerHash(GetOwner());
+				MyParentObjectKey = ActorKey(val);
+			}
+		}
+	}
+	
+	if(!IsReady && MyParentObjectKey != 0) // this could easily be just the !=, but it's better to have the whole idiom in the example
+	{
+		UBarrageDispatch* Physics =  GetWorld()->GetSubsystem<UBarrageDispatch>();
+		FBBoxParams params = FBarrageBounder::GenerateBoxBounds(
+			GetOwner()->GetActorLocation(),
+			XDiam,
+			YDiam,
+			ZDiam,
+			FVector3d(OffsetCenterToMatchBoundedShapeX, OffsetCenterToMatchBoundedShapeY, OffsetCenterToMatchBoundedShapeZ));
+		MyBarrageBody = Physics->CreatePrimitive(params, MyParentObjectKey, Layers::MOVING);
+		if(MyBarrageBody)
+		{
+			IsReady = true;
+		}
+	}
+	
+	if(IsReady)
+	{
+		PrimaryComponentTick.SetTickFunctionEnable(false);
+		return true;
+	}
+	return false;
+}

@@ -60,7 +60,7 @@ bool UArtilleryDispatch::RegistrationImplementation()
 	GunToFiringFunctionMapping->Empty();
 	ThreadSetup();
 
-	WorldSim_Thread->Create(&ArtilleryAsyncWorldSim, TEXT("ARTILLERY_WORLDSIM_ONLINE."), 0, TPri_AboveNormal);
+	WorldSim_Thread->Create(&ArtilleryAsyncWorldSim, TEXT("ARTILLERY_WORLDSIM_ONLINE."));
 	WorldSim_AI_Thread->Create(&ArtilleryAIWorker_LockstepToWorldSim, TEXT("ARTILLERY_AISIM_ONLINE."));
 	WorldSim_Ticklites_Thread->Create(&ArtilleryTicklitesWorker_LockstepToWorldSim,TEXT("ARTILLERY_TICKLITES_ONLINE."));
 
@@ -175,7 +175,7 @@ void UArtilleryDispatch::Deinitialize()
 	if (WorldSim_Thread.IsValid())
 	{
 		//if we don't wait, this will crash when ECS facts are referenced. That's just... uh... the facts.
-		WorldSim_Thread->Kill(true);
+		WorldSim_Thread->Kill();
 		WorldSim_Thread.Reset();
 	}
 
@@ -657,14 +657,14 @@ UArtilleryDispatch::~UArtilleryDispatch()
 	{
 		ArtilleryAsyncWorldSim.Exit();
 		StartTicklitesSim->Trigger();
-		WorldSim_Thread->Kill(true);
+		WorldSim_Thread->Kill();
 	}
 	if (WorldSim_Ticklites_Thread)
 	{
 		ArtilleryTicklitesWorker_LockstepToWorldSim.Exit();
 		StartTicklitesApply->Trigger();
 		StartTicklitesSim->Trigger();
-		WorldSim_Thread->Kill(true);
+		WorldSim_Thread->Kill();
 	}
 	if (WorldSim_AI_Thread)
 	{

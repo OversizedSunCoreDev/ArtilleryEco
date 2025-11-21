@@ -5,64 +5,51 @@
 EStateTreeRunStatus FScoot::Tick(FStateTreeExecutionContext& Context, const float DeltaTime) const
 {
 	const FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
-	bool Shuck = false;
-	FVector location = InstanceData.ShuckPoi(Shuck);
-	if (!Shuck)
+	bool bShuckSuccess = false;
+	FVector TargetLocation = InstanceData.ShuckPoi(bShuckSuccess);
+	if (!bShuckSuccess)
 	{
 		return EStateTreeRunStatus::Failed;
 	}
 	
-	//run on cadence.
-	if (UArtilleryLibrary::GetTotalsTickCount() % ArtilleryTickHertz*3 == 0)
+	// This now runs continuously while active rather than on a cadence.
+	// The State Tree transition to this state should be evaluated periodically.
+
+	bool bFoundSelf = false;
+	FVector HereIAm = UArtilleryLibrary::implK2_GetLocation(InstanceData.KeyOf, bFoundSelf);
+	if (bFoundSelf && (HereIAm - TargetLocation).Length() < Tolerance)
 	{
-		bool found = false;
-		FVector HereIAm = UArtilleryLibrary::implK2_GetLocation(InstanceData.KeyOf, found);
-		if (found && (HereIAm - location).Length() < Tolerance)
-		{
-			return AttemptScootPath(Context, location, HereIAm);
-		}
-		return EStateTreeRunStatus::Succeeded; //scoot not needed, is like succeeded.
+		// We are too close, so we need to scoot.
+		return AttemptScootPath(Context, TargetLocation, HereIAm);
 	}
-	return EStateTreeRunStatus::Running;
+
+	// If we are no longer too close succeeded
+	return EStateTreeRunStatus::Succeeded;
 }
 
 EStateTreeRunStatus FScoot::AttemptScootPath(FStateTreeExecutionContext& Context, FVector location, FVector HereIAm) const
 {
 	const FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
-	UBarrageDispatch* AreWeBarraging = UBarrageDispatch::SelfPtr;
-	if (AreWeBarraging != nullptr && UThistleBehavioralist::SelfPtr)
+
+	// Calculate a destination point that is away from the target
+	FVector DirectionAwayFromTarget = (HereIAm - location).GetSafeNormal();
+
+	// If we are right on top of the target, pick a random direction to move away
+	if (DirectionAwayFromTarget.IsNearlyZero())
 	{
-		bool found = false;
-		FConservedTags tagc = UArtilleryLibrary::InternalTagsByKey(InstanceData.KeyOf, found);
-		if (found)
-		{
-			tagc->Remove(TAG_Orders_Move_Needed);
-		}
+		DirectionAwayFromTarget = FVector(FMath::FRandRange(-1.f, 1.f), FMath::FRandRange(-1.f, 1.f), 0.f).GetSafeNormal();
+	}
 
-		UThistleBehavioralist::SelfPtr->BounceTag(InstanceData.KeyOf, TAG_Orders_Move_Needed,UThistleBehavioralist::DelayBetweenMoveOrders); 
+	// The new destination is a point further away from the target that is 'Tolerance' distance away
+	FVector Destination = HereIAm + (DirectionAwayFromTarget * (Tolerance * 1.5f));
 
-		if ((HereIAm - location).Length() > FMath::Max(0.01f, Tolerance) * 5)
-		{
-			if (found)
-			{
-				tagc->Add(TAG_Orders_Move_Needed);
-			}
-			return EStateTreeRunStatus::Succeeded;
-		}
-		
-		FVector destination = (HereIAm - location).GetSafeNormal();
-		if (destination != FVector::ZeroVector && !UThistleBehavioralist::AttemptInvokePathingOnKey(InstanceData.KeyOf,
-		//move away to...
-		(HereIAm + (Tolerance*10) * destination)))
-		{
-			if (found)
-			{
-				tagc->Add(TAG_Orders_Move_Needed);
-			}
-			return EStateTreeRunStatus::Failed;
-		}
+	if (UThistleBehavioralist::AttemptInvokePathingOnKey(InstanceData.KeyOf, Destination))
+	{
+		// Pathing was successfully invoked. We are running until we reach the destination or the condition changes
 		return EStateTreeRunStatus::Running;
 	}
+
+	// Pathing failed for some reason.
 	return EStateTreeRunStatus::Failed;
 }
 

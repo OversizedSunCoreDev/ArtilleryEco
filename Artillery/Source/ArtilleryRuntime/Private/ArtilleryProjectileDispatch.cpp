@@ -171,7 +171,8 @@ FSkeletonKey UArtilleryProjectileDispatch::QueueProjectileInstance(const FName P
                                                                    const FGunKey& Gun, const FVector3d& StartLocation,
                                                                    const FVector3d& MuzzleVelocity, const float Scale,
                                                                    Layers::EJoltPhysicsLayer Layer,
-                                                                   TArray<FGameplayTag>* TagArray)
+                                                                   TArray<FGameplayTag>* TagArray,
+                                                                   int LifetimeInTicks)
 {
 	if (IsReady){}
 	TWeakObjectPtr<AInstancedMeshManager>* MeshManagerPtr = ProjectileNameToMeshManagerMapping->Find(ProjectileDefinitionId);
@@ -180,7 +181,7 @@ FSkeletonKey UArtilleryProjectileDispatch::QueueProjectileInstance(const FName P
 		TWeakObjectPtr<AInstancedMeshManager> MeshManager = *MeshManagerPtr;
 		FSkeletonKey ProjectileKey = MeshManager->GenerateNewProjectileKey();
 		MyDispatch->RequestRouter->Bullet(ProjectileDefinitionId, StartLocation, Scale, MuzzleVelocity, ProjectileKey,
-		                                  Gun, MyDispatch->GetShadowNow(), Layer);
+		                                  Gun, MyDispatch->GetShadowNow(), Layer, LifetimeInTicks);
 		if (TagArray != nullptr)
 		{
 			FConservedTags TagContainer = MyDispatch->GetOrRegisterConservedTags(ProjectileKey);
@@ -231,7 +232,7 @@ FSkeletonKey UArtilleryProjectileDispatch::CreateProjectileInstance(FSkeletonKey
 				if (CanExpire)
 				{
 					//TODO: revisit to provide rollback support. it'll be exactly like tombstones.
-					int ExpireTicks = LifeInTicks == -1 ? DEFAULT_LIFE_OF_PROJECTILE : LifeInTicks;
+					int ExpireTicks = LifeInTicks == -1 || LifeInTicks == 0 ? DEFAULT_LIFE_OF_PROJECTILE : LifeInTicks;
 					Deadliner.Add(ExpirationCounter+ExpireTicks, NewProjectileKey);
 				}
 				return NewProjectileKey;
@@ -302,7 +303,9 @@ void UArtilleryProjectileDispatch::OnBarrageContactAdded(const BarrageContactEve
 		// 		UE_LOG(LogTemp, Log, TEXT("One of these is an enemy hitbox."));
 		// 	}
 		// }
-		if (ContactEvent.IsEitherEntityAProjectile())
+		
+		//while cast queries are valid contacts, they should not count as hits when encountering bullets.
+		if (ContactEvent.IsEitherEntityAProjectile() && (!ContactEvent.ContactEntity1.bIsNormalCastQuery && !ContactEvent.ContactEntity2.bIsNormalCastQuery))
 		{
 			bool Body1_IsBullet = ContactEvent.ContactEntity1.bIsProjectile;
 			// if both are bullets, if their layers allow it, we will collide them.

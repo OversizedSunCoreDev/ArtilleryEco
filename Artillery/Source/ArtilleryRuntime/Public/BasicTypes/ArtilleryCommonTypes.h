@@ -80,9 +80,10 @@ namespace Arty
 		Early =  1,
 		Normal = 2,
 		Late = 4,
+		PASS_THROUGH = 1024, //this is reserved for the passthrough ticklite.
 		FINAL_TICK_RESOLVE = 2048
 	};
-	
+#define TICKLITEPHASESCOUNT 5
 	enum TickliteCadence
 	{
 		Critical = 1,
