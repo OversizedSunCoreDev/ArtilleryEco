@@ -197,6 +197,22 @@ FBLet UBarrageDispatch::CreatePrimitive(FBBoxParams& Definition, FSkeletonKey Ou
 	return nullptr;
 }
 
+//Defactoring the pointer management has actually made this much clearer than I expected.
+//these functions are overload polymorphic against our non-polymorphic POD params classes.
+//this is because over time, the needs of these classes may diverge and multiply
+//and it's not clear to me that Shapefulness is going to actually be the defining shared
+//feature. I'm going to wait to refactor the types until testing is complete.
+FBLet UBarrageDispatch::CreatePrimitive(FBCapParams& Definition, FSkeletonKey OutKey, uint16_t Layer, bool isSensor,
+										bool forceDynamic, bool isMovable)
+{
+	if (JoltGameSim)
+	{
+		FBarrageKey temp = JoltGameSim->CreatePrimitive(Definition, Layer, isSensor, forceDynamic, isMovable);
+		return ManagePointers(OutKey, temp, Box);
+	}
+	return nullptr;
+}
+
 FBLet UBarrageDispatch::CreateProjectile(FBBoxParams& Definition, FSkeletonKey OutKey, uint16_t Layer)
 {
 	if (JoltGameSim)
@@ -223,17 +239,6 @@ FBLet UBarrageDispatch::CreatePrimitive(FBSphereParams& Definition, FSkeletonKey
 	{
 		FBarrageKey temp = JoltGameSim->CreatePrimitive(Definition, Layer, isSensor);
 		return ManagePointers(OutKey, temp, FBShape::Sphere);
-	}
-	return nullptr;
-}
-
-FBLet UBarrageDispatch::CreatePrimitive(FBCapParams& Definition, FSkeletonKey OutKey, uint16 Layer, bool isSensor,
-                                        FMassByCategory::BMassCategories MassClass)
-{
-	if (JoltGameSim)
-	{
-		FBarrageKey temp = JoltGameSim->CreatePrimitive(Definition, Layer, isSensor, MassClass);
-		return ManagePointers(OutKey, temp, Capsule);
 	}
 	return nullptr;
 }
@@ -446,6 +451,9 @@ void UBarrageDispatch::StackUp()
 				case PhysicsInputType::SetGravityFactor:
 					BodyInt->SetGravityFactor(result, input.State.GetZ());
 					break;
+				case PhysicsInputType::ApplyTorque:
+					BodyInt->AddTorque(result, input.State.GetXYZ(), JPH::EActivation::Activate);
+					break;
 				default:
 					UE_LOG(LogTemp, Warning,
 					       TEXT("UBarrageDispatch::StackUp: Unimplemented handling for input action [%d]"),
@@ -473,9 +481,9 @@ void UBarrageDispatch::StepWorld(uint64 Time, uint64_t TickCount)
 	TRACE_CPUPROFILER_EVENT_SCOPE_STR("Step World");
 	if (this && JoltGameSim && PinSim)
 	{
-		if (TickCount % 128 == 0)
+		if (TickCount % 32 == 0)
 		{
-			//TRACE_CPUPROFILER_EVENT_SCOPE_STR("Broadphase Optimize");
+			TRACE_CPUPROFILER_EVENT_SCOPE_STR("Broadphase Optimize");
 			PinSim->OptimizeBroadPhase();
 		}
 
@@ -702,6 +710,20 @@ FBCapParams FBarrageBounder::GenerateCapsuleBounds(const UE::Geometry::FCapsule3
 	blob.JoltRadius = CoordinateUtils::RadiusToJolt(Capsule.Radius);
 	blob.JoltHalfHeightOfCylinder = CoordinateUtils::RadiusToJolt(Capsule.Extent());
 	blob.taper = 0.f;
+	return blob;
+}
+
+//Bounds are OPAQUE. do not reference them. they are protected for a reason, because they are
+//subject to change. the Point is left in the UE space, signified by the UE type. 
+FBCapParams FBarrageBounder::GenerateCapsuleBounds(const FVector Center, const float Radius, const float Height, FMassByCategory::BMassCategories Mass, FVector3f Offsets)
+{
+	FBCapParams blob;
+	blob.point = Center;
+	blob.JoltRadius = CoordinateUtils::RadiusToJolt(Radius);
+	blob.JoltHalfHeightOfCylinder = CoordinateUtils::DiamToJoltHalfExtent(Height);
+	blob.taper = 0.f;
+	blob.MassClass = Mass;
+	blob.Offset = Offsets;
 	return blob;
 }
 

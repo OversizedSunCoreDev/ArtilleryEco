@@ -4,16 +4,13 @@
 #include "NativeGameplayTags.h"
 #include "SmartObjectComponent.h"
 #include "SmartObjectSubsystem.h"
-#if (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 6)
-#include "SmartObjectRequestTypes.h"
-#endif
 #include "ThistleDispatch.h"
 #include "TransformDispatch.h"
 #include "Public/GameplayTags.h"
 
 UThistleBehavioralist::UThistleBehavioralist(): MyDispatch(nullptr), SmartObjectSubsystem(nullptr)
 {
-	ActorToAILocomotionMapping = MakeShareable(new TMap<ActorKey, TObjectPtr<AThistleInject>>());
+	ActorToThistleAIMapping = MakeShareable(new TMap<ActorKey, TObjectPtr<AThistleInject>>());
 	EntityToArtilleryBehavior = MakeShareable(new TMap<FSkeletonKey, UThistleStateTreeLease*>());
 	ExpirationDeadliner = MakeShareable(new Deadliner());
 	BehavioralistTagState = NewObject<UArtilleryGameplayTagContainer>();
@@ -31,8 +28,16 @@ bool UThistleBehavioralist::RegistrationImplementation()
 	FArtilleryAddEnemyToControllerSubsystem Register;
 	Register.BindUObject(this, &UThistleBehavioralist::RegisterEnemy);
 	MyDispatch->RegisterEnemySubsystem(Callback, Register);
-	SelfPtr = this;
-	return true;
+	if (UBarrageDispatch::SelfPtr)
+	{
+		UBarrageDispatch::SelfPtr->OnBarrageContactAddedDelegate.AddUObject(this, &UThistleBehavioralist::OnPhysicsCollision);
+		SelfPtr = this;
+		return true;
+	}
+	else
+	{
+		return false; //thoughts and prayers.
+	}
 }
 
 void UThistleBehavioralist::BounceTag(FSkeletonKey Key, FNativeGameplayTag& Tag, int Duration) const
@@ -70,12 +75,9 @@ void UThistleBehavioralist::DelayedTag(FSkeletonKey Key, FNativeGameplayTag& Tag
 
 void UThistleBehavioralist::ExpireTag(FSkeletonKey Key, FNativeGameplayTag& Tag, int Duration)
 {
-	bool found = false;
 	int stamp = DeadlinerTime + Duration;
-	if (found)
-	{
-		MyDispatch->AddTagToEntity(Key, Tag);
-	}
+
+	MyDispatch->AddTagToEntity(Key, Tag);
 
 	DeadlineArray* StampDeadline = ExpirationDeadliner->Find(stamp);
 	if (StampDeadline == nullptr)
@@ -133,7 +135,7 @@ void UThistleBehavioralist::Deinitialize()
 {
 	EntityToArtilleryBehavior->Empty();
 	// unlike the others, we can't trust this one. Actually, we prolly can't trust them either.
-	ActorToAILocomotionMapping->Empty();
+	ActorToThistleAIMapping->Empty();
 	ExpirationDeadliner->Empty();
 	Super::Deinitialize();
 }
@@ -157,7 +159,7 @@ bool UThistleBehavioralist::AttemptInvokePathingOnKey(FSkeletonKey Target, FVect
 {
 	if (UThistleBehavioralist::SelfPtr)
 	{
-		TSharedPtr<TMap<ActorKey, TObjectPtr<AThistleInject>>> HoldOpen = UThistleBehavioralist::SelfPtr->ActorToAILocomotionMapping;
+		TSharedPtr<TMap<ActorKey, TObjectPtr<AThistleInject>>> HoldOpen = UThistleBehavioralist::SelfPtr->ActorToThistleAIMapping;
 		if (HoldOpen)
 		{
 			TObjectPtr<AThistleInject>* Hold = HoldOpen->Find(Target);
@@ -175,7 +177,7 @@ bool UThistleBehavioralist::AttemptAimFromKey(FSkeletonKey From, FRotator Target
 {
 	if (UThistleBehavioralist::SelfPtr)
 	{
-		TSharedPtr<TMap<ActorKey, TObjectPtr<AThistleInject>>> HoldOpen = UThistleBehavioralist::SelfPtr->ActorToAILocomotionMapping;
+		TSharedPtr<TMap<ActorKey, TObjectPtr<AThistleInject>>> HoldOpen = UThistleBehavioralist::SelfPtr->ActorToThistleAIMapping;
 		if (HoldOpen)
 		{
 			TObjectPtr<AThistleInject>* Hold = HoldOpen->Find(From);
@@ -193,7 +195,7 @@ bool UThistleBehavioralist::AttemptAttackFromKey(FSkeletonKey From)
 {
 	if (UThistleBehavioralist::SelfPtr)
 	{
-		TSharedPtr<TMap<ActorKey, TObjectPtr<AThistleInject>>> HoldOpen = UThistleBehavioralist::SelfPtr->ActorToAILocomotionMapping;
+		TSharedPtr<TMap<ActorKey, TObjectPtr<AThistleInject>>> HoldOpen = UThistleBehavioralist::SelfPtr->ActorToThistleAIMapping;
 		if (HoldOpen)
 		{
 			TObjectPtr<AThistleInject>* Hold = HoldOpen->Find(From);
@@ -221,7 +223,7 @@ void UThistleBehavioralist::RegisterEnemy(const ActorKey NewKey, uint64_t Stamp)
 			//YOU MUST CONSTRUCT. LMAO. scope this lol
 			//this might end up sandblasting the object when the pointer is destroyed. lmao.
 			TObjectPtr<AThistleInject> Enemy = Cast<AThistleInject, AActor>(EnemyActor.Get());
-			ActorToAILocomotionMapping->Add(NewKey, Enemy);
+			ActorToThistleAIMapping->Add(NewKey, Enemy);
 			if (UThistleStateTreeLease* AThingToTick = Enemy->GetComponentByClass<UThistleStateTreeLease>())
 			{
 				EntityToArtilleryBehavior->Add(NewKey, AThingToTick);
@@ -258,7 +260,7 @@ void UThistleBehavioralist::DeregisterTagQueryCapableDecorator(AwakenTagQueryDec
 
 int UThistleBehavioralist::GetLiveEnemyCount()
 {
-	return ActorToAILocomotionMapping->Num();
+	return ActorToThistleAIMapping->Num();
 }
 
 TArray<AGenericSmartObject*> UThistleBehavioralist::GetSomeRallyPoints(FVector Location, float Range)
@@ -381,7 +383,7 @@ void UThistleBehavioralist::DeregisterEnemy(const ActorKey& KeyToRemove)
 {
 	EntityToArtilleryBehavior->Remove(KeyToRemove);
 	// TODO: replace this with something less rancid if it ever shows up in perf profiling.
-	ActorToAILocomotionMapping->Remove(KeyToRemove);
+	ActorToThistleAIMapping->Remove(KeyToRemove);
 	CurrentEnemies.Remove(KeyToRemove);
 	//this is a strong tobject ptr, so we actually won't kill the actor til this is released.
 }
@@ -430,9 +432,9 @@ void UThistleBehavioralist::Update(uint64_t CurrentTck)
 
 void UThistleBehavioralist::RunAILocomotions() const
 {
-	if (ActorToAILocomotionMapping.IsValid())
+	if (ActorToThistleAIMapping.IsValid())
 	{
-		for (const TTuple<ActorKey, TObjectPtr<AThistleInject>>& Entry : *ActorToAILocomotionMapping)
+		for (const TTuple<ActorKey, TObjectPtr<AThistleInject>>& Entry : *ActorToThistleAIMapping)
 		{
 			Entry.Value->LocomotionStateMachine(); // NOW this can turn into a bool that actually provides info for the
 			//behavioralist so we know when to bloody repath. lord in hebby.
@@ -476,7 +478,8 @@ uint32 UThistleBehavioralist::GetEnemiesWithinRangeOfPoint(
 	}
 
 	uint32 EnemyCountFound = 0;
-	for (ActorKey& EnemyKey : CurrentEnemies)
+	auto copy(CurrentEnemies);
+	for (ActorKey& EnemyKey : copy)
 	{
 		// nullptr check since the enemy could have been destructed
 		const AttrPtr EnemyHealthAttr = MyDispatch->GetAttrib(EnemyKey, HEALTH);
@@ -525,7 +528,7 @@ void UThistleBehavioralist::CullDeadEnemies()
 			{
 				MyDispatch->GetAttribAndApplyIf(CurrentEnemies[EnemyIndex], HEALTH, [this, EnemyIndex](AttrPtr Health)
 				{
-					if (Health->GetCurrentValue() <= 0.f)
+					if (Health->GetCurrentValue() <= 1.f)
 					{
 						DeadEnemies.Add(CurrentEnemies[EnemyIndex]);
 						CurrentEnemies.RemoveAtSwap(EnemyIndex);

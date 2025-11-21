@@ -5,7 +5,7 @@
 
 bool UThistleDispatch::RegistrationImplementation()
 {
-	ActorToAILocomotionMapping = UThistleBehavioralist::SelfPtr->ActorToAILocomotionMapping;
+	ActorToAILocomotionMapping = UThistleBehavioralist::SelfPtr->ActorToThistleAIMapping;
 	return true;
 }
 

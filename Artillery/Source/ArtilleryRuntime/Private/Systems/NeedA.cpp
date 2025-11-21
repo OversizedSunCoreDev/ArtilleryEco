@@ -28,6 +28,22 @@ FGrantWith F_INeedA::NewUnboundGun(FSkeletonKey Self, FGunKey NameSetIDUnset,  F
 	return FGrantWith(Stamp).Set(FGrantWith::Eventual | FGrantWith::Bound | FGrantWith::GameThread);
 }
 
+//this requires a registered bonekine/bonekey pair, or a requestor kine and a key and a damn good reason.
+FGrantWith F_INeedA::SceneComponentMoved(FBoneKey ComponentArtilleryKey, ArtilleryTime Stamp, FVector Pos, FRotator Rot)
+{
+	if (this)
+	{
+		FRequestThing MyRequest(ArtilleryRequestType::FakeTransformUpdate);
+		MyRequest.Stamp = Stamp;
+		MyRequest.SourceOrSelf = ComponentArtilleryKey.AsSkeletonKey();
+		MyRequest.ThingRotator = Rot;
+		MyRequest.ThingVector = Pos;
+		BusyWorkerAcc[MyARTILLERYIndex].Queue->Enqueue(MyRequest);
+		return FGrantWith(Stamp).Set(FGrantWith::Eventual | FGrantWith::Within1Tick);
+	}
+	return FGrantWith(Stamp).Set(FGrantWith::Nullable);
+}
+
 FGrantWith F_INeedA::MobileAI(FSkeletonKey AIEntity, ArtilleryTime Stamp)
 {
 	FRequestThing MyRequest(ArtilleryRequestType::BindAI);
@@ -67,6 +83,35 @@ FGrantWith F_INeedA::GunFiredAtTime(FGunKey Target, ArtilleryTime Stamp)
 		MyRequest.Stamp = Stamp;
 		MyRequest.Gun = Target;
 		GameThreadAcc[MyARTILLERYIndex].Queue->Enqueue(MyRequest);
+		return FGrantWith(Stamp).Set(FGrantWith::Eventual | FGrantWith::Within1Tick);
+	}
+	return FGrantWith(Stamp).Set(FGrantWith::Nullable);
+}
+
+FGrantWith F_INeedA::TagReferenceModel(FSkeletonKey Target, ArtilleryTime Stamp, FConservedTags ValidSharedPtr)
+{
+	if (this)
+	{
+		FRequestThing MyRequest(ArtilleryRequestType::TagReferenceModel);
+		MyRequest.ConservedTags =  ValidSharedPtr;
+		MyRequest.Stamp = Stamp;
+		MyRequest.SourceOrSelf = Target;
+			
+		BusyWorkerAcc[MyARTILLERYIndex].Queue->Enqueue(MyRequest);
+		return FGrantWith(Stamp).Set(FGrantWith::Eventual | FGrantWith::Within1Tick);
+	}
+	return FGrantWith(Stamp).Set(FGrantWith::Nullable);
+}
+
+FGrantWith F_INeedA::NoTagReferenceModel(FSkeletonKey Target, ArtilleryTime Stamp)
+{
+	if (this)
+	{
+		FRequestThing MyRequest(ArtilleryRequestType::NoTagReferenceModel);
+		MyRequest.Stamp = Stamp;
+		MyRequest.SourceOrSelf = Target;
+			
+		BusyWorkerAcc[MyARTILLERYIndex].Queue->Enqueue(MyRequest);
 		return FGrantWith(Stamp).Set(FGrantWith::Eventual | FGrantWith::Within1Tick);
 	}
 	return FGrantWith(Stamp).Set(FGrantWith::Nullable);

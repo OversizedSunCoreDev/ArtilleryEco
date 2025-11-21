@@ -5,13 +5,13 @@
 #include "CoreMinimal.h"
 #include "Destructible.h"
 #include "GameFramework/Pawn.h"
-
 #include "GenericTeamAgentInterface.h"
 #include "ArtilleryRuntime/Public/Systems/ArtilleryDispatch.h"
 #include "FMockArtilleryGun.h"
+#include "RequestDrivenKine.h"
 #include "UEnemyMachine.h"
+#include "NavigationSystem.h"
 #include "PhysicsTypes/BarrageAutoBox.h"
-
 #include "ThistleInject.generated.h"
 
 /*
@@ -67,6 +67,16 @@ enum EnemyCategory
 	Flyer = 1,
 };
 
+UENUM(BlueprintType)
+enum class EThistleMoveState : uint8
+{
+	Idle,
+	Moving,
+	SlowingDown,
+	ReactingToPush,
+	FollowingLeader
+};
+
 UCLASS()
 class THISTLERUNTIME_API AThistleInject : public ADestructible
 {
@@ -81,8 +91,22 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = NavMovement, meta = (DisplayName = "Movement Capabilities", Keywords = "Nav Agent"))
 	FNavAgentProperties NavAgentProps;
-	
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = NavMovement, meta = (DisplayName = "Can I Move?", Keywords = "Nav Agent"))
+	bool EnableTakeMoveOrder = true;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = NavMovement, meta = (DisplayName = "Can I Move?", Keywords = "Nav Agent"))
+	bool SoftFollowMode = false;
+	signed int AdjustSpeedBy = 0;
+	bool bGroundful = true;
+
+	static inline constexpr int RoughTickPeriod = 1000000 / HERTZ_OF_BARRAGE; //swap to microseconds. standardizing.
+	static inline constexpr int GroundfulPeriod = RoughTickPeriod * 28;
+	ArtilleryTime LastGroundful = 0;
+
 	DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnArrivalAtDestination);
+
+	ManagedRequestingKine MainGunKine;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Thistle)
 	USceneComponent* MyMainGun;
 	//You are expected to call finish dying on your death being ready to tidy up.
@@ -91,12 +115,19 @@ public:
 	AThistleInject(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 	UPROPERTY(BlueprintAssignable, Category = "Thistle")
 	FOnArrivalAtDestination OnArrivalAtDestination;
-	//~ Begin INavAgentInterface Interface
-	virtual const FNavAgentProperties& GetNavAgentPropertiesRef() const override;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = NavMovement, meta = (DisplayName = "Movement Capabilities", Keywords = "Nav Agent"))
+	float SearchRangeForFollow = 800; //8 meters.
 
 	// flag to mark if enemy is idle or not
 	bool Idle = false;
-	
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Movement)
+	float MaxHP = 200.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Movement)
+	float MaxShields = 0.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Movement)
 	float MaxWalkSpeed = 200.0f;
 
@@ -110,16 +141,16 @@ public:
 	UPROPERTY()
 	bool atDestination = false;
 	virtual bool RegistrationImplementation() override;
-	FVector3f FinalDestination;
+	FVector FinalDestination;
 	FNavPathSharedPtr Path;
 	int32_t NextPathIndex = 0;
-	FVector3f LastTickPosition;
+	FVector LastTickPosition;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Thistle)
 	TEnumAsByte<EnemyCategory> EnemyType;
-	
+
 	virtual FGenericTeamId GetGenericTeamId() const override { return myTeam; }
-	
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FGunKey Attack = DefaultGunKey;
 
@@ -133,21 +164,153 @@ public:
 	//TODO: Revisit 2/20/25 --J
 	UFUNCTION(BlueprintCallable, Category = "Thistle")
 	virtual bool RotateMainGun(FRotator RotateTowards, ERelativeTransformSpace OperatingSpace);
-	
+	bool EngageNavSystem(FVector3f To);
+
 	UFUNCTION(BlueprintCallable, Category = "Movement")
-	bool MoveToPoint( FVector3f To);
+	bool MoveToPoint(FVector3f To);
 	FGenericTeamId myTeam = FGenericTeamId(7);
 
 	// runs physics calls
 	void LocomotionStateMachine();
-	
+
+	// Temporary flag to align component rotations with expected Aim direction.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Thistle")
+	bool bRotationCorrection = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Behavior", meta = (DisplayName = "Minimum Engagement Range"))
+	float MinEngagementRange = 500.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Behavior", meta = (DisplayName = "Maximum Engagement Range"))
+	float MaxEngagementRange = 2000.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Movement|Navmesh Following")
+	bool bShouldFollowNavmeshHeight = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Movement|Navmesh Following", meta = (DisplayName = "Navmesh Hover Height"))
+	float NavmeshHoverHeight = 10.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Movement|Navmesh Following", meta = (DisplayName = "Navmesh Hover Forward Project"))
+	float NavmeshForwardProject = 10.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Movement|Navmesh Following", meta = (DisplayName = "Navmesh Projection Search Extent"))
+	FVector NavmeshProjectionSearchExtent = FVector(0, 0, 200.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Behavior", meta = (DisplayName = "Detection Range"))
+	float DetectionRange = 2000.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Behavior", meta = (DisplayName = "Activated State Tag"))
+	FGameplayTag ActivatedStateTag;
+
+	//Step
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Movement|Stepping", meta = (DisplayName = "Max Step Height", ClampMin = "0.0", UIMin = "0.0"))
+	float MaxStepHeight = 40.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Movement|Stepping", meta = (DisplayName = "Step Detection Forward Distance", ClampMin = "0.0", UIMin = "0.0"))
+	float StepProbeDistance = 50.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Movement|Stepping", meta = (DisplayName = "Step Up Velocity Boost", ClampMin = "0.0", UIMin = "0.0"))
+	float StepUpVerticalVelocity = 300.f;
+
+	float StepUpCooldownTimer = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Movement|Stepping", meta = (DisplayName = "Step Up Impulse Strength", ClampMin = "0.0", UIMin = "0.0"))
+	float StepUpImpulse = 400.f;
+
+	// Added a tunable cooldown to prevent spamming step checks.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Movement|Stepping", meta = (DisplayName = "Step Up Cooldown", ClampMin = "0.0", UIMin = "0.0"))
+	float StepUpCooldown = 0.2f;
+
+	float StuckTimer = 0.f;
+	float UnStuckTimer = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Movement|Stepping", meta = (DisplayName = "Stuck Time Threshold", ClampMin = "0.0", UIMin = "0.0"))
+	float StuckTimeThreshold = 0.25f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Movement|Stepping", meta = (DisplayName = "Stuck Velocity Threshold", ClampMin = "0.0", UIMin = "0.0"))
+	float StuckVelocityThreshold = 5.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Movement|Stepping", meta = (DisplayName = "Min Stuck Velocity", ClampMin = "0.0", UIMin = "0.0"))
+	float MinStuckVelocity = 0.0f;
+
+	bool CheckStuck(float DeltaSeconds);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Behavior", meta = (DisplayName = "Rotation Speed"))
+	float RotationSpeed = 1.f;
+
+
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
-	
-public:	
+
+public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
+
+	// Handler for physics collisions
+	void OnPhysicsCollision(const BarrageContactEvent ContactEvent);
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI Movement")
+	EThistleMoveState MoveState = EThistleMoveState::Idle;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Movement")
+	float MaxForce = 500.0f;
+
+
+	FVector CurrentVelocity = FVector::ZeroVector;
+
+	// State specific handlers
+	void HandleIdleState();
+	void HandleMovingState();
+	void HandleSlowingDownState();
+
+	FVector Seek(const FVector& Target);
+
+	// Damping factor to apply to velocity, acts like friction to prevent sliding and reduce jitter.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Movement", meta = (ClampMin = "0.0", UIMin = "0.0"))
+	float Damping = 0.5f;
+
+	// Damping to apply to linear velocity while in the ReactingToPush state. Controls how much the AI slides.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Movement", meta = (DisplayName = "Linear Damping When Pushed", ClampMin = "0.0", UIMin = "0.0"))
+	float LinearDampingWhenPushed = 0.5f;
+
+	// Damping to apply to angular velocity while in the ReactingToPush state. Controls how much the AI resists spinning.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Movement", meta = (DisplayName = "Angular Damping When Pushed", ClampMin = "0.0", UIMin = "0.0"))
+	float AngularDampingWhenPushed = 0.1f;
+
+	// The radius around a destination where the AI will begin to slow down.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Movement", meta = (ClampMin = "0.0", UIMin = "0.0"))
+	float ArrivalRadius = 200.0f;
+
+	// How far along the path to look ahead for steering. This enables corner cutting.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Movement", meta = (ClampMin = "0.0", UIMin = "0.0"))
+	float PathLookaheadDistance = 300.0f;
+
+	// How long (in seconds) the AI will yield after being pushed by the player.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Movement", meta = (ClampMin = "0.0", UIMin = "0.0"))
+	float PushReactionTime = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Movement", meta = (ClampMin = "0.0", UIMin = "0.0"))
+	float SteerInterp = 1.f;
+
+
+	float PushReactionTimer = 0.0f;
+	EThistleMoveState StateBeforePush = EThistleMoveState::Idle;
+
+	FVector CalculateSteeringForce(const FVector& Target, bool bUseArrival);
+
+
+	//UFUNCTION()
+	//void OnPathfindingComplete(uint32 QueryID, ENavigationQueryResult::Type Result, FNavPathSharedPtr FoundPath);
+
+	FVector PushVelocity = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Movement")
+	float PlayerPushForceMagnitude = 1000.0f;
+
+	void UpdatePathAfterDisplacement();
+
+	float CompareNavMeshHeight();
+
+	void AimRotateMeshComponent();
+
 };
-
-

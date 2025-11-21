@@ -124,7 +124,7 @@ public:
 	int Some = 3;
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
-	int TargetChaffEnemyCount = 60;
+	int TargetChaffEnemyCount = 300;
 	
 	UPROPERTY(BlueprintReadWrite, VisibleAnywhere)
 	UArtilleryGameplayTagContainer* BehavioralistTagState;
@@ -149,7 +149,8 @@ public:
 
 	//TODO: GENERALIZE THIS TO NOT REQUIRE A SPECIFIC THISTLE INJECT. RIGHT NOW, WE KINDA GOTTA DO IT THIS WAY
 	//OR WE'LL HAVE DELEGATE SOUP THAT CANNOT BE DEBUGGED. TBH, these could prolly be ticklites but I haven't brain for that.
-	TSharedPtr<TMap<ActorKey, TObjectPtr<AThistleInject>>> ActorToAILocomotionMapping;
+	TSharedPtr<TMap<ActorKey, TObjectPtr<AThistleInject>>> ActorToThistleAIMapping;
+	TSharedPtr<TMap<FBarrageKey, TObjectPtr<AThistleInject>>> BarrageToThistleAIMapping;
 	TSharedPtr<TMap<FSkeletonKey, UThistleStateTreeLease*>> EntityToArtilleryBehavior;
 	void RunAILocomotions() const;
 	void RunStateTrees(uint64_t CurrentTck) const;
@@ -167,6 +168,46 @@ public:
 	ActorKeyArray DeadEnemies;
 	USmartObjectSubsystem* SmartObjectSubsystem;
 
+	void OnPhysicsCollision(const BarrageContactEvent& ContactEvent)
+	{
+		if (ContactEvent.ContactEntity1.MyLayer == Layers::EJoltPhysicsLayer::ENEMY
+			)
+		{
+			ForwardCollision(ContactEvent.ContactEntity1, ContactEvent);
+		}
+		if (ContactEvent.ContactEntity2.MyLayer == Layers::EJoltPhysicsLayer::ENEMY
+	)
+		{
+			ForwardCollision(ContactEvent.ContactEntity2, ContactEvent);
+		}
+	}
+
+	void ForwardCollision(BarrageContactEntity which, const BarrageContactEvent& ContactEvent)
+	{
+		//Reenable this only if there's a good reason to: Processing these in this way gets very expensive.
+		/*
+		//why didn't we put skeleton keys in the contact events?
+		if (UBarrageDispatch::SelfPtr)
+		{
+			FBLet quickfib = UBarrageDispatch::SelfPtr->GetShapeRef(which.ContactKey);
+			bool ProbablyValid = FBarragePrimitive::IsNotNull(quickfib);
+			if (ProbablyValid)
+			{
+				FSkeletonKey KeyIntoArtillery = quickfib->KeyOutOfBarrage;
+				quickfib.Reset();
+				if (KeyIntoArtillery.IsValid())
+				{
+					auto actor = ActorToThistleAIMapping->Find(KeyIntoArtillery);
+					if (actor)
+					{
+						//actor->Get()->OnPhysicsCollision(ContactEvent);
+					}
+				}
+			}
+		}
+		*/
+	}
+	
 protected:
 	TSharedPtr<Deadliner> ExpirationDeadliner;
 };

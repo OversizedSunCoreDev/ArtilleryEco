@@ -97,6 +97,11 @@ public:
 	//Applies any given quat as any given input to any given target. use of this is not recommended.
 	static void Apply_Unsafe(FQuat4d Any, FBLet Target, PhysicsInputType Type);
 
+
+	static FVector GetAngularVelocity(FBLet Target);
+	static void ApplyTorque(FVector Torque, FBLet Target);
+
+
 	//My current thinking:
 	//This should be called from the gamethread, in the PULL model. it doesn't lock, but it will fail if the lock is held on that body
 	//because we should _never_ block the game thread. unfortunately, this means I can't provide the code to actually use

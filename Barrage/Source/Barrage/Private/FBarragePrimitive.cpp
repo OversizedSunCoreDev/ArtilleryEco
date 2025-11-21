@@ -436,3 +436,40 @@ void FBarragePrimitive::SetCharacterGravity(FVector3d InVector, FBLet Target)
 		}
 	}
 }
+
+
+void FBarragePrimitive::ApplyTorque(FVector Torque, FBLet Target)
+{
+	if (GlobalBarrage && IsNotNull(Target))
+	{
+		TSharedPtr<FWorldSimOwner> GameSimHoldOpen = GlobalBarrage->JoltGameSim;
+		if (GameSimHoldOpen && MyBARRAGEIndex < ALLOWED_THREADS_FOR_BARRAGE_PHYSICS)
+		{
+			GameSimHoldOpen->ThreadAcc[MyBARRAGEIndex].Queue->Enqueue(
+				FBPhysicsInput(Target->KeyIntoBarrage, 0, PhysicsInputType::ApplyTorque, CoordinateUtils::ToBarrageForce(Torque), Target->Me));
+		}
+	}
+}
+
+FVector FBarragePrimitive::GetAngularVelocity(FBLet Target)
+{
+	if (IsNotNull(Target) && GlobalBarrage)
+	{
+		TSharedPtr<FWorldSimOwner> GameSimHoldOpen = GlobalBarrage->JoltGameSim;
+		JPH::BodyID result;
+		if (GameSimHoldOpen && GameSimHoldOpen->BarrageToJoltMapping->find(Target->KeyIntoBarrage, result) && MyBARRAGEIndex < ALLOWED_THREADS_FOR_BARRAGE_PHYSICS)
+		{
+			// Characters are always upright capsules and don't have angular velocity in the same way.
+			if (Target->Me == FBShape::Character)
+			{
+				return FVector::ZeroVector;
+			}
+
+			if (!result.IsInvalid())
+			{
+				return FVector(CoordinateUtils::FromJoltUnitVector(GameSimHoldOpen->body_interface->GetAngularVelocity(result)));
+			}
+		}
+	}
+	return FVector::ZeroVector;
+}

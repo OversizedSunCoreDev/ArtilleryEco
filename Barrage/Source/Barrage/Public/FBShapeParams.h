@@ -73,6 +73,8 @@ public:
 	double JoltHalfHeightOfCylinder;
 	double JoltRadius;
 	double taper;
+	FVector3f Offset;
+	FMassByCategory::BMassCategories MassClass;
 };
 
 struct FBTransform

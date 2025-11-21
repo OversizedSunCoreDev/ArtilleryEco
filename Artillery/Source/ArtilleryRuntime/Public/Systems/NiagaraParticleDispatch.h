@@ -231,9 +231,12 @@ public:
 		NameToKeyQueue.Enqueue(TPair<FName, FSkeletonKey>(ProjectileName, ProjectileKey));
 	}
 
+	TQueue<TPair<FName, FSkeletonKey>> KeysToCleanupQueue;
 	void CleanupKey(const FSkeletonKey Key, FName ProjectileName = "")
 	{
-		ManagementPayload* KeyToRecordMap = ProjectileNameToNDCAsset->Find(ProjectileName);
+		KeysToCleanupQueue.Enqueue(TPair<FName, FSkeletonKey>(ProjectileName, Key));
+
+		/*ManagementPayload* KeyToRecordMap = ProjectileNameToNDCAsset->Find(ProjectileName);
 		if (KeyToRecordMap != nullptr)
 		{
 			KeyToRecordMap->Get<2>().Remove(Key);
@@ -244,7 +247,7 @@ public:
 			{
 				it.Value().Get<2>().Remove(Key);
 			}
-		}
+		}*/
 	}
 };
 

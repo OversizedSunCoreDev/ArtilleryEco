@@ -24,6 +24,7 @@ struct BarrageContactEntity
 		ContactKey = ContactKeyIn;
 		bIsProjectile = BodyIn.GetObjectLayer() == Layers::PROJECTILE || BodyIn.GetObjectLayer() == Layers::ENEMYPROJECTILE;
 		bIsStaticGeometry = BodyIn.GetObjectLayer() == Layers::NON_MOVING;
+		bIsNormalCastQuery = BodyIn.GetObjectLayer() == Layers::CAST_QUERY;
 		bIsPureHitbox = BodyIn.GetObjectLayer() == Layers::ENEMYHITBOX || BodyIn.GetObjectLayer() == Layers::HITBOX;
 		MyLayer = static_cast<Layers::EJoltPhysicsLayer>(BodyIn.GetObjectLayer());
 	}
@@ -31,6 +32,7 @@ struct BarrageContactEntity
 	FBarrageKey ContactKey;
 	bool bIsProjectile = false;
 	bool bIsStaticGeometry = false;
+	bool bIsNormalCastQuery = false;
 	bool bIsPureHitbox = false;
 	Layers::EJoltPhysicsLayer MyLayer;
 };

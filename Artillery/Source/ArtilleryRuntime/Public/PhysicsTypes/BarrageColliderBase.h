@@ -14,18 +14,9 @@ class UBarrageColliderBase : public UPrimitiveComponent, public ICanReady
 {
 	GENERATED_BODY()
 
-private:
-#if WITH_EDITORONLY_DATA
-	TObjectPtr<class UBarrageDebugComponent> BarrageDebugComponent;
-
-	void UpdateDebugComponent();
-#endif
-
 public:
 	FBLet MyBarrageBody = nullptr;
 	FSkeletonKey MyParentObjectKey;
-	FSkeletonKey MyObjectKey;
-	bool IsReady = false;
 	
 	// Sets default values for this component's properties
 	UBarrageColliderBase(const FObjectInitializer& ObjectInitializer);
@@ -45,9 +36,8 @@ public:
 	// Called every frame
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	void SetTransform(const FTransform& NewTransform);
-
 	void SetBarrageBody(FBLet NewBody);
-	FBLet GetBarrageBody() const { return MyBarrageBody; }
+	FORCEINLINE FBLet GetBarrageBody() const { return MyBarrageBody; }
 
 #if WITH_EDITORONLY_DATA
 	static ARTILLERYRUNTIME_API void AddReferencedObjects(UObject* InThis, FReferenceCollector& Collector);
@@ -56,4 +46,11 @@ public:
 
 protected:
 	FBTransform Transform;
+
+private:
+#if WITH_EDITORONLY_DATA
+	TObjectPtr<class UBarrageDebugComponent> BarrageDebugComponent;
+
+	void UpdateDebugComponent();
+#endif
 };

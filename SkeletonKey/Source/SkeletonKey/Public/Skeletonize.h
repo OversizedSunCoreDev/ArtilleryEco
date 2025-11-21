@@ -54,3 +54,5 @@ static inline uint64_t FORGE_DEPENDENT_SKELETON_KEY(uint64_t parent, uint32_t lo
 //TODO: replace with and standardize on fast hash if needed.
 #define MAKE_BONEKEY(turn_into_key) FBoneKey(PointerHash(turn_into_key))
 #define MAKE_ACTORKEY(turn_into_key) ActorKey(PointerHash(turn_into_key))
+
+#define MYSTIC_STANDARDIZED_OFFSET 17

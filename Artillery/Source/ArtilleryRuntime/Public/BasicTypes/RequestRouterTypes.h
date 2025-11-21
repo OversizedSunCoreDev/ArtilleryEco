@@ -11,18 +11,19 @@ enum ArtilleryRequestType
 {
 	FireAGun,
 	GetAnUnboundGun,
+	FakeTransformUpdate,
 	GetABullet,
 	ModifyGun,
 	CreateATicklite,
 	BindAI,
+	TagReferenceModel,
+	NoTagReferenceModel,
 	// Particles
 	ParticleSystemActivateOrDeactivate,
 	SpawnParticleSystemAttached,
 	SpawnParticleSystemAtLocation,
 	// Meshes
 	SpawnInstancedStaticMesh,
-	TagReferenceModel,
-	NoTagReferenceModel,
 };
 
 USTRUCT()

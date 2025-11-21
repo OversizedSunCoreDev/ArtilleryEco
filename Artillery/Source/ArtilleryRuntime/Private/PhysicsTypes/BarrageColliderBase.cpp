@@ -15,7 +15,6 @@ UBarrageColliderBase::UBarrageColliderBase(const FObjectInitializer& ObjectIniti
 	PrimaryComponentTick.bCanEverTick = true;
 	bWantsInitializeComponent = true;
 	MyParentObjectKey = 0;
-	MyObjectKey = 0;
 	bAlwaysCreatePhysicsState = false;
 	UPrimitiveComponent::SetNotifyRigidBodyCollision(false);
 	bCanEverAffectNavigation = false;

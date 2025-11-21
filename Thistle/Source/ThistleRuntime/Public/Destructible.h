@@ -15,7 +15,7 @@
 
 
 UCLASS()
-class THISTLERUNTIME_API ADestructible : public APawn, public IGenericTeamAgentInterface, public IKeyedConstruct
+class THISTLERUNTIME_API ADestructible : public AActor, public IGenericTeamAgentInterface, public IKeyedConstruct
 {
 	GENERATED_BODY()
 public:

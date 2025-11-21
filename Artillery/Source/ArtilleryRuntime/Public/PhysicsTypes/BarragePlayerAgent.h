@@ -110,11 +110,11 @@ public:
 
 	// Aim Friction scalars
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Aim)
-	double MovingTowardsCritMultiplier = 1.0f;
+	double MovingTowardsCritMultiplier = .9f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Aim)
-	double MovingTowardsBaseMarkerMultiplier = 0.95f;
+	double MovingTowardsBaseMarkerMultiplier = 0.8f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Aim)
-	double MovingAwayFromMarkersFrictionMultiplier = 0.8f;
+	double MovingAwayFromMarkersFrictionMultiplier = 0.7f;
 
 	double ShortcastMaxRange = 500; //emergency default ONLY. normally set in constructor!!!!
 	int32  MungeSafety = 0xffffffff;
@@ -161,13 +161,13 @@ public:
 	UFUNCTION(BlueprintPure)
 	FVector3f GetVelocity() const
 	{
-		return IsReady && GetBarrageBody() != nullptr ? FBarragePrimitive::GetVelocity(GetBarrageBody()) : FVector3f::ZeroVector;
+		return IsReady && MyBarrageBody != nullptr ? FBarragePrimitive::GetVelocity(MyBarrageBody) : FVector3f::ZeroVector;
 	}
 	
 	UFUNCTION(BlueprintCallable)
 	FVector3f GetGroundNormal()
 	{
-		return IsReady && GetBarrageBody() != nullptr ? FBarragePrimitive::GetCharacterGroundNormal(GetBarrageBody()) : FVector3f::ZeroVector;
+		return IsReady && MyBarrageBody != nullptr ? FBarragePrimitive::GetCharacterGroundNormal(MyBarrageBody) : FVector3f::ZeroVector;
 	}
 	
 	FBarragePrimitive::FBGroundState GetGroundState() const;
@@ -182,11 +182,10 @@ public:
 	bool CalculateAimVector(const ActorKey& ActorsKey, const FVector3d& ActorLocation, const FVector& Direction, FVector& OutTargetAimAtLocation, FSkeletonKey& TargetKey, AActor*& TargetActor) const;
 	
 	/**
-	* Rendering shape visualization.
-	**/
+* Rendering shape visualization.
+**/
 	virtual FPrimitiveSceneProxy* CreateSceneProxy() override;
 	virtual FBoxSphereBounds CalcBounds(const FTransform& LocalToWorld) const override;
-
 protected:
 	UPROPERTY(BlueprintReadOnly)
 	FVector CHAOS_LastGameFrameRightVector = FVector::ZeroVector;

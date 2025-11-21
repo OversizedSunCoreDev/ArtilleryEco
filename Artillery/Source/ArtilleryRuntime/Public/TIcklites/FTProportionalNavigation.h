@@ -91,7 +91,7 @@ public:
 	{
 		MissileKey = Missile;
 		TargetKey = FSkeletonKey::Invalid();
-		TargetPosition = FVector3f::ZeroVector;
+		TargetPosition = Target;
 		ProximityFuseRadius = ProximityRadius;
 		MissileMaxSpeed = MaxSpeed;
 		MissileAcceleration = AllowedAcceleration;
