@@ -1,9 +1,8 @@
 ﻿#include "FJThread.h"
 THIRD_PARTY_INCLUDES_START
 PRAGMA_PUSH_PLATFORM_DEFAULT_PACKING
-#include  "processthreadsapi.h"
-#include <windows.h>
-#include <stdio.h>
+
+#include <processthreadsapi.h>
 
 // //we likely should also use the set res function below. if you'd like to add it or it's needed, see:
 // //https://github.com/winsiderss/systeminformer/tree/master/phnt
@@ -57,6 +56,7 @@ uint32 FJThread::Run()
 
 	if (UnderylingRunnable && UnderylingRunnable->Init() == true)
 	{
+#if (_WIN32_WINNT >= 0x0602) // UE likes to set things to 0x0601 (Windows 7) by default, but we need >= Windows 8 (0x0602) for power throttling.
 		PROCESS_POWER_THROTTLING_STATE PowerThrottling;
 		RtlZeroMemory(&PowerThrottling, sizeof(PowerThrottling));
 		PowerThrottling.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
@@ -69,6 +69,7 @@ uint32 FJThread::Run()
 							  &PowerThrottling,
 							  sizeof(PowerThrottling));
 	
+#endif // _WIN32_WINNT >= 0x0602
 		auto hThread = UnderlyingThread->native_handle();
 		auto prio = SetThreadPriority(hThread, HIGH_PRIORITY_CLASS);
 		ExitCode = UnderylingRunnable->Run();

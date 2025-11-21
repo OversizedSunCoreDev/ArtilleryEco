@@ -1,8 +1,11 @@
 ﻿#pragma once
-#include <chrono>
-#include <iostream>
+THIRD_PARTY_INCLUDES_START
+PRAGMA_PUSH_PLATFORM_DEFAULT_PACKING
+#include <windows.h>
 #include <thread>
-#include <utility>
+PRAGMA_POP_PLATFORM_DEFAULT_PACKING
+THIRD_PARTY_INCLUDES_END
+
 #include "FJThread.generated.h"
 //Hi! You might be wondering why this exists. Well, hopefully, you'll never see this text and we'll never use this.
 //Ideally, you're just skimming through the ancient git history when... you see it!

@@ -57,6 +57,11 @@ public:
 		return In / 100.0; 
 	}
 
+	static double JoltToRadius(double In)
+	{
+		return In * 100.0;
+	}
+
 	static double DiamToJoltHalfExtent(double In)
 	{
 		return In / 200.0; 
