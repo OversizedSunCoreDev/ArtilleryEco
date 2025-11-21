@@ -16,7 +16,7 @@ option(GENERATE_DEBUG_SYMBOLS "Generate debug symbols" ON)
 option(OVERRIDE_CXX_FLAGS "Override CMAKE_CXX_FLAGS_DEBUG/RELEASE" ON)
 
 # When turning this option on, the library will be compiled in such a way to attempt to keep the simulation deterministic across platforms
-option(CROSS_PLATFORM_DETERMINISTIC "Cross platform deterministic" OFF)
+option(CROSS_PLATFORM_DETERMINISTIC "Cross platform deterministic" ON)
 
 # When turning this option on, the library will be compiled for ARM (aarch64-linux-gnu), requires compiling with clang
 option(CROSS_COMPILE_ARM "Cross compile to aarch64-linux-gnu" OFF)
@@ -32,7 +32,7 @@ option(INTERPROCEDURAL_OPTIMIZATION "Enable interprocedural optimizations" ON)
 # When turning this on, in Debug and Release mode, the library will emit extra code to ensure that the 4th component of a 3-vector is kept the same as the 3rd component
 # and will enable floating point exceptions during simulation to detect divisions by zero.
 # Note that this currently only works using MSVC. Clang turns Float2 into a SIMD vector sometimes causing floating point exceptions (the option is ignored).
-option(FLOATING_POINT_EXCEPTIONS_ENABLED "Enable floating point exceptions" ON)
+option(FLOATING_POINT_EXCEPTIONS_ENABLED "Enable floating point exceptions" OFF)
 
 # Number of bits to use in ObjectLayer. Can be 16 or 32.
 option(OBJECT_LAYER_BITS "Number of bits in ObjectLayer" 16)

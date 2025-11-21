@@ -75,21 +75,27 @@ FParticleID UNiagaraParticleDispatch::SpawnFixedNiagaraSystem(FString NiagaraSys
 	FParticleID NewParticleID = ++ParticleIDCounter;
 
 	UNiagaraSystem* NiagaraSystem = GetOrLoadNiagaraSystem(NiagaraSystemLocation);
-	UNiagaraComponent* NewNiagaraComponent = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-				GetWorld(),
-				NiagaraSystem,
-				Location,
-				Rotation,
-				Scale,
-				bAutoDestroy,
-				bAutoActivate,
-				PoolingMethod,
-				bPreCullCheck);
+	try
+	{
+		UNiagaraComponent* NewNiagaraComponent = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+					GetWorld(),
+					NiagaraSystem,
+					Location,
+					Rotation,
+					Scale,
+					bAutoDestroy,
+					bAutoActivate,
+					PoolingMethod,
+					bPreCullCheck);
 
-	ParticleIDToComponentMapping->Add(NewParticleID, NewNiagaraComponent);
-	ComponentToParticleIDMapping->Add(NewNiagaraComponent, NewParticleID);
-	NewNiagaraComponent->OnSystemFinished.AddUniqueDynamic(this, &UNiagaraParticleDispatch::DeregisterNiagaraParticleComponent);
-
+		ParticleIDToComponentMapping->Add(NewParticleID, NewNiagaraComponent);
+		ComponentToParticleIDMapping->Add(NewNiagaraComponent, NewParticleID);
+		NewNiagaraComponent->OnSystemFinished.AddUniqueDynamic(this, &UNiagaraParticleDispatch::DeregisterNiagaraParticleComponent);
+	}
+	catch (...)
+	{
+		UE_LOG(LogTemp, Error, TEXT("UNiagaraParticleDispatch::SpawnFixedNiagaraSystem: Error! Asset not loaded or dispatch unavailable!"));
+	}
 	return NewParticleID;
 }
 	
@@ -116,50 +122,54 @@ FParticleID UNiagaraParticleDispatch::SpawnAttachedNiagaraSystem(FString Niagara
 	if(SceneCompKinePtr)
 	{
 		TSharedPtr<BoneKine> Bone = StaticCastSharedPtr<BoneKine>(SceneCompKinePtr);
-		TWeakObjectPtr<USceneComponent> BoneSceneComp = Bone->MySelf.Get();
-
-		UNiagaraSystem* NiagaraSystem = GetOrLoadNiagaraSystem(NiagaraSystemLocation);
-		UNiagaraComponent* NewNiagaraComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(
-					NiagaraSystem,
-					BoneSceneComp.Get(),
-					AttachPointName,
-					Location,
-					Rotation,
-					Scale,
-					LocationType,
-					bAutoDestroy,
-					PoolingMethod,
-					bAutoActivate,
-					bPreCullCheck);
-
-		if (NewNiagaraComponent != nullptr)
+		if (Bone)
 		{
-			TSharedPtr<TQueue<NiagaraVariableParam>>* ParamQueuePtr = KeyToParticleParamMapping->Find(FBoneKey(AttachToComponentKey));
-			if (ParamQueuePtr != nullptr && ParamQueuePtr->IsValid())
+			if (auto BoneSceneComp = Bone->MySelf.Pin())
 			{
-				TQueue<NiagaraVariableParam>* ParamQueue = ParamQueuePtr->Get();
-		
-				NiagaraVariableParam Param;
-				while (ParamQueue->Dequeue(Param))
+				UNiagaraSystem* NiagaraSystem = GetOrLoadNiagaraSystem(NiagaraSystemLocation);
+				UNiagaraComponent* NewNiagaraComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(
+							NiagaraSystem,
+							BoneSceneComp.Get(),
+							AttachPointName,
+							Location,
+							Rotation,
+							Scale,
+							LocationType,
+							bAutoDestroy,
+							PoolingMethod,
+							bAutoActivate,
+							bPreCullCheck);
+
+				if (NewNiagaraComponent != nullptr)
 				{
-					switch (Param.Type)
+					TSharedPtr<TQueue<NiagaraVariableParam>>* ParamQueuePtr = KeyToParticleParamMapping->Find(FBoneKey(AttachToComponentKey));
+					if (ParamQueuePtr != nullptr && ParamQueuePtr->IsValid())
 					{
-					case Position:
-						NewNiagaraComponent->SetVariablePosition(Param.VariableName, Param.VariableValue);
-						break;
-					default:
-						UE_LOG(LogTemp, Error, TEXT("UNiagaraParticleDispatch::SpawnAttachedNiagaraSystemInternal: Parameter type [%d] is not implemented, cannot proceed."), Param.Type);
-						throw;
+						TQueue<NiagaraVariableParam>* ParamQueue = ParamQueuePtr->Get();
+		
+						NiagaraVariableParam Param;
+						while (ParamQueue->Dequeue(Param))
+						{
+							switch (Param.Type)
+							{
+							case Position:
+								NewNiagaraComponent->SetVariablePosition(Param.VariableName, Param.VariableValue);
+								break;
+							default:
+								UE_LOG(LogTemp, Error, TEXT("UNiagaraParticleDispatch::SpawnAttachedNiagaraSystemInternal: Parameter type [%d] is not implemented, cannot proceed."), Param.Type);
+								throw;
+							}
+						}
+					}
+			
+					BoneKeyToParticleIDMapping->Add(FBoneKey(AttachToComponentKey), NewParticleID);
+					ParticleIDToComponentMapping->Add(NewParticleID, NewNiagaraComponent);
+					ComponentToParticleIDMapping->Add(NewNiagaraComponent, NewParticleID);
+					if(GetWorld())
+					{
+						NewNiagaraComponent->OnSystemFinished.AddUniqueDynamic(this, &UNiagaraParticleDispatch::DeregisterNiagaraParticleComponent);
 					}
 				}
-			}
-
-			BoneKeyToParticleIDMapping->Add(FBoneKey(AttachToComponentKey), NewParticleID);
-			ParticleIDToComponentMapping->Add(NewParticleID, NewNiagaraComponent);
-			ComponentToParticleIDMapping->Add(NewNiagaraComponent, NewParticleID);
-			if(GetWorld())
-			{
-				NewNiagaraComponent->OnSystemFinished.AddUniqueDynamic(this, &UNiagaraParticleDispatch::DeregisterNiagaraParticleComponent);
 			}
 		}
 	}
@@ -250,6 +260,26 @@ void UNiagaraParticleDispatch::AddNDCReference(FName Name, TObjectPtr<UNiagaraDa
 
 void UNiagaraParticleDispatch::UpdateNDCChannels()
 {
+	TPair<FName, FSkeletonKey> CleanupPair;
+	while (KeysToCleanupQueue.Dequeue(CleanupPair))
+	{
+		const FName& ProjectileName = CleanupPair.Key;
+		const FSkeletonKey& Key = CleanupPair.Value;
+
+		ManagementPayload* KeyToRecordMap = ProjectileNameToNDCAsset->Find(ProjectileName);
+		if (KeyToRecordMap != nullptr)
+		{
+			KeyToRecordMap->Get<2>().Remove(Key);
+		}
+		else
+		{
+			for (auto it = ProjectileNameToNDCAsset->CreateIterator(); it; ++it)
+			{
+				it.Value().Get<2>().Remove(Key);
+			}
+		}
+	}
+
 	TPair<FName, FSkeletonKey> NameKeyPair;
 	while (NameToKeyQueue.Dequeue(NameKeyPair))
 	{
@@ -259,9 +289,9 @@ void UNiagaraParticleDispatch::UpdateNDCChannels()
 			KeyPayload->Get<2>().Add(NameKeyPair.Value);
 		}
 	}
-	
+
 	UTransformDispatch* TD = GetWorld()->GetSubsystem<UTransformDispatch>();
-	
+
 	for (auto it = ProjectileNameToNDCAsset->CreateIterator(); it; ++it)
 	{
 		TSet<FSkeletonKey>* KeySet = &it.Value().Get<2>();
@@ -274,7 +304,7 @@ void UNiagaraParticleDispatch::UpdateNDCChannels()
 			int RecordIntoIDX = 0;
 			for (TSet<FSkeletonKey>::TConstIterator RecordIter = KeySet->CreateConstIterator(); RecordIter; ++RecordIter)
 			{
-				
+
 				TOptional<FTransform3d> KeyTransform = TD->CopyOfTransformByObjectKey(*RecordIter);
 				if (KeyTransform.IsSet())
 				{

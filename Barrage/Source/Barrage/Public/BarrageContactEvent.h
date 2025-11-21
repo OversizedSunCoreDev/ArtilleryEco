@@ -24,12 +24,16 @@ struct BarrageContactEntity
 		ContactKey = ContactKeyIn;
 		bIsProjectile = BodyIn.GetObjectLayer() == Layers::PROJECTILE || BodyIn.GetObjectLayer() == Layers::ENEMYPROJECTILE;
 		bIsStaticGeometry = BodyIn.GetObjectLayer() == Layers::NON_MOVING;
+		bIsNormalCastQuery = BodyIn.GetObjectLayer() == Layers::CAST_QUERY;
+		bIsPureHitbox = BodyIn.GetObjectLayer() == Layers::ENEMYHITBOX || BodyIn.GetObjectLayer() == Layers::HITBOX;
 		MyLayer = static_cast<Layers::EJoltPhysicsLayer>(BodyIn.GetObjectLayer());
 	}
 
 	FBarrageKey ContactKey;
 	bool bIsProjectile = false;
 	bool bIsStaticGeometry = false;
+	bool bIsNormalCastQuery = false;
+	bool bIsPureHitbox = false;
 	Layers::EJoltPhysicsLayer MyLayer;
 };
 
@@ -53,7 +57,11 @@ struct BarrageContactEvent
 	EBarrageContactEventType ContactEventType;
 	BarrageContactEntity ContactEntity1;
 	BarrageContactEntity ContactEntity2;
+	FVector PointIfAny = {0,0,0};
 
+	BarrageContactEvent(EBarrageContactEventType EventType, const BarrageContactEntity& BarrageContactEntity,
+						const ::BarrageContactEntity& BarrageContactEntity1, FVector CollisionPoint);
+	
 	bool IsEitherEntityAProjectile() const
 	{
 		return ContactEntity1.bIsProjectile || ContactEntity2.bIsProjectile;
@@ -61,10 +69,19 @@ struct BarrageContactEvent
 };
 
 inline BarrageContactEvent::BarrageContactEvent(EBarrageContactEventType EventType,
-                                                const BarrageContactEntity& BarrageContact1,
-                                                const BarrageContactEntity& BarrageContact2)
+                                                const BarrageContactEntity& BarrageContactA,
+                                                const BarrageContactEntity& BarrageContactB)
 {
 	ContactEventType = EventType;
-	ContactEntity1 = BarrageContact1;
-	ContactEntity2 = BarrageContact2;
+	ContactEntity1 = BarrageContactA;
+	ContactEntity2 = BarrageContactB;
+}
+
+inline BarrageContactEvent::BarrageContactEvent(EBarrageContactEventType EventType,
+	const BarrageContactEntity& BarrageContactA, const BarrageContactEntity& BarrageContactB,
+	FVector CollisionPoint): ContactEventType(EventType)
+{
+	ContactEntity1 = BarrageContactA;
+	ContactEntity2 = BarrageContactB;
+	PointIfAny = CollisionPoint;
 }

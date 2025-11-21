@@ -27,6 +27,9 @@ void FThistleKeyToRelationship::Tick(FStateTreeExecutionContext& Context, const 
 void FThistleSphereCast::Tick(FStateTreeExecutionContext& Context, const float DeltaTime) const
 {
 	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	if ((UArtilleryLibrary::GetTotalsTickCount() % InstanceData.TicksBetweenCastRefresh) == 0 &&
+	UBarrageDispatch::SelfPtr)
+	{
 	bool Shucked = false;
 	FVector Source = InstanceData.Source.ShuckPoi(Shucked);
 	if (!Shucked) { return; }
@@ -37,9 +40,7 @@ void FThistleSphereCast::Tick(FStateTreeExecutionContext& Context, const float D
 	
 	FVector ToFrom = (Target - Source);
 	const double Length = ToFrom.Length() + 1;
-	if ((UArtilleryLibrary::GetTotalsTickCount() % InstanceData.TicksBetweenCastRefresh) == 0 &&
-		UBarrageDispatch::SelfPtr)
-	{
+
 		if (InstanceData.SourceBodyKey_SetOrRegret.IsValid()
 			&& UArtilleryDispatch::SelfPtr->IsLiveKey(InstanceData.SourceBodyKey_SetOrRegret) != DEAD)
 		{
@@ -61,4 +62,25 @@ void FThistleSphereCast::Tick(FStateTreeExecutionContext& Context, const float D
 		}
 	}
 	InstanceData.Outcome = *(InstanceData.HitResultCache);
+}
+
+void FThistleDistanceToPOI::Tick(FStateTreeExecutionContext& Context, const float DeltaTime) const
+{
+	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+
+	bool bSourceSuccess = false;
+	const FVector SourceLocation = InstanceData.Source.ShuckPoi(bSourceSuccess);
+
+	bool bTargetSuccess = false;
+	const FVector TargetLocation = InstanceData.Target.ShuckPoi(bTargetSuccess);
+
+	if (bSourceSuccess && bTargetSuccess)
+	{
+		InstanceData.Distance = FVector::Distance(SourceLocation, TargetLocation);
+	}
+	else
+	{
+		// Indicate failure with a negative distance.
+		InstanceData.Distance = -1.0f;
+	}
 }

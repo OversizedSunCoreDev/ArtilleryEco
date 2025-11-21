@@ -77,6 +77,9 @@ enum class E_VectorAttrib : uint8
 	FacingVector,
 	Velocity,
 	Forces,
+	//this is currently used in the bristle game mode for a hack to fix a weird spawn behavior that's caused by lifecycle issues.
+	InitialPositionVec,
+	InitialRotationVec,
 	Destination,
 	Location //GENERALLY AT LEAST ONE TICK OLD! USE THE ESTIMATOR WITH IT!!!!!!
 };

@@ -40,8 +40,19 @@ namespace SKELLY
 	static inline uint64_t FORGE_SKELETON_KEY(uint64_t MY_HASH,uint64_t MY_MASK) {return (MY_HASH & SKELLY::SFIX_MASK_OUT) | MY_MASK;};
 	constexpr uint64_t BoneKey_Infix = SKELLY::SFIX_BONEKEY;
 	constexpr uint64_t GunInstance_Infix = SKELLY::SFIX_ART_1GUN;
+
+static inline uint64_t FORGE_DEPENDENT_SKELETON_KEY(uint64_t parent, uint32_t localunique,
+                                                    uint64_t MY_MASK = SKELLY::SFIX_ART_FACT) //by default dependent keys are facts.
+{
+	auto ret = parent & SKELLY::SFIX_KEYTOMETA;
+	ret = (ret << 32) | localunique;
+	ret = FORGE_SKELETON_KEY(ret, SKELLY::SFIX_ART_FACT); // I forgot this and lost rather a lot of time.
+	return ret;
+};
 #endif
 
 //TODO: replace with and standardize on fast hash if needed.
 #define MAKE_BONEKEY(turn_into_key) FBoneKey(PointerHash(turn_into_key))
 #define MAKE_ACTORKEY(turn_into_key) ActorKey(PointerHash(turn_into_key))
+
+#define MYSTIC_STANDARDIZED_OFFSET 17

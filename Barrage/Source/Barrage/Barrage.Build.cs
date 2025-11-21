@@ -112,9 +112,7 @@ public class Barrage : ModuleRules
 
 
         PublicAdditionalLibraries.Add(libPath);
-
-		SetupGameplayDebuggerSupport(Target);
-
+		
 	}
 
 	private void DefineIt(String str)

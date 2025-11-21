@@ -36,7 +36,7 @@ public:
 	float OffsetCenterToMatchBoundedShapeZ = 0;
 	
 	UBarrageBoxComponent(const FObjectInitializer& ObjectInitializer);
-	virtual void Register() override;
+	virtual bool RegistrationImplementation() override;
 	virtual FPrimitiveSceneProxy* CreateSceneProxy() override;
 	virtual FBoxSphereBounds CalcBounds(const FTransform& LocalToWorld) const override;
 };

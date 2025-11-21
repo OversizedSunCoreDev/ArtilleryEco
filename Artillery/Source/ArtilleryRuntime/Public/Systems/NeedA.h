@@ -93,7 +93,8 @@ public:
 	// When your get attrib for the relationship type returns something usable, it can be used.
 	// TODO: Get this off the fucking main thread or we'll never be deterministic.
 	FGrantWith NewUnboundGun(FSkeletonKey Self, FGunKey NameSetIDUnset,  FARelatedBy EquippedAs, ArtilleryTime Stamp);
-	
+	FGrantWith SceneComponentMoved(FBoneKey ComponentArtilleryKey, ArtilleryTime Stamp, FVector Pos, FRotator Rot);
+
 	FGrantWith NewAutoGun()
 	{
 		throw; //not implemented yet
@@ -120,31 +121,10 @@ public:
 		throw; //not implemented yet
 	};
 
-	FGrantWith TagReferenceModel(FSkeletonKey Target, ArtilleryTime Stamp, FConservedTags ValidSharedPtr)
-	{
-		if (this)
-		{
-			FRequestThing MyRequest(ArtilleryRequestType::TagReferenceModel);
-			MyRequest.ConservedTags =  ValidSharedPtr;
-			MyRequest.Stamp = Stamp;
-			MyRequest.SourceOrSelf = Target;
-			return FGrantWith(Stamp).Set(FGrantWith::Eventual | FGrantWith::Within1Tick);
-		}
-		return FGrantWith(Stamp).Set(FGrantWith::Nullable);
-	}
-	
-	FGrantWith NoTagReferenceModel(FSkeletonKey Target, ArtilleryTime Stamp)
-	{
-		if (this)
-		{
-			FRequestThing MyRequest(ArtilleryRequestType::NoTagReferenceModel);
-			MyRequest.Stamp = Stamp;
-			MyRequest.SourceOrSelf = Target;
-			return FGrantWith(Stamp).Set(FGrantWith::Eventual | FGrantWith::Within1Tick);
-		}
-		return FGrantWith(Stamp).Set(FGrantWith::Nullable);
-	}
-	
+	FGrantWith TagReferenceModel(FSkeletonKey Target, ArtilleryTime Stamp, FConservedTags ValidSharedPtr);
+
+	FGrantWith NoTagReferenceModel(FSkeletonKey Target, ArtilleryTime Stamp);
+
 	FGrantWith GunFiredWhenATagGetsAdded()
 	{
 		throw; //not implemented yet

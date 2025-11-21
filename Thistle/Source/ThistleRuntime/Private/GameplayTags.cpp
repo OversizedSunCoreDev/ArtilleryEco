@@ -6,6 +6,7 @@ UE_DEFINE_GAMEPLAY_TAG_COMMENT(TAG_Encounter_Wave_Lost, "Encounter.Wave.Lost", "
 UE_DEFINE_GAMEPLAY_TAG_COMMENT(TAG_Encounter_Wave_Forming, "Encounter.Wave.Forming", "We're prepping a new wave for the players.");
 UE_DEFINE_GAMEPLAY_TAG_COMMENT(TAG_Encounter_Boss_Needed, "Encounter.Boss.Needed", "We need to spawn a boss.");
 
+UE_DEFINE_GAMEPLAY_TAG_COMMENT(TAG_Orders_Move_Possible, "Orders.Move.Possible", "Tag denoting this entity can possibly execute a move order.")
 UE_DEFINE_GAMEPLAY_TAG_COMMENT(TAG_Orders_Move_Available, "Orders.Move.Available", "Tag denoting this entity can receive a move order.")
 UE_DEFINE_GAMEPLAY_TAG_COMMENT(TAG_Orders_Move_Needed, "Orders.Move.Needed", "Tag denoting this entity needs a move order. Often means the unit is stuck or arrived.")
 UE_DEFINE_GAMEPLAY_TAG_COMMENT(TAG_Orders_Move_Break, "Orders.Move.Break", "Tag denoting this entity is stopping a move order. Often means the unit is stuck or arrived.")

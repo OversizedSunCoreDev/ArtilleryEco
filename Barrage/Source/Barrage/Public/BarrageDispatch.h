@@ -19,7 +19,7 @@
 #include "BarrageDispatch.generated.h"
 
 #ifndef HERTZ_OF_BARRAGE
-#define HERTZ_OF_BARRAGE 128
+#define HERTZ_OF_BARRAGE 128.0f
 #endif
 
 static constexpr uint32 MAX_FOUND_OBJECTS = 1024;
@@ -38,6 +38,7 @@ public:
 		FMassByCategory::BMassCategories MyMassClass = FMassByCategory::BMassCategories::MostEnemies);
 	static FBSphereParams GenerateSphereBounds(const FVector3d& point, double radius);
 	static FBCapParams GenerateCapsuleBounds(const UE::Geometry::FCapsule3d& Capsule);
+	static FBCapParams GenerateCapsuleBounds(FVector Center, float Radius, float Height, FMassByCategory::BMassCategories Mass, FVector3f Offsets);
 	static FBCharParams GenerateCharacterBounds(const FVector3d& point, double radius, double extent, double speed);
 };
 
@@ -74,7 +75,7 @@ public:
 	constexpr static int OrdinateSeqKey = ORDIN::LastSubstrateKey;
 	virtual bool RegistrationImplementation() override;
 	void GrantWorkerFeed(int MyThreadIndex);
-	static constexpr float TickRateInDelta = 1.0 / HERTZ_OF_BARRAGE;
+	static constexpr float TickRateInDelta = 1.0f / HERTZ_OF_BARRAGE;
 	int32 ThreadAccTicker = 0;
 	TSharedPtr<TransformUpdatesForGameThread> GameTransformPump;
 	TSharedPtr<TCircularQueue<BarrageContactEvent>> ContactEventPump;
@@ -100,11 +101,12 @@ public:
 	
 	//and viola [sic] actually pretty elegant even without type polymorphism by using overloading polymorphism.
 	FBLet CreatePrimitive(FBBoxParams& Definition, FSkeletonKey Outkey, uint16 Layer, bool IsSensor = false, bool forceDynamic = false, bool isMovable = true);
+	FBLet CreatePrimitive(FBCapParams& Definition, FSkeletonKey Outkey, uint16 Layer, bool IsSensor = false, bool forceDynamic = false, bool isMovable = true);
 	FBLet CreatePrimitive(FBCharParams& Definition, FSkeletonKey Outkey, uint16 Layer);
 	FBLet CreatePrimitive(FBSphereParams& Definition, FSkeletonKey OutKey, uint16 Layer, bool IsSensor = false);
-	FBLet CreatePrimitive(FBCapParams& Definition, FSkeletonKey OutKey, uint16 Layer, bool IsSensor = false, FMassByCategory::BMassCategories MassClass = FMassByCategory::MostEnemies);
 	FBLet CreateProjectile(FBBoxParams& Definition, FSkeletonKey OutKey, uint16_t Layer);
-	FBLet LoadComplexStaticMesh(FBTransform& MeshTransform, const UStaticMeshComponent* StaticMeshComponent, FSkeletonKey OutKey) const;
+	FBLet LoadComplexStaticMesh(FBTransform& MeshTransform, const UStaticMeshComponent* StaticMeshComponent, FSkeletonKey OutKey, bool IsSensor = false);
+	FBLet LoadEnemyHitboxFromStaticMesh(FBTransform& MeshTransform, const UStaticMeshComponent* StaticMeshComponent, FSkeletonKey OutKey, bool IsSensor = false, bool UseRawMeshForCollision = false, FVector CenterOfMassTranslation = {0,0,0});
 	FBLet GetShapeRef(FBarrageKey Existing) const;
 	FBLet GetShapeRef(FSkeletonKey Existing) const;
 	void FinalizeReleasePrimitive(FBarrageKey BarrageKey);
@@ -114,7 +116,7 @@ public:
 	//instead of just reference counting and deleting - this is because cases arise where there MUST be an authoritative
 	//single source answer to the alive/dead question for a rigid body, but we still want all the advantages of ref counting
 	//and we want to be able to revert that decision for faster rollbacks or for pooling purposes.
-	constexpr static uint32 TombstoneInitialMinimum = 9;
+	constexpr static uint32 TombstoneInitialMinimum = 9 << 8;
 
 	//don't const stuff that causes huge side effects.
 	uint32 SuggestTombstone(FBLet Target) 
@@ -148,7 +150,7 @@ public:
 	void HandleContactAdded(const JPH::Body& inBody1, const JPH::Body& inBody2, const JPH::ContactManifold& inManifold,
 	                        JPH::ContactSettings& ioSettings);
 	void HandleContactAdded(BarrageContactEntity Ent1, BarrageContactEntity Ent2);
-	void HandleContactAdded(const JPH::Body& inBody1, const JPH::Body& inBody2, JPH::ContactSettings& ioSettings);
+	void HandleContactAdded(const JPH::Body& inBody1, const JPH::Body& inBody2, JPH::ContactSettings& ioSettings, FVector point);
 	FOnBarrageContactPersisted OnBarrageContactPersistedDelegate;
 	void HandleContactPersisted(const JPH::Body& inBody1, const JPH::Body& inBody2, const JPH::ContactManifold& inManifold,
 	                            JPH::ContactSettings& ioSettings);

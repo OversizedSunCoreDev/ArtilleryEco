@@ -58,3 +58,5 @@ uint32 FMMM::FastHash6432(uint64 key)
 	key = key ^ (key >> 22);
 	return key;
 }
+
+typedef FMMM MashFunctions;

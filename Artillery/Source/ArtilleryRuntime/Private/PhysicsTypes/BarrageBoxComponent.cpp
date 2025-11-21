@@ -7,46 +7,44 @@
 //do not invoke the default constructor unless you have a really good plan. in general, let UE initialize your components.
 
 // Sets default values for this component's properties
-UBarrageBoxComponent::UBarrageBoxComponent(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
+inline UBarrageBoxComponent::UBarrageBoxComponent(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
 	// Set this component to be initialized when the game starts, and to be ticked every frame.  You can turn these features
 	// off to improve performance if you don't need them.
 	bWantsInitializeComponent = true;
 	PrimaryComponentTick.bCanEverTick = true;
-	MyObjectKey = 0;
+	MyParentObjectKey = 0;
 	bAlwaysCreatePhysicsState = false;
 	UPrimitiveComponent::SetNotifyRigidBodyCollision(false);
 	bCanEverAffectNavigation = false;
 	Super::SetCollisionEnabled(ECollisionEnabled::Type::NoCollision);
 	Super::SetEnableGravity(false);
 	Super::SetSimulatePhysics(false);
-
-	bUseEditorCompositing = true;
 }
 
 //KEY REGISTER, initializer, and failover.
 //----------------------------------
 
-void UBarrageBoxComponent::Register()
+inline bool UBarrageBoxComponent::RegistrationImplementation()
 {
-	if (MyObjectKey == 0)
+	if (MyParentObjectKey == 0)
 	{
 		if (GetOwner())
 		{
 			if (GetOwner()->GetComponentByClass<UKeyCarry>())
 			{
-				MyObjectKey = GetOwner()->GetComponentByClass<UKeyCarry>()->GetMyKey();
+				MyParentObjectKey = GetOwner()->GetComponentByClass<UKeyCarry>()->GetMyKey();
 			}
 
-			if (MyObjectKey == 0)
+			if (MyParentObjectKey == 0)
 			{
 				uint32 val = PointerHash(GetOwner());
-				MyObjectKey = ActorKey(val);
+				MyParentObjectKey = ActorKey(val);
 			}
 		}
 	}
 
-	if (!IsReady && MyObjectKey != 0) // this could easily be just the !=, but it's better to have the whole idiom in the example
+	if (!IsReady && MyParentObjectKey != 0) // this could easily be just the !=, but it's better to have the whole idiom in the example
 	{
 		UBarrageDispatch* Physics = GetWorld()->GetSubsystem<UBarrageDispatch>();
 		FBBoxParams params = FBarrageBounder::GenerateBoxBounds(
@@ -55,10 +53,9 @@ void UBarrageBoxComponent::Register()
 			YDiam,
 			ZDiam,
 			FVector3d(OffsetCenterToMatchBoundedShapeX, OffsetCenterToMatchBoundedShapeY, OffsetCenterToMatchBoundedShapeZ));
-		FBLet NewBarrageBody = Physics->CreatePrimitive(params, MyObjectKey, Layers::MOVING);
-		if (NewBarrageBody)
+		MyBarrageBody = Physics->CreatePrimitive(params, MyParentObjectKey, Layers::MOVING);
+		if (MyBarrageBody)
 		{
-			SetBarrageBody(NewBarrageBody);
 			IsReady = true;
 		}
 	}
@@ -66,8 +63,11 @@ void UBarrageBoxComponent::Register()
 	if (IsReady)
 	{
 		PrimaryComponentTick.SetTickFunctionEnable(false);
+		return true;
 	}
+	return false;
 }
+
 
 FBoxSphereBounds UBarrageBoxComponent::CalcBounds(const FTransform& LocalToWorld) const
 {

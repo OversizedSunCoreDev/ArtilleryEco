@@ -79,8 +79,7 @@ public class ArtilleryEditor : ModuleRules
 				"ArtilleryRuntime",
 				"Bristlecone",
 				"Kismet",
-				"UnrealEd",
-				"ComponentVisualizers"
+				"UnrealEd"
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);

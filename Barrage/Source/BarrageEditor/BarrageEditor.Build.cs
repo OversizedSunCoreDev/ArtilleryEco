@@ -1,14 +1,13 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 using System;
 using System.IO;
-using EpicGames.Core;
 using UnrealBuildTool;
 
 public class BarrageEditor : ModuleRules
 {
 	public BarrageEditor(ReadOnlyTargetRules Target) : base(Target)
 	{
-		
+
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
 		bEnableExceptions = true;
 		PublicIncludePaths.AddRange(
@@ -18,7 +17,7 @@ public class BarrageEditor : ModuleRules
 			});
 
 		PrivateIncludePaths.AddRange(
-			new string[] 
+			new string[]
 			{
 				Path.Combine(PluginDirectory,"Source/BarrageEditor/Private")
 			});
@@ -29,37 +28,37 @@ public class BarrageEditor : ModuleRules
 			}
 		);
 
-				
+
 		PublicIncludePaths.AddRange(
 			new string[] {
 				// ... add public include paths required here ...
 				Path.Combine(ModuleDirectory,"../JoltPhysics"), // for jolt includes
 			}
 		);
-		
-		
+
+
 		PrivateIncludePaths.AddRange(
 			new string[] {
 				// ... add other private include paths required here ...
 				Path.Combine(ModuleDirectory,"../JoltPhysics") // for jolt includes
 			}
 		);
-			
-		
+
+
 		PublicDependencyModuleNames.AddRange(
 			new string[]
 			{
 				"Core",
 				"Chaos",
-				"JoltPhysics", 
+				"JoltPhysics",
 				"GeometryCore",
 				"SkeletonKey",
 				"mimalloc" // <- add jolt dependecy here
 				// ... add other public dependencies that you statically link with here ...
 			}
 		);
-			
-		
+
+
 		PrivateDependencyModuleNames.AddRange(
 			new string[]
 			{
@@ -87,7 +86,7 @@ public class BarrageEditor : ModuleRules
 				// ... add any modules that your module loads dynamically here ...
 			}
 			);
-	
+
 		ExternalDependencies.Add(Path.Combine(ModuleDirectory, "../JoltPhysics")); // checks to determine if jolt needs to be rebuilt
 
 
@@ -136,6 +135,7 @@ public class BarrageEditor : ModuleRules
 
 
 		PublicAdditionalLibraries.Add(libPath);
+		SetupGameplayDebuggerSupport(Target);
 
 	}
 

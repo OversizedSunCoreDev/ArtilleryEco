@@ -42,7 +42,9 @@ public:
 
 	UBarrageAutoBox(const FObjectInitializer& ObjectInitializer);
 	
-	virtual void Register() override;
+	virtual bool RegistrationImplementation() override;
+
 	virtual FPrimitiveSceneProxy* CreateSceneProxy() override;
 	virtual FBoxSphereBounds CalcBounds(const FTransform& LocalToWorld) const override;
 };
+

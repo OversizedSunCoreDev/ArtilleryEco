@@ -18,6 +18,5 @@ class ARTILLERYRUNTIME_API UBarrageStaticAutoMesh : public UBarrageColliderBase
 public:	
 	// Sets default values for this component's properties
 	UBarrageStaticAutoMesh(const FObjectInitializer& ObjectInitializer);
-	virtual void Register() override;
+	virtual bool RegistrationImplementation() override;
 };
-

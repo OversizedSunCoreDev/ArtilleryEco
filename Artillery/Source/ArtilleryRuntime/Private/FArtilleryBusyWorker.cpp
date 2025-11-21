@@ -151,6 +151,7 @@ void FArtilleryBusyWorker::RunStandardFrameSim(bool& missedPrior, uint64_t& curr
 	}
 }
 
+//THIS VIOLATES DETERMINISM REQUIREMENTS
 //TODO right now, this incurs two serious determinism risks:
 //The order that threads get queues is random, so if you just go down the line, that won't produce a deterministic execution order.
 //Even if you fix that, you still need to order the requests as a gestalt, and now you have a problem where you don't know the
@@ -178,6 +179,24 @@ void FArtilleryBusyWorker::ProcessRequestRouterBusyWorkerThread()
 					case ArtilleryRequestType::NoTagReferenceModel:
 						{
 							TagRollbackManagement.Remove(Request.ConservedTags);
+						}
+						break;
+					case ArtilleryRequestType::FakeTransformUpdate:
+						{
+							if (UBarrageDispatch::SelfPtr && UTransformDispatch::SelfPtr &&
+								UTransformDispatch::SelfPtr->GetKineByObjectKey(Request.SourceOrSelf))
+							{
+								TSharedPtr<TransformUpdatesForGameThread> HoldOpenTransformPump =  UBarrageDispatch::SelfPtr->GameTransformPump;
+								if (HoldOpenTransformPump)
+								{
+									HoldOpenTransformPump->Enqueue(TransformUpdate(
+										Request.SourceOrSelf,
+										Request.Stamp,
+										FQuat4f(Request.ThingRotator.Quaternion()),
+										FVector3f(Request.ThingVector),
+										0));
+								}
+							}
 						}
 						break;
 					default:
@@ -316,19 +335,7 @@ uint32 FArtilleryBusyWorker::Run()
 
 	// we prefer to land near the _start_ of a period, so we bias.
 	constexpr auto HalfStep = std::chrono::microseconds(Period / 2);
-	PROCESS_POWER_THROTTLING_STATE PowerThrottling;
-	RtlZeroMemory(&PowerThrottling, sizeof(PowerThrottling));
-	PowerThrottling.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
 
-	PowerThrottling.ControlMask = PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION;
-	PowerThrottling.StateMask = 0;
-	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
-
-	// SetProcessInformation(GetCurrentProcess(), 
-	// 					  ProcessPowerThrottling, 
-	// 					  &PowerThrottling,
-	// 					  sizeof(PowerThrottling));
-	
 	//we can now start the sim. we latch only on the apply step.
 	StartTicklitesSim->Trigger();
 	//we are started by Artillery Dispatch, but we can't use it in the .h file to avoid dependencies.

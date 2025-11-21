@@ -46,9 +46,10 @@ namespace Ticklites
 
 		//expiration will likely get factored out into a delegate or pushed into the TL_Impl
 		//to help ensure that we don't end up with 20 million tickables, each of which expires in a slightly different way.
-		virtual void OnExpireTickable() override
+		virtual bool OnExpireTickable() override
 		{
-			return Core.TICKLITE_OnExpiration();
+			Core.TICKLITE_OnExpiration();
+			return true;
 		}
 
 		virtual ~Ticklite() override

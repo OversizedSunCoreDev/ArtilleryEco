@@ -12,8 +12,7 @@
 #include "TransformDispatch.h"
 #include "UEnemyMachine.generated.h"
 
-// So. This probably should share some functionality with UFireControlMachine, but I don't want to open that can of worms yet.
-UCLASS()
+UCLASS(DefaultToInstanced)
 class ARTILLERYRUNTIME_API UEnemyMachine : public UArtilleryFireControl
 {
 	GENERATED_BODY()
@@ -24,14 +23,14 @@ public:
 	{
 		MyDispatch = GetWorld()->GetSubsystem<UArtilleryDispatch>();
 		TransformDispatch =  GetWorld()->GetSubsystem<UTransformDispatch>();
-		CompleteRegAndUseKey(Attributes, Key);//modifies parentkey!!!
+		InitAsNeededModifyingKey(Attributes, Key);//modifies parentkey!!!
 		UArtilleryDispatch* ArtilleryDispatch = GetWorld()->GetSubsystem<UArtilleryDispatch>();
 		ArtilleryDispatch->RequestRouter->MobileAI(Key, ArtilleryDispatch->GetShadowNow());
 		return ParentKey;
 	}
 	
 	//IF YOU DO NOT CALL THIS FROM THE GAMETHREAD, YOU WILL HAVE A BAD TIME.
-	ActorKey CompleteRegAndUseKey(TMap<AttribKey, double> Attributes, ActorKey Key)
+	ActorKey InitAsNeededModifyingKey(TMap<AttribKey, double> Attributes, ActorKey Key)
 	{
 		//these are initialized earlier under all intended orderings, but we cannot ensure that this function will be called correctly
 		//so we should do what we can to foolproof things. As long as the world subsystems are up, force-updating
@@ -45,9 +44,19 @@ public:
 		TransformDispatch =  GetWorld()->GetSubsystem<UTransformDispatch>();
 
 		Usable = true;
-		MyAttributes = MakeShareable(new FAttributeMap(ParentKey, MyDispatch, Attributes));
-		MyTags = NewObject<UArtilleryGameplayTagContainer>();
-		MyTags->Initialize(Key, MyDispatch);
+		if (MyAttributes == nullptr)
+		{
+			MyAttributes = MakeShareable(new FAttributeMap(ParentKey, MyDispatch, Attributes));
+		}
+		else
+		{
+			MyAttributes->Add(Attributes);
+		}
+		if (MyTags == nullptr || !MyTags->ReadyToUse)
+		{
+			MyTags = NewObject<UArtilleryGameplayTagContainer>();
+			MyTags->Initialize(Key, MyDispatch);
+		}
 		//UE_LOG(LogTemp, Warning, TEXT("Enemy Mana: %f"), MyDispatch->GetAttrib(Key, Attr::Mana)->GetCurrentValue());
 		return Key;
 	}                                
@@ -71,7 +80,7 @@ public:
 	virtual void ReadyForReplication() override
 	{
 		Super::ReadyForReplication();
-	}
+	}                               
 	
 	virtual void BeginPlay() override
 	{

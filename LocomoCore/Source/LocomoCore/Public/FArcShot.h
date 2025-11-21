@@ -29,7 +29,7 @@ struct LOCOMOCORE_API FSimpleArcShot
 		
 		// how you split the behaviors here is basically what determines how "smart" the aim is.
 		// this boy is pretty dumb. it'll look BASICALLY ok.
-		double ApogeeMoment = FMath::Min(0.2, ArcManipulation);
+		double ApogeeMoment = FMath::Max(0.2, ArcManipulation);
 		if(ArcManipulation >= 1)
 		{
 			ApogeeMoment = 0.5;

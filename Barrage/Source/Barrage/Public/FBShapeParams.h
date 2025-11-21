@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "CoordinateUtils.h"
 #include "MassByCategory.h"
 
 //The immediate question is why not use type polymorphism? This looks like THE standard example!
@@ -72,6 +73,8 @@ public:
 	double JoltHalfHeightOfCylinder;
 	double JoltRadius;
 	double taper;
+	FVector3f Offset;
+	FMassByCategory::BMassCategories MassClass;
 };
 
 struct FBTransform
@@ -99,9 +102,9 @@ struct FBTransform
 		Rotation = FQuat4f(NewTransform.GetRotation());
 	}
 
-	FVector3d GetLocation() const { return Location; }
-	FVector3d GetScale() const { return Scale; }
-	JPH::Vec3Arg GetScaleJoltArg() const { return JPH::Vec3Arg(Scale.X, Scale.Y, Scale.Z); }
+	FVector3d GetUnrealLocation() const { return Location; }
+	FVector3d GetUnrealScale() const { return Scale; }
+	JPH::Vec3Arg GetJoltScale() const { return CoordinateUtils::ToJoltScale(Scale.X, Scale.Y, Scale.Z); }
 	FQuat4f GetRotationQuat() const { return Rotation; }
 };
 

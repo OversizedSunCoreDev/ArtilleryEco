@@ -103,6 +103,7 @@ public:
 		return FProjectileInstanceKey(combo);
 	}
 
+	//TODO: this looks very wrong now.
 	UFUNCTION(BlueprintCallable, Category = Instance)
 	FSkeletonKey CreateNewInstance(const FTransform& WorldTransform, const FVector& MuzzleVelocity, const EPhysicsLayer Layer, float Scale = 1.0f, bool IsSensor = false, bool IsDynamic = false)
 	{
@@ -111,10 +112,8 @@ public:
 	
 	FSkeletonKey CreateNewInstance(const FTransform& WorldTransform, const FVector3d& MuzzleVelocity, const uint16_t Layer, float Scale = 1.0f, FSkeletonKey ExistingKey = FSkeletonKey::Invalid(), bool IsSensor = false, bool IsDynamic = false)
 	{
-		// TODO: Does this make a good hash? Can we hash collide?
-		// TODO: Oh god this definitely birthday problems at some point but I don't know how else to get a unique hash since the instances rotate around and reuse the same memory
 		FSkeletonKey NewInstanceKey = (ExistingKey == FSkeletonKey::Invalid()) ? GenerateNewProjectileKey() : ExistingKey;
-		FTransform ScaledTransform(FRotator::ZeroRotator,WorldTransform.GetLocation(), FVector3d(Scale, Scale, Scale));
+		FTransform ScaledTransform(MuzzleVelocity.GetSafeNormal().Rotation(),WorldTransform.GetLocation(), FVector3d(Scale, Scale, Scale));
 		FPrimitiveInstanceId NewInstanceId = SwarmKineManager->AddInstanceById(ScaledTransform, true);
 		SwarmKineManager->AddToMapDbg(NewInstanceId, NewInstanceKey);
 
@@ -143,7 +142,7 @@ private:
 		// TODO: can't use the BarrageColliderBase set of types, so in-lining the barrage setup code. Is this what we want long-term?
 		UBarrageDispatch* Physics = GetWorld()->GetSubsystem<UBarrageDispatch>();
 		TObjectPtr<UStaticMesh> AnyMesh = SwarmKineManager->GetStaticMesh();
-		FBox Boxen = AnyMesh->GetBoundingBox();
+		FBox Boxen = AnyMesh->GetBounds().GetBox();
 		FVector extents = Boxen.GetExtent() * 2 * Scale;
 
 		FBBoxParams params = FBarrageBounder::GenerateBoxBounds(WorldTransform.GetLocation(), extents.X, extents.Y, extents.Z,
@@ -152,7 +151,7 @@ private:
 
 		TransformDispatch->RegisterObjectToShadowTransform(ProjectileKey, SwarmKineManager);
 		FBarragePrimitive::SetVelocity(MuzzleVelocity, MyBarrageBody);
-
+		FBarragePrimitive::ApplyRotation(MuzzleVelocity.ToOrientationQuat(), MyBarrageBody);
 		FBarragePrimitive::SetGravityFactor(0.f, MyBarrageBody);
 		
 		MyDispatch->REGISTER_PROJECTILE_FINAL_TICK_RESOLVER(100, ProjectileKey);
