@@ -37,7 +37,8 @@ void FBarragePrimitive::ApplyRotation(FQuat4d Rotator, FBLet Target)
 		if (GameSimHoldOpen && MyBARRAGEIndex < ALLOWED_THREADS_FOR_BARRAGE_PHYSICS)
 		{
 			GameSimHoldOpen->ThreadAcc[MyBARRAGEIndex].Queue->Enqueue(
-				FBPhysicsInput(Target->KeyIntoBarrage, 0, PhysicsInputType::Rotation,CoordinateUtils::ToBarrageRotation(Rotator), Target->Me));
+				FBPhysicsInput(Target->KeyIntoBarrage, 0, PhysicsInputType::Rotation,
+				               CoordinateUtils::ToBarrageRotation(Rotator), Target->Me));
 		}
 	}
 }
@@ -51,7 +52,8 @@ bool FBarragePrimitive::TryUpdateTransformFromJolt(FBLet Target, uint64 Time)
 		if (GameSimHoldOpen)
 		{
 			JPH::BodyID result;
-			if (GameSimHoldOpen->BarrageToJoltMapping->find(Target->KeyIntoBarrage, result)) // ANY return value should get processed.....
+			if (GameSimHoldOpen->BarrageToJoltMapping->find(Target->KeyIntoBarrage, result))
+			// ANY return value should get processed.....
 			{
 				//atm, characters cannot be inactive.
 				//without an inner body to update from, they also require specialized handling.
@@ -62,7 +64,8 @@ bool FBarragePrimitive::TryUpdateTransformFromJolt(FBLet Target, uint64 Time)
 					{
 						//accumulate character update from OuterCharacter.
 						//SNAAAAAAAAAAAKE
-						TSharedPtr<FBCharacterBase>* CharacterRef = GameSimHoldOpen->CharacterToJoltMapping->Find(Target->KeyIntoBarrage);
+						TSharedPtr<FBCharacterBase>* CharacterRef = GameSimHoldOpen->CharacterToJoltMapping->Find(
+							Target->KeyIntoBarrage);
 						if (CharacterRef)
 						{
 							JPH::Ref<JPH::CharacterVirtual> CharacterPtr = CharacterRef->Get()->mCharacter;
@@ -76,16 +79,17 @@ bool FBarragePrimitive::TryUpdateTransformFromJolt(FBLet Target, uint64 Time)
 								0));
 						}
 					}
-					else if (!result.IsInvalid() && GameSimHoldOpen->body_interface->IsActive(result)) //we should still exclude invalid bIDs other than characters.
+					else if (!result.IsInvalid() && GameSimHoldOpen->body_interface->IsActive(result))
+					//we should still exclude invalid bIDs other than characters.
 					{
 						//TODO: @Eliza, can we figure out if updating the transforms in place is threadsafe? that'd be vastly preferable
 						//TODO: figure out how to make this less.... horrid.
-							HoldOpen->Enqueue(TransformUpdate(
-								Target->KeyOutOfBarrage,
-								Time,
-								CoordinateUtils::FromJoltRotation(GameSimHoldOpen->body_interface->GetRotation(result)),
-								CoordinateUtils::FromJoltCoordinates(GameSimHoldOpen->body_interface->GetPosition(result)),
-								0));
+						HoldOpen->Enqueue(TransformUpdate(
+							Target->KeyOutOfBarrage,
+							Time,
+							CoordinateUtils::FromJoltRotation(GameSimHoldOpen->body_interface->GetRotation(result)),
+							CoordinateUtils::FromJoltCoordinates(GameSimHoldOpen->body_interface->GetPosition(result)),
+							0));
 					}
 				}
 				return true;
@@ -106,7 +110,8 @@ FVector3f FBarragePrimitive::GetCentroidPossiblyStale(FBLet Target)
 			if (GameSimHoldOpen->BarrageToJoltMapping->find(Target->KeyIntoBarrage, result)
 				&& GameSimHoldOpen->body_interface->IsActive(result))
 			{
-				return CoordinateUtils::FromJoltCoordinates(GameSimHoldOpen->body_interface->GetCenterOfMassPosition(result));
+				return CoordinateUtils::FromJoltCoordinates(
+					GameSimHoldOpen->body_interface->GetCenterOfMassPosition(result));
 			}
 		}
 	}
@@ -130,7 +135,8 @@ FVector3f FBarragePrimitive::GetPosition(FBLet Target)
 				}
 				if (Target->Me == FBShape::Character)
 				{
-					TSharedPtr<FBCharacterBase>* CharacterActual = GameSimHoldOpen->CharacterToJoltMapping->Find(Target->KeyIntoBarrage);
+					TSharedPtr<FBCharacterBase>* CharacterActual = GameSimHoldOpen->CharacterToJoltMapping->Find(
+						Target->KeyIntoBarrage);
 					if (CharacterActual && *CharacterActual)
 					{
 						return CoordinateUtils::FromJoltCoordinates(CharacterActual->Get()->mCharacter->GetPosition());
@@ -142,19 +148,51 @@ FVector3f FBarragePrimitive::GetPosition(FBLet Target)
 	return FVector3f(NAN);
 }
 
+FQuat4f FBarragePrimitive::OptimisticGetAbsoluteRotation(FBLet Target)
+{
+	if (GlobalBarrage && IsNotNull(Target))
+	{
+		TSharedPtr<FWorldSimOwner> GameSimHoldOpen = GlobalBarrage->JoltGameSim;
+		if (GameSimHoldOpen && MyBARRAGEIndex < ALLOWED_THREADS_FOR_BARRAGE_PHYSICS)
+		{
+			JPH::BodyID result;
+			if (GameSimHoldOpen->BarrageToJoltMapping->find(Target->KeyIntoBarrage, result))
+			{
+				if (!result.IsInvalid() && Target->Me != FBShape::Character)
+				{
+					auto rot = GameSimHoldOpen->body_interface->GetRotation(result);
+					return CoordinateUtils::FromJoltRotation(rot);
+				}
+				if (Target->Me == FBShape::Character)
+				{
+					TSharedPtr<FBCharacterBase>* CharacterActual = GameSimHoldOpen->CharacterToJoltMapping->Find(
+						Target->KeyIntoBarrage);
+					if (CharacterActual && *CharacterActual)
+					{
+						return CoordinateUtils::FromJoltRotation(CharacterActual->Get()->mCharacter->GetRotation());
+					}
+				}
+			}
+		}
+	}
+	return FQuat4f::Identity;
+}
+
 FVector3f FBarragePrimitive::GetVelocity(FBLet Target)
 {
 	if (IsNotNull(Target) && GlobalBarrage)
 	{
 		TSharedPtr<FWorldSimOwner> GameSimHoldOpen = GlobalBarrage->JoltGameSim;
 		JPH::BodyID result;
-		if (GameSimHoldOpen && GameSimHoldOpen->BarrageToJoltMapping->find(Target->KeyIntoBarrage, result) && MyBARRAGEIndex < ALLOWED_THREADS_FOR_BARRAGE_PHYSICS)
+		if (GameSimHoldOpen && GameSimHoldOpen->BarrageToJoltMapping->find(Target->KeyIntoBarrage, result) &&
+			MyBARRAGEIndex < ALLOWED_THREADS_FOR_BARRAGE_PHYSICS)
 		{
 			switch (Target->Me)
 			{
 			case FBShape::Character:
 				{
-					TSharedPtr<FBCharacterBase>* CharacterActual = GameSimHoldOpen->CharacterToJoltMapping->Find(Target->KeyIntoBarrage);
+					TSharedPtr<FBCharacterBase>* CharacterActual = GameSimHoldOpen->CharacterToJoltMapping->Find(
+						Target->KeyIntoBarrage);
 					if (CharacterActual && *CharacterActual)
 					{
 						return CoordinateUtils::FromJoltCoordinates(CharacterActual->Get()->mEffectiveVelocity);
@@ -164,7 +202,8 @@ FVector3f FBarragePrimitive::GetVelocity(FBLet Target)
 			default:
 				if (!result.IsInvalid())
 				{
-					return CoordinateUtils::FromJoltCoordinates(GameSimHoldOpen->body_interface->GetLinearVelocity(result));
+					return CoordinateUtils::FromJoltCoordinates(
+						GameSimHoldOpen->body_interface->GetLinearVelocity(result));
 				}
 			}
 		}
@@ -179,7 +218,7 @@ void FBarragePrimitive::SetVelocity(FVector3d Velocity, FBLet Target)
 		TSharedPtr<FWorldSimOwner> GameSimHoldOpen = GlobalBarrage->JoltGameSim;
 		if (GameSimHoldOpen && MyBARRAGEIndex < ALLOWED_THREADS_FOR_BARRAGE_PHYSICS)
 		{
-			JPH::Quat lastchance =  CoordinateUtils::ToBarrageVelocity(Velocity);
+			JPH::Quat lastchance = CoordinateUtils::ToBarrageVelocity(Velocity);
 			lastchance = lastchance.IsNaN() ? JPH::Quat::sZero() : lastchance;
 			GameSimHoldOpen->ThreadAcc[MyBARRAGEIndex].Queue->Enqueue(
 				FBPhysicsInput(Target->KeyIntoBarrage, 0, PhysicsInputType::Velocity, lastchance, Target->Me));
@@ -194,7 +233,7 @@ void FBarragePrimitive::SetPosition(FVector Position, FBLet Target)
 		TSharedPtr<FWorldSimOwner> GameSimHoldOpen = GlobalBarrage->JoltGameSim;
 		if (GameSimHoldOpen && MyBARRAGEIndex < ALLOWED_THREADS_FOR_BARRAGE_PHYSICS)
 		{
-			JPH::Quat lastchance =  CoordinateUtils::ToBarrageVelocity(Position);
+			JPH::Quat lastchance = CoordinateUtils::ToBarrageVelocity(Position);
 			lastchance = lastchance.IsNaN() ? JPH::Quat::sZero() : lastchance;
 			GameSimHoldOpen->ThreadAcc[MyBARRAGEIndex].Queue->Enqueue(
 				FBPhysicsInput(Target->KeyIntoBarrage, 0, PhysicsInputType::SetPosition, lastchance, Target->Me));
@@ -211,7 +250,8 @@ void FBarragePrimitive::SetGravityFactor(float GravityFactor, FBLet Target)
 		if (GameSimHoldOpen && MyBARRAGEIndex < ALLOWED_THREADS_FOR_BARRAGE_PHYSICS)
 		{
 			GameSimHoldOpen->ThreadAcc[MyBARRAGEIndex].Queue->Enqueue(
-				FBPhysicsInput(Target->KeyIntoBarrage, 0, PhysicsInputType::SetGravityFactor, JPH::Quat(0, 0, GravityFactor, 0), Target->Me));
+				FBPhysicsInput(Target->KeyIntoBarrage, 0, PhysicsInputType::SetGravityFactor,
+				               JPH::Quat(0, 0, GravityFactor, 0), Target->Me));
 		}
 	}
 }
@@ -229,6 +269,7 @@ void FBarragePrimitive::Apply_Unsafe(FQuat4d Any, FBLet Target, PhysicsInputType
 		}
 	}
 }
+
 //Type is defaulted.
 void FBarragePrimitive::ApplyForce(FVector3d Force, FBLet Target, PhysicsInputType Type)
 {
@@ -238,10 +279,38 @@ void FBarragePrimitive::ApplyForce(FVector3d Force, FBLet Target, PhysicsInputTy
 		if (GameSimHoldOpen && MyBARRAGEIndex < ALLOWED_THREADS_FOR_BARRAGE_PHYSICS)
 		{
 			GameSimHoldOpen->ThreadAcc[MyBARRAGEIndex].Queue->Enqueue(
-				FBPhysicsInput(Target->KeyIntoBarrage, 0, Type,CoordinateUtils::ToBarrageForce(Force), Target->Me));
+				FBPhysicsInput(Target->KeyIntoBarrage, 0, Type, CoordinateUtils::ToBarrageForce(Force), Target->Me));
 		}
 	}
 }
+
+//Potentially very expensive, intended primarily for debug.
+TPair<FVector, FVector> FBarragePrimitive::GetLocalBounds(FBLet Target)
+{
+	if (IsNotNull(Target) && GlobalBarrage)
+	{
+		TSharedPtr<FWorldSimOwner> GameSimHoldOpen = GlobalBarrage->JoltGameSim;
+		JPH::BodyID result;
+		if (GameSimHoldOpen && GameSimHoldOpen->BarrageToJoltMapping->find(Target->KeyIntoBarrage, result) &&
+			MyBARRAGEIndex < ALLOWED_THREADS_FOR_BARRAGE_PHYSICS)
+		{
+			switch (Target->Me)
+			{
+			case FBShape::Character:
+				break;
+			default:
+				if (!result.IsInvalid())
+				{
+					auto simb = GameSimHoldOpen->body_interface->GetShape(result)->GetLocalBounds();
+					return TPair<FVector, FVector>(CoordinateUtils::FromJoltCoordinates(simb.mMin),
+					                               CoordinateUtils::FromJoltCoordinates(simb.mMax));
+				}
+			}
+		}
+	}
+	return TPair<FVector, FVector>();
+}
+
 
 void FBarragePrimitive::SpeedLimit(FBLet Target, float TargetSpeed)
 {
@@ -252,12 +321,14 @@ void FBarragePrimitive::SpeedLimit(FBLet Target, float TargetSpeed)
 		{
 			JPH::BodyID result;
 			// if they exist... we proceed. this replaces the older faulty check.				  curry for safety.
-			if (GameSimHoldOpen->BarrageToJoltMapping->find(Target->KeyIntoBarrage, result) && Target->Me == FBShape::Character) 
+			if (GameSimHoldOpen->BarrageToJoltMapping->find(Target->KeyIntoBarrage, result) && Target->Me ==
+				FBShape::Character)
 			{
-				TSharedPtr<FBCharacterBase>* CharacterActual = GameSimHoldOpen->CharacterToJoltMapping->Find(Target->KeyIntoBarrage);
+				TSharedPtr<FBCharacterBase>* CharacterActual = GameSimHoldOpen->CharacterToJoltMapping->Find(
+					Target->KeyIntoBarrage);
 				if (CharacterActual && *CharacterActual)
 				{
-					CharacterActual->Get()->mMaxSpeed = TargetSpeed/100;
+					CharacterActual->Get()->mMaxSpeed = TargetSpeed / 100;
 				}
 			}
 		}
@@ -273,9 +344,11 @@ bool FBarragePrimitive::GetSpeedLimitIfAny(FBLet Target, float& OldSpeedLimit)
 		{
 			JPH::BodyID result;
 			// if they exist... we proceed. this replaces the older faulty check.				  curry for safety.
-			if (GameSimHoldOpen->BarrageToJoltMapping->find(Target->KeyIntoBarrage, result) && Target->Me == FBShape::Character) 
+			if (GameSimHoldOpen->BarrageToJoltMapping->find(Target->KeyIntoBarrage, result) && Target->Me ==
+				FBShape::Character)
 			{
-				TSharedPtr<FBCharacterBase>* CharacterActual = GameSimHoldOpen->CharacterToJoltMapping->Find(Target->KeyIntoBarrage);
+				TSharedPtr<FBCharacterBase>* CharacterActual = GameSimHoldOpen->CharacterToJoltMapping->Find(
+					Target->KeyIntoBarrage);
 				if (CharacterActual && *CharacterActual)
 				{
 					OldSpeedLimit = CharacterActual->Get()->mMaxSpeed;
@@ -305,7 +378,8 @@ FBarragePrimitive::FBGroundState FBarragePrimitive::GetCharacterGroundState(FBLe
 				// exists	is a character.
 				if (Target->Me == FBShape::Character)
 				{
-					TSharedPtr<FBCharacterBase>* CharacterActual = GameSimHoldOpen->CharacterToJoltMapping->Find(Target->KeyIntoBarrage);
+					TSharedPtr<FBCharacterBase>* CharacterActual = GameSimHoldOpen->CharacterToJoltMapping->Find(
+						Target->KeyIntoBarrage);
 					if (CharacterActual && *CharacterActual)
 					{
 						JPH::Ref<JPH::CharacterVirtual> CharVirtual = CharacterActual->Get()->mCharacter;
@@ -328,13 +402,15 @@ FVector3f FBarragePrimitive::GetCharacterGroundNormal(FBLet Target)
 		{
 			JPH::BodyID result;
 			//todo: see if we need a better character check? their bid is fake atm.
-			if (GameSimHoldOpen->BarrageToJoltMapping->find(Target->KeyIntoBarrage, result) && !result.IsInvalid() && Target->Me != FBShape::Character)
+			if (GameSimHoldOpen->BarrageToJoltMapping->find(Target->KeyIntoBarrage, result) && !result.IsInvalid() &&
+				Target->Me != FBShape::Character)
 			{
 				return FVector3f::ZeroVector;
 			}
 			if (Target->Me == FBShape::Character)
 			{
-				TSharedPtr<FBCharacterBase>* CharacterActual = GameSimHoldOpen->CharacterToJoltMapping->Find(Target->KeyIntoBarrage);
+				TSharedPtr<FBCharacterBase>* CharacterActual = GameSimHoldOpen->CharacterToJoltMapping->Find(
+					Target->KeyIntoBarrage);
 				if (CharacterActual && *CharacterActual)
 				{
 					JPH::Ref<JPH::CharacterVirtual> CharVirtual = CharacterActual->Get()->mCharacter;
@@ -355,7 +431,45 @@ void FBarragePrimitive::SetCharacterGravity(FVector3d InVector, FBLet Target)
 		if (GameSimHoldOpen && MyBARRAGEIndex < ALLOWED_THREADS_FOR_BARRAGE_PHYSICS)
 		{
 			GameSimHoldOpen->ThreadAcc[MyBARRAGEIndex].Queue->Enqueue(
-				FBPhysicsInput(Target->KeyIntoBarrage, 0, PhysicsInputType::SetCharacterGravity,CoordinateUtils::ToBarrageForce(InVector), Target->Me));
+				FBPhysicsInput(Target->KeyIntoBarrage, 0, PhysicsInputType::SetCharacterGravity,
+				               CoordinateUtils::ToBarrageForce(InVector), Target->Me));
 		}
 	}
+}
+
+
+void FBarragePrimitive::ApplyTorque(FVector Torque, FBLet Target)
+{
+	if (GlobalBarrage && IsNotNull(Target))
+	{
+		TSharedPtr<FWorldSimOwner> GameSimHoldOpen = GlobalBarrage->JoltGameSim;
+		if (GameSimHoldOpen && MyBARRAGEIndex < ALLOWED_THREADS_FOR_BARRAGE_PHYSICS)
+		{
+			GameSimHoldOpen->ThreadAcc[MyBARRAGEIndex].Queue->Enqueue(
+				FBPhysicsInput(Target->KeyIntoBarrage, 0, PhysicsInputType::ApplyTorque, CoordinateUtils::ToBarrageForce(Torque), Target->Me));
+		}
+	}
+}
+
+FVector FBarragePrimitive::GetAngularVelocity(FBLet Target)
+{
+	if (IsNotNull(Target) && GlobalBarrage)
+	{
+		TSharedPtr<FWorldSimOwner> GameSimHoldOpen = GlobalBarrage->JoltGameSim;
+		JPH::BodyID result;
+		if (GameSimHoldOpen && GameSimHoldOpen->BarrageToJoltMapping->find(Target->KeyIntoBarrage, result) && MyBARRAGEIndex < ALLOWED_THREADS_FOR_BARRAGE_PHYSICS)
+		{
+			// Characters are always upright capsules and don't have angular velocity in the same way.
+			if (Target->Me == FBShape::Character)
+			{
+				return FVector::ZeroVector;
+			}
+
+			if (!result.IsInvalid())
+			{
+				return FVector(CoordinateUtils::FromJoltUnitVector(GameSimHoldOpen->body_interface->GetAngularVelocity(result)));
+			}
+		}
+	}
+	return FVector::ZeroVector;
 }

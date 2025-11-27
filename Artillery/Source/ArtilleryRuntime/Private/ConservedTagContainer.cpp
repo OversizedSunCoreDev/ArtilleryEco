@@ -58,15 +58,17 @@ bool FTagStateRepresentation::Add(uint16 Numerology)
 void FConservedTagContainer::CacheLayer()
 {
 	uint32 index = CurrentHistory.GetNextIndex(CurrentWriteHead);
-	CurrentHistory[index] = FTagLayer();
+	CurrentHistory[index] = MakeShareable(new UnderlyingFTL());
 	TSharedPtr<UnderlyingTagReverse> WornRing = DecoderRing.Pin();
-	if (WornRing)
+	if (WornRing && Tags && Tags->Tags)
 	{
+
 		for (uint16_t tagcode : Tags->Tags)
 		{
 			FGameplayTag* ATag = WornRing->Find(tagcode);
 			if (ATag != nullptr)
 			{
+
 				CurrentHistory[index]->Add(*ATag);
 			}
 		}

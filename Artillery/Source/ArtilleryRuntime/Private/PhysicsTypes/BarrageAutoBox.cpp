@@ -1,6 +1,7 @@
 #include "PhysicsTypes/BarrageAutoBox.h"
 
 
+
 //CONSTRUCTORS
 //--------------------
 //do not invoke the default constructor unless you have a really good plan. in general, let UE initialize your components.
@@ -20,7 +21,7 @@ UBarrageAutoBox::UBarrageAutoBox(const FObjectInitializer& ObjectInitializer) : 
 
 	bWantsInitializeComponent = true;
 	PrimaryComponentTick.bCanEverTick = true;
-	MyObjectKey = 0;
+	MyParentObjectKey = 0;
 	bAlwaysCreatePhysicsState = false;
 	UPrimitiveComponent::SetNotifyRigidBodyCollision(false);
 	bCanEverAffectNavigation = false;
@@ -32,25 +33,25 @@ UBarrageAutoBox::UBarrageAutoBox(const FObjectInitializer& ObjectInitializer) : 
 //KEY REGISTER, initializer, and failover.
 //----------------------------------
 
-void UBarrageAutoBox::Register()
+bool UBarrageAutoBox::RegistrationImplementation()
 {
 	if (GetOwner())
 	{
-		if (MyObjectKey == 0)
+		if (MyParentObjectKey == 0)
 		{
 			if (GetOwner()->GetComponentByClass<UKeyCarry>())
 			{
-				MyObjectKey = GetOwner()->GetComponentByClass<UKeyCarry>()->GetMyKey();
+				MyParentObjectKey = GetOwner()->GetComponentByClass<UKeyCarry>()->GetMyKey();
 			}
 
-			if (MyObjectKey == 0)
+			if (MyParentObjectKey == 0)
 			{
 				uint32 val = PointerHash(GetOwner());
-				MyObjectKey = ActorKey(val);
+				MyParentObjectKey = ActorKey(val);
 			}
 		}
 
-		if (!IsReady && MyObjectKey != 0) // this could easily be just the !=, but it's better to have the whole idiom in the example
+		if (!IsReady && MyParentObjectKey != 0) // this could easily be just the !=, but it's better to have the whole idiom in the example
 		{
 			UPrimitiveComponent* AnyMesh = GetOwner()->GetComponentByClass<UMeshComponent>();
 			AnyMesh = AnyMesh ? AnyMesh : GetOwner()->GetComponentByClass<UPrimitiveComponent>();
@@ -71,22 +72,26 @@ void UBarrageAutoBox::Register()
 						extents = FVector(1, 1, 1);
 					}
 				}
-
+				auto offset = FVector3d(OffsetCenterToMatchBoundedShapeX, OffsetCenterToMatchBoundedShapeY, OffsetCenterToMatchBoundedShapeZ);
 				UBarrageDispatch* Physics = GetWorld()->GetSubsystem<UBarrageDispatch>();
 				FBBoxParams params = FBarrageBounder::GenerateBoxBounds(
 					GetOwner()->GetActorLocation(),
 					FMath::Max(extents.X, .1),
 					FMath::Max(extents.Y, 0.1),
 					FMath::Max(extents.Z, 0.1),
-					FVector3d(OffsetCenterToMatchBoundedShapeX, OffsetCenterToMatchBoundedShapeY, OffsetCenterToMatchBoundedShapeZ),
+					offset,
 					MyMassClass.Category);
-				FBLet NewBarrageBody = Physics->CreatePrimitive(params, MyObjectKey, static_cast<uint16>(Layer), false, false, isMovable);
-				if (NewBarrageBody)
+
+				MyBarrageBody = Physics->CreatePrimitive(params, MyParentObjectKey, static_cast<uint16>(Layer), false, false, isMovable);
+				if (MyBarrageBody)
 				{
-					SetBarrageBody(NewBarrageBody);
 					AnyMesh->WakeRigidBody();
 					IsReady = true;
 					AnyMesh->SetSimulatePhysics(false);
+					for (auto Child : this->GetAttachChildren())
+					{
+						Child->SetRelativeLocation_Direct(Child->GetRelativeLocation() - offset);
+					}
 				}
 			}
 		}
@@ -95,8 +100,11 @@ void UBarrageAutoBox::Register()
 	if (IsReady)
 	{
 		PrimaryComponentTick.SetTickFunctionEnable(false);
+		return true;
 	}
+	return false;
 }
+
 
 FBoxSphereBounds UBarrageAutoBox::CalcBounds(const FTransform& LocalToWorld) const
 {

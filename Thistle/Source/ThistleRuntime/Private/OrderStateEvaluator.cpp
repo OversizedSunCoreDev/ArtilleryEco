@@ -1,6 +1,6 @@
 ﻿#include "OrderStateEvaluator.h"
 
-bool FOrderStateEvaluator::Link(FStateTreeLinker& Linker)
+inline bool FOrderStateEvaluator::Link(FStateTreeLinker& Linker)
 {
 	return FThistleMSEvaluator::Link(Linker);
 }

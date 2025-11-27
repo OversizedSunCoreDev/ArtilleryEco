@@ -60,7 +60,7 @@ bool UArtilleryDispatch::RegistrationImplementation()
 	GunToFiringFunctionMapping->Empty();
 	ThreadSetup();
 
-	WorldSim_Thread->Create(&ArtilleryAsyncWorldSim, TEXT("ARTILLERY_WORLDSIM_ONLINE."), 0, TPri_AboveNormal);
+	WorldSim_Thread->Create(&ArtilleryAsyncWorldSim, TEXT("ARTILLERY_WORLDSIM_ONLINE."));
 	WorldSim_AI_Thread->Create(&ArtilleryAIWorker_LockstepToWorldSim, TEXT("ARTILLERY_AISIM_ONLINE."));
 	WorldSim_Ticklites_Thread->Create(&ArtilleryTicklitesWorker_LockstepToWorldSim,TEXT("ARTILLERY_TICKLITES_ONLINE."));
 
@@ -69,7 +69,6 @@ bool UArtilleryDispatch::RegistrationImplementation()
 }
 
 //Place at the end of the latest initialization-like phase.
-//should we move this lil guy over into ya boy Dispatch? It feels real dispatchy.
 void UArtilleryDispatch::REGISTER_ENTITY_FINAL_TICK_RESOLVER(const ActorKey& Self)
 {
 	TLEntityFinalTickResolver temp = TLEntityFinalTickResolver(Self); //this semantic sucks. gotta fix it.
@@ -101,6 +100,7 @@ void UArtilleryDispatch::Bop(FSkeletonKey Target, uint16 TicksFromNow, FVector F
 	this->RequestAddTicklite(MakeShareable(new TL_Bop(ForceAtTime)), Normal);
 }
 
+//allows you to get tombstoned fibs.
 FBLet UArtilleryDispatch::GetFBLetByObjectKey(FSkeletonKey Target, ArtilleryTime Now)
 {
 	UBarrageDispatch* PhysicsECSPillar = UWorld::GetSubsystem<UBarrageDispatch>(GetWorld());
@@ -175,7 +175,7 @@ void UArtilleryDispatch::Deinitialize()
 	if (WorldSim_Thread.IsValid())
 	{
 		//if we don't wait, this will crash when ECS facts are referenced. That's just... uh... the facts.
-		WorldSim_Thread->Kill(true);
+		WorldSim_Thread->Kill();
 		WorldSim_Thread.Reset();
 	}
 
@@ -334,7 +334,7 @@ void UArtilleryDispatch::ProcessRequestRouterGameThread()
 								RelationshipMap->Add(Request.Relationship, PowerWordGun);
 								PowerWordGun->SetBaseValue(BANG);
 								PowerWordGun->SetCurrentValue(BANG);
-								RegisterRelationships(Request.SourceOrSelf, RelationshipMap);
+								RegisterOrAddRelationships(Request.SourceOrSelf, RelationshipMap);
 							}
 						}
 						break;
@@ -352,7 +352,7 @@ void UArtilleryDispatch::ProcessRequestRouterGameThread()
 					// *****************
 					// * Mesh Handling
 					// *****************
-					case ArtilleryRequestType::SpawnStaticMesh:
+					case ArtilleryRequestType::SpawnInstancedStaticMesh:
 						{
 							UArtilleryProjectileDispatch* ProjectileDispatch = GetWorld()->GetSubsystem<
 								UArtilleryProjectileDispatch>();
@@ -657,14 +657,14 @@ UArtilleryDispatch::~UArtilleryDispatch()
 	{
 		ArtilleryAsyncWorldSim.Exit();
 		StartTicklitesSim->Trigger();
-		WorldSim_Thread->Kill(true);
+		WorldSim_Thread->Kill();
 	}
 	if (WorldSim_Ticklites_Thread)
 	{
 		ArtilleryTicklitesWorker_LockstepToWorldSim.Exit();
 		StartTicklitesApply->Trigger();
 		StartTicklitesSim->Trigger();
-		WorldSim_Thread->Kill(true);
+		WorldSim_Thread->Kill();
 	}
 	if (WorldSim_AI_Thread)
 	{
@@ -713,43 +713,132 @@ void UArtilleryDispatch::RegisterControllite(const FSkeletonKey& in, Machlet Lap
 	KeyToControlliteMapping->Add(in, LaputanMachine); //I spill my drink.
 }
 
-void UArtilleryDispatch::RegisterAttributes(FSkeletonKey in, AttrMapPtr Attributes)
+void UArtilleryDispatch::RegisterOrAddAttributes(FSkeletonKey in, AttrMapPtr Attributes)
 {
 	if (__LIVE__)
 	{
 		if (TSharedPtr<AttrCuckoo> hold = AttributeSetToDataMapping)
 		{
-			AttributeSetToDataMapping->insert_or_assign(in, Attributes);
+			AttrMapPtr Extant;
+			hold->find(in, Extant);
+			if (Extant)
+			{
+				if (Attributes)
+				{
+					for (auto& proposed : *Attributes)
+					{
+						//merge them, we must, not merely append.
+						auto& possible = Extant->FindOrAdd(proposed.Key);
+						if (possible)
+						{
+							possible->SetCurrentValue(proposed.Value->GetCurrentValue());
+						}
+						else
+						{
+							possible = proposed.Value;
+						}
+					}
+				}
+			}
+			else
+			{
+				hold->insert_or_assign(in, Attributes);
+			}
+
 		}
 	}
 }
 
-void UArtilleryDispatch::RegisterRelationships(FSkeletonKey in, IdMapPtr Relationships)
+void UArtilleryDispatch::RegisterOrAddRelationships(FSkeletonKey in, IdMapPtr Relationships)
 {
 	if (__LIVE__ && IsReady)
 	{
-		IdentSetToDataMapping->insert_or_assign(in, Relationships);
+		IdMapPtr Extant;
+		IdentSetToDataMapping->find(in, Extant);
+		if (!Extant)
+		{
+			//we still perform insert OR assign for a lot of Threading Reasons.
+			//it might exist by the time we get here.
+			//it shouldn't in any of our existing use cases..
+			//POTENTIAL BUG
+			//TODO: swap to single atomic lambda
+			IdentSetToDataMapping->insert_or_assign(in, Relationships);
+		}
+		else
+		{
+			if (Relationships)
+			{
+				for (auto& proposed : *Relationships)
+				{
+					//merge them, we must, not merely append.
+					auto& possible = Extant->FindOrAdd(proposed.Key);
+					if (possible)
+					{
+						possible->SetCurrentValue(proposed.Value->CurrentValue);
+					}
+					else
+					{
+						possible = proposed.Value;
+					}
+				}
+			}
+		}
 	}
 }
 
-void UArtilleryDispatch::RegisterVecAttribs(FSkeletonKey in, Attr3MapPtr Vectors)
+void UArtilleryDispatch::RegisterOrAddVecAttribs(FSkeletonKey in, Attr3MapPtr Vectors)
 {
-	VectorSetToDataMapping->Add(in, Vectors);
+	auto Extant = VectorSetToDataMapping->Find(in);
+	if (Extant && *Extant && Vectors)
+	{
+		for (auto& proposed : *Vectors)
+		{
+			//merge them, we must, not merely append.
+			auto& possible = (*Extant)->FindOrAdd(proposed.Key);
+			if (possible != nullptr && possible.IsValid())
+			{
+				possible->SetCurrentValue(proposed.Value->CurrentValue);
+			}
+			else
+			{
+				possible = proposed.Value;
+			}
+		}
+	}
+	else
+	{
+		VectorSetToDataMapping->Add(in, Vectors);
+	}
 }
 
-FConservedTags UArtilleryDispatch::RegisterGameplayTags(FSkeletonKey in, GameplayTagContainerPtrInternal GameplayTags)
+FConservedTags UArtilleryDispatch::RegisterOrAddGameplayTags(FSkeletonKey in, GameplayTagContainerPtrInternal GameplayTags)
 {
-	FConservedTags TerrorModuleOnline = GameplayTagContainerToDataMapping->NewTagContainer(in);
+	if (!GameplayTagContainerToDataMapping->SkeletonKeyExists(in))
+	{
+		FConservedTags TerrorModuleOnline = GameplayTagContainerToDataMapping->NewTagContainer(in);
+		if (__LIVE__ && this && GameplayTagContainerToDataMapping && GameplayTagContainerToDataMapping.IsValid() &&
+			GameplayTags)
+		{
+			for (const FGameplayTag& tag : GameplayTags->GetGameplayTagArray())
+			{
+				GameplayTagContainerToDataMapping->Add(in, tag);
+			}
+		}
+		RequestRouter->TagReferenceModel(in, GetShadowNow(), TerrorModuleOnline);
+		return TerrorModuleOnline; // this is the only good way to get a fast reference.
+	}
 	if (__LIVE__ && this && GameplayTagContainerToDataMapping && GameplayTagContainerToDataMapping.IsValid() &&
 		GameplayTags)
 	{
+		auto PreviousTerrorModuleAlreadyOnline = GameplayTagContainerToDataMapping->GetReference(in);
 		for (const FGameplayTag& tag : GameplayTags->GetGameplayTagArray())
 		{
-			GameplayTagContainerToDataMapping->Add(in, tag);
+			GameplayTagContainerToDataMapping->Add(in, tag); 
 		}
+		//This feels overly finicky.
+		return PreviousTerrorModuleAlreadyOnline; // I think this works, because the ref module should be online.
 	}
-	RequestRouter->TagReferenceModel(in, GetShadowNow(), TerrorModuleOnline);
-	return TerrorModuleOnline; // this is the only good way to get a fast reference.
+	return nullptr; //yer jacked bb. this shouldn't happen. but if it does...
 }
 
 FConservedTags UArtilleryDispatch::GetExistingConservedTags(FSkeletonKey in)
@@ -768,7 +857,7 @@ FConservedTags UArtilleryDispatch::GetOrRegisterConservedTags(FSkeletonKey in)
 		FConservedTags GetExistingConservedTagsResult = GetExistingConservedTags(in);
 		return GetExistingConservedTagsResult != nullptr
 			       ? GetExistingConservedTagsResult
-			       : RegisterGameplayTags(in, nullptr);
+			       : RegisterOrAddGameplayTags(in, nullptr);
 	}
 	return nullptr;
 }
@@ -823,14 +912,14 @@ void UArtilleryDispatch::RunGuns() const
 		RequestorQueue_Abilities_TripleBuffer->SwapReadBuffers();
 		for (TTuple<long, EventBufferInfo>& GunToRun : RequestorQueue_Abilities_TripleBuffer->Read())
 		{
-			auto Del =  GunToFiringFunctionMapping->Find(GunToRun.Value.GunKey);
+			auto Del = GunToFiringFunctionMapping->Find(GunToRun.Value.GunKey);
 			if (Del)
 			{
 				TotalFirings += Del->
-				ExecuteIfBound(
-					GunByKey->FindRef(GunToRun.Value.GunKey),
-					false,
-					GunToRun.Value);
+					ExecuteIfBound(
+						GunByKey->FindRef(GunToRun.Value.GunKey),
+						false,
+						GunToRun.Value);
 			}
 		}
 		RequestorQueue_Abilities_TripleBuffer->Read().Reset();
@@ -843,17 +932,23 @@ void UArtilleryDispatch::RunLocomotions() const
 {
 	if (__LIVE__ && RequestorQueue_Locomos)
 	{
-		//Sort is not stable. Sortedness appears to be lost for operations I would not expect.
-		for (LocomotionParams& Params : *RequestorQueue_Locomos)
+		if (KeyToControlliteMapping && KeyToControlliteMapping.IsValid())
 		{
-			IArtilleryControllite** SpanningLinkage = KeyToControlliteMapping->Find(Params.parent);
-			if (SpanningLinkage != nullptr)
+			//Sort is not stable. Sortedness appears to be lost for operations I would not expect.
+			for (LocomotionParams& Params : *RequestorQueue_Locomos)
 			{
-				(*SpanningLinkage)->ArtilleryTick(Params.previousIndex, Params.currentIndex, false, false);
-				++TotalFirings;
+				if (Params.parent != Params.parent.Invalid())
+				{
+					IArtilleryControllite** SpanningLinkage = KeyToControlliteMapping->Find(Params.parent);
+					if (SpanningLinkage != nullptr)
+					{
+						(*SpanningLinkage)->ArtilleryTick(Params.previousIndex, Params.currentIndex, false, false);
+						++TotalFirings;
+					}
+				}
 			}
+			RequestorQueue_Locomos->Empty(); // if we can't make 'em, we don't want to toss them yet.
 		}
-		RequestorQueue_Locomos->Empty();
 	}
 }
 

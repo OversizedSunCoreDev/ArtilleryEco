@@ -89,11 +89,18 @@ public:
 	//transform forces transparently from UE world space to jolt world space
 	//then apply them directly to the "primitive"
 	static void ApplyForce(FVector3d Force, FBLet Target, PhysicsInputType Type = PhysicsInputType::OtherForce);
+	//debug only!
+	static TPair<FVector, FVector> GetLocalBounds(FBLet Target);
 	//transform the quaternion from the UE ref to the Jolt ref
 	//then apply it to the "primitive"
 	static void ApplyRotation(FQuat4d Rotator, FBLet Target);
 	//Applies any given quat as any given input to any given target. use of this is not recommended.
 	static void Apply_Unsafe(FQuat4d Any, FBLet Target, PhysicsInputType Type);
+
+
+	static FVector GetAngularVelocity(FBLet Target);
+	static void ApplyTorque(FVector Torque, FBLet Target);
+
 
 	//My current thinking:
 	//This should be called from the gamethread, in the PULL model. it doesn't lock, but it will fail if the lock is held on that body
@@ -103,6 +110,11 @@ public:
 	static FVector3f GetCentroidPossiblyStale(FBLet Target);
 	static FVector3f GetPosition(FBLet Target);
 	static FVector3f GetVelocity(FBLet Target);
+
+	//in almost all cases, we recommend that you use the vector attributes, as rotation rarely actually provides
+	//the information about facing, aim point, and similar that you might want it to. this is especially true for
+	//characters which we almost never actually rotate.
+	static FQuat4f OptimisticGetAbsoluteRotation(FBLet Target);
 	//tombstoned primitives are treated as null even by live references, because while the primitive is valid
 	//and operations against it can be performed safely, no new operations should be allowed to start.
 	//the tombstone period is effectively a grace period due to the fact that we have quite a lot of different

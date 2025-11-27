@@ -21,7 +21,8 @@ THIRD_PARTY_INCLUDES_END
 
 struct FConservedTagContainer;
 typedef TSharedPtr<FGameplayTagContainer> FS_GameplayTagPtr;
-typedef TSharedPtr<TArray<FGameplayTag>> FTagLayer;
+typedef TArray<FGameplayTag> UnderlyingFTL;
+typedef TSharedPtr<UnderlyingFTL> FTagLayer;
 #define FAST_TAG_MAX_C 30
 typedef TMap<FGameplayTag, uint16_t> UnderlyingTagMapping;
 typedef TMap<uint16_t, FGameplayTag> UnderlyingTagReverse;

@@ -229,7 +229,7 @@ struct THISTLERUNTIME_API FThistleSphereCastInstanceData : public FPointToPoint
 
 	TSharedPtr<FHitResult> HitResultCache = MakeShared<FHitResult>();
 	UPROPERTY(EditAnywhere, Category = Parameter)
-	int TicksBetweenCastRefresh;
+	int TicksBetweenCastRefresh = 2;
 
 	//You generally really want this. It's almost always the source key, but not ALWAYS.
 	//Once in a while though, you'll be casting from empty air without an actual source body.

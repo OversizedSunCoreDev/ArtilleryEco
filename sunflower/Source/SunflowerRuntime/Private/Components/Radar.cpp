@@ -45,7 +45,7 @@ void URadarComponent::TickComponent(float DeltaTime, enum ELevelTick TickType, F
 	FVector PlayerLocation = GetOwner()->GetActorLocation();
 	FVector2d TwoDCenter = FVector2d(PlayerLocation.X, PlayerLocation.Y);
 	FBox2d RadarBox = FBox2d(TwoDCenter - Radius, TwoDCenter + Radius);
-	
+	 
 	ActorsInRange.Empty();
 	if (!ThistleDispatch->QuadTreeMaintenance)
 	{
@@ -60,7 +60,7 @@ void URadarComponent::TickComponent(float DeltaTime, enum ELevelTick TickType, F
 }
 
 // TODO account for different texture sizes
-void URadarComponent::UpdateMinimapTexture()
+inline void URadarComponent::UpdateMinimapTexture()
 {
 	UKismetRenderingLibrary::ClearRenderTarget2D(this, RenderTarget2D);
 	UCanvas* Canvas;
@@ -84,7 +84,7 @@ void URadarComponent::UpdateMinimapTexture()
 	UKismetRenderingLibrary::EndDrawCanvasToRenderTarget(this, RenderTargetContext);
 }
 
-void URadarComponent::SetRadarWidget(UMaterialInstanceDynamic* NewMaterial)
+inline void URadarComponent::SetRadarWidget(UMaterialInstanceDynamic* NewMaterial)
 {
 	MinimapMaterialInstance = NewMaterial;
 	if (MinimapMaterialInstance != nullptr)

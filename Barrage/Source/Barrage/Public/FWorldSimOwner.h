@@ -124,21 +124,21 @@ public:
 			// TODO: in future if we want to enforce principle of hitbox vs. movement colliders being different,
 			// could force all entities to have both a moving physics shape + a hitbox physics shape and remove collision between MOVING and {PROJECTILE, CAST_QUERY}
 			case Layers::NON_MOVING:
-				return inObject2 != Layers::NON_MOVING && inObject2 != Layers::HITBOX; // Non-moving collides with all moving stuff EXCEPT hitbox
+				return inObject2 != Layers::NON_MOVING && inObject2 != Layers::HITBOX && inObject2 != Layers::ENEMYHITBOX; // Non-moving collides with all moving stuff EXCEPT hitbox
 			case Layers::MOVING:
-				return inObject2 == Layers::NON_MOVING || inObject2 == Layers::BONKFREEENEMY || inObject2 == Layers::MOVING || inObject2 == Layers::ENEMY || inObject2 == Layers::ENEMYPROJECTILE || inObject2 == Layers::CAST_QUERY; // Moving collides with everything but hitboxes and debris
+				return inObject2 == Layers::NON_MOVING || inObject2 == Layers::MOVING || inObject2 == Layers::ENEMY || inObject2 == Layers::ENEMYPROJECTILE || inObject2 == Layers::CAST_QUERY; // Moving collides with everything but hitboxes and debris
 			case Layers::ENEMY:
 				return inObject2 == Layers::NON_MOVING || inObject2 == Layers::MOVING || inObject2 == Layers::ENEMY || inObject2 == Layers::PROJECTILE || inObject2 == Layers::CAST_QUERY;
-			case Layers::BONKFREEENEMY: //bonkfree is an emergency option that causes enemies to freely collide. It can be used in conjunction with other layers to create variable hitboxing for enemies for pathing, players, environment, and other enemies.
-				return inObject2 == Layers::NON_MOVING || inObject2 == Layers::MOVING || inObject2 == Layers::PROJECTILE || inObject2 == Layers::CAST_QUERY; 
+			case Layers::ENEMYHITBOX: //bonkfree is an emergency option that causes enemies to freely collide. It can be used in conjunction with other layers to create variable hitboxing for enemies for pathing, players, environment, and other enemies.
+				return  inObject2 == Layers::PROJECTILE || inObject2 == Layers::CAST_QUERY || inObject2 == Layers::HITBOX; 
 			case Layers::HITBOX:
-				return inObject2 == Layers::PROJECTILE || inObject2 == Layers::ENEMYPROJECTILE || inObject2 == Layers::CAST_QUERY; // Hitboxes only collide with projectiles and cast_queries
+				return inObject2 == Layers::PROJECTILE ||  inObject2 == Layers::ENEMYHITBOX || inObject2 == Layers::ENEMYPROJECTILE || inObject2 == Layers::CAST_QUERY; // Hitboxes only collide with projectiles and cast_queries
 			case Layers::PROJECTILE:
-				return inObject2 == Layers::NON_MOVING || inObject2 == Layers::BONKFREEENEMY || inObject2 == Layers::ENEMY || inObject2 == Layers::HITBOX || inObject2 == Layers::CAST_QUERY;
+				return inObject2 == Layers::NON_MOVING || inObject2 == Layers::ENEMYHITBOX || inObject2 == Layers::ENEMY || inObject2 == Layers::HITBOX || inObject2 == Layers::CAST_QUERY;
 			case Layers::ENEMYPROJECTILE:
 				return (inObject2 != Layers::ENEMYPROJECTILE) && (inObject2 == Layers::NON_MOVING || inObject2 == Layers::MOVING || inObject2 == Layers::HITBOX);
 			case Layers::CAST_QUERY:
-				return inObject2 == Layers::NON_MOVING || inObject2 == Layers::MOVING || inObject2 == Layers::ENEMY || inObject2 == Layers::BONKFREEENEMY || inObject2 == Layers::HITBOX || inObject2 == Layers::PROJECTILE  || inObject2 == Layers::ENEMYPROJECTILE;
+				return inObject2 == Layers::NON_MOVING || inObject2 == Layers::MOVING || inObject2 == Layers::ENEMY || inObject2 == Layers::ENEMYHITBOX || inObject2 == Layers::HITBOX || inObject2 == Layers::PROJECTILE  || inObject2 == Layers::ENEMYPROJECTILE;
 			case Layers::CAST_QUERY_LEVEL_GEOMETRY_ONLY:
 				return inObject2 == Layers::NON_MOVING;
 			case Layers::DEBRIS:
@@ -161,8 +161,8 @@ public:
 			mObjectToBroadPhase[Layers::MOVING] = JOLT::BroadPhaseLayers::MOVING;
 			mObjectToBroadPhase[Layers::HITBOX] = JOLT::BroadPhaseLayers::MOVING;
 			mObjectToBroadPhase[Layers::PROJECTILE]	= JOLT::BroadPhaseLayers::MOVING;
-			mObjectToBroadPhase[Layers::ENEMYPROJECTILE]	= JOLT::BroadPhaseLayers::MOVING;
-			mObjectToBroadPhase[Layers::BONKFREEENEMY]	= JOLT::BroadPhaseLayers::MOVING;
+			mObjectToBroadPhase[Layers::ENEMYPROJECTILE]	= JOLT::BroadPhaseLayers::ENEMYHITBOX;
+			mObjectToBroadPhase[Layers::ENEMYHITBOX]	= JOLT::BroadPhaseLayers::ENEMYHITBOX;
 			mObjectToBroadPhase[Layers::ENEMY]	= JOLT::BroadPhaseLayers::MOVING;
 			mObjectToBroadPhase[Layers::CAST_QUERY]	= JOLT::BroadPhaseLayers::MOVING;
 			mObjectToBroadPhase[Layers::CAST_QUERY_LEVEL_GEOMETRY_ONLY]	= JOLT::BroadPhaseLayers::MOVING;
@@ -179,7 +179,7 @@ public:
 			JPH_ASSERT(inLayer < Layers::NUM_LAYERS);
 			return mObjectToBroadPhase[inLayer];
 		}
-
+  
 #if defined(JPH_EXTERNAL_PROFILE) || defined(JPH_PROFILE_ENABLED)
 		virtual const char* GetBroadPhaseLayerName(JPH::BroadPhaseLayer inLayer) const override
 		{
@@ -215,11 +215,11 @@ public:
 			case Layers::PROJECTILE:
 				return inLayer2 != JOLT::BroadPhaseLayers::DEBRIS;
 			case Layers::ENEMYPROJECTILE:
-				return inLayer2 != JOLT::BroadPhaseLayers::DEBRIS;
+				return inLayer2 != JOLT::BroadPhaseLayers::DEBRIS && inLayer2 != JOLT::BroadPhaseLayers::ENEMYHITBOX;
 			case Layers::ENEMY:
 				return inLayer2 != JOLT::BroadPhaseLayers::DEBRIS;
-			case Layers::BONKFREEENEMY: //TODO: do we need to modify this to get true freedom from bonks?
-				return inLayer2 != JOLT::BroadPhaseLayers::DEBRIS;
+			case Layers::ENEMYHITBOX: //TODO: do we need to modify this to get true freedom from bonks?
+				return inLayer2 != JOLT::BroadPhaseLayers::DEBRIS && inLayer2 != JOLT::BroadPhaseLayers::ENEMYHITBOX;
 			case Layers::CAST_QUERY:
 				return inLayer2 != JOLT::BroadPhaseLayers::DEBRIS;
 			case Layers::CAST_QUERY_LEVEL_GEOMETRY_ONLY:
@@ -323,18 +323,30 @@ public:
 
 	// Cast a ray at something and get the first thing it hits
 	void CastRay(FVector3d CastFrom, FVector3d Direction, const JPH::BroadPhaseLayerFilter& BroadPhaseFilter, const JPH::ObjectLayerFilter& ObjectFilter, const JPH::BodyFilter& BodiesFilter, TSharedPtr<FHitResult> OutHit) const;
-
+	JPH::EMotionType LayerToMotionTypeMapping(uint16 Layer);
 	JPH::Ref<JPH::Shape> AttemptBoxCache(double JoltX, double JoltY, double JoltZ, float HEReduceMin);
 	//we could use type indirection or inheritance, but the fact of the matter is that this is much easier
 	//to understand and vastly vastly faster. it's also easier to optimize out allocations, and it's very
 	//very easy to read for people who are probably already drowning in new types.
 	//finally, it allows FBShapeParams to be a POD and so we can reason about it really easily.
 	FBarrageKey CreatePrimitive(FBBoxParams& ToCreate, uint16 Layer, bool IsSensor = false, bool forceDynamic = false, bool isMovable = true);
+	FBarrageKey CreatePrimitive(FBCapParams& ToCreate, uint16 Layer, bool IsSensor, bool forceDynamic, bool isMovable);
 	FBarrageKey CreatePrimitive(FBCharParams& ToCreate, uint16 Layer);
 	FBarrageKey CreatePrimitive(FBSphereParams& ToCreate, uint16 Layer, bool IsSensor = false);
 	FBarrageKey CreatePrimitive(FBCapParams& ToCreate, uint16 Layer, bool IsSensor = false, FMassByCategory::BMassCategories MassClass = FMassByCategory::BMassCategories::MostEnemies);
 
-	FBLet LoadComplexStaticMesh(FBTransform& MeshTransform, const UStaticMeshComponent* StaticMeshComponent, FSkeletonKey Outkey);
+	//Under normal circumstances, you will _not_ want to set the layer and movement to anything else.
+	//the use of static mesh colliders is quite slow, and primitive shapes or compound primitives work for most purposes
+	//The exception is non-moving static mesh colliders, which are well optimized in Jolt. However, you may wish to have specialized
+	//collision available in many cases, at least for narrow phase collision.
+	//A good example of this is the bubble shields we use. There are other ways to do them, but nothing that's as elegant from
+	//a designer's perspective.
+	FBLet LoadComplexStaticMesh(FBTransform& MeshTransform,
+		const UStaticMeshComponent* StaticMeshComponent,
+		FSkeletonKey Outkey,
+		Layers::EJoltPhysicsLayer Layer = Layers::EJoltPhysicsLayer::NON_MOVING,
+		JPH::EMotionType Movement = JPH::EMotionType::Static,
+		 bool IsSensor = false, bool ForceActualMesh = false, FVector CenterOfMassTranslation = {0,0,0});
 
 	//This'll be trouble.
 	//https://www.youtube.com/watch?v=KKC3VePrBOY&lc=Ugw9YRxHjcywQKH5LO54AaABAg
@@ -366,6 +378,7 @@ public:
 private:
 	//don't. not unless you understand deeply. that includes me. yes, I know, future jake, you think you're smart.
 	//maybe. but this was a... decision.
-	void AddInternalQueuing(JPH::BodyID ToQueue, uint64 ordinant);
+	void
+	AddInternalQueuing(JPH::BodyID ToQueue, uint64 ordinant);
 	
 };

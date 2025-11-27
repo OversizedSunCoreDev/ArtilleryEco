@@ -14,7 +14,7 @@ UBarrageColliderBase::UBarrageColliderBase(const FObjectInitializer& ObjectIniti
 	// off to improve performance if you don't need them.
 	PrimaryComponentTick.bCanEverTick = true;
 	bWantsInitializeComponent = true;
-	MyObjectKey = 0;
+	MyParentObjectKey = 0;
 	bAlwaysCreatePhysicsState = false;
 	UPrimitiveComponent::SetNotifyRigidBodyCollision(false);
 	bCanEverAffectNavigation = false;
@@ -45,7 +45,13 @@ void UBarrageColliderBase::InitializeComponent()
 //SETTER: Unused example of how you might set up a registration for an arbitrary key.
 void UBarrageColliderBase::BeforeBeginPlay(FSkeletonKey TransformOwner)
 {
-	MyObjectKey = TransformOwner;
+	MyParentObjectKey = TransformOwner;
+}
+
+bool UBarrageColliderBase::RegistrationImplementation()
+{
+	PrimaryComponentTick.SetTickFunctionEnable(false);
+	return true;
 }
 
 //Colliders must override this.
@@ -121,7 +127,7 @@ void UBarrageColliderBase::TickComponent(float DeltaTime, ELevelTick TickType,
 	FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-	Register(); // ...
+	AttemptRegister(); // ...
 #if WITH_EDITORONLY_DATA
 	UpdateDebugComponent();
 #endif
@@ -131,7 +137,7 @@ void UBarrageColliderBase::TickComponent(float DeltaTime, ELevelTick TickType,
 void UBarrageColliderBase::BeginPlay()
 {
 	Super::BeginPlay();
-	Register();
+	AttemptRegister();
 }
 
 //TOMBSTONERS
