@@ -1,17 +1,20 @@
 # ArtilleryEco: Determinism For Free
-Determinism, abilities, threaded input processing, and state management primitives married to a core set of basic tools used to bind to a weapon or character actor in a compositional and elegant way, loosely backwards compatible with GAS while simplifying its usage considerably. Artillery is at 0.2 and is not yet in pre-alpha. It provides, as of right now:
+Determinism, abilities, threaded input processing, and state management primitives married to a core set of basic tools used to bind to a weapon, character, entity, effect, or actor in a compositional and elegant way. Artillery is at 0.3 and is not yet in pre-alpha. It provides, as of right now:
 
-- Integration with GAS through ArtilleryGuns
 - Full support for the Jolt physics engine for game simulation through Barrage
-- Elision of issues around complexity and reuse through ArtilleryGuns & DDG
-    - Deprioritization of the concept of gameplay effects.
-    - Direct access to attributes by safe key look-ups.
+- Direct "anywhere access" to attributes, relationships, and tags by safe key look-ups.
+- Better debugging and tracking for attributes and tags!
+- A designer-friendly and fully editor-native user experience
+- fast. very very very fast. fast enough that you might not need to do any serious optimization for many games.
 - Separation of game simulation ticks from frames
 - Separation of game simulation ticks from the game thread
 - Threaded input processing with support for strong timesync
 - Locomotion state machine binding
-- Initial integration with bristlecone
+- Initial integration with bristlecone for insanely fast networking
+- fixed data-rate multiplayer primitives, with multiplayer support coming in .4
+- LIMITED integration with GAS, primarily focused on Cues. the goal is that time spent learning gas should not feel wasted and porting should be easy.
 - An abstract controls model that uses a three layer system of key bindings -> intents -> actions
+- And finally, a collection of industry tricks in locomo and skeletonkey useful to most games.
   
 Atypically, Artillery is designed to operate in a mixed model between input stream replication, network prediction, and interpolation. Bristlecone streams remote player input to all clients, allowing the remote player proxies to execute abilities and requiring the local client to fully simulate them. The obvious immediate implications are as follows...
 - **REQUIREMENT: CUES MUST BE COSMETIC ONLY.** This is already the norm.
@@ -25,7 +28,7 @@ This monorepo includes all plugins required by Artillery, and all plugins that c
 ### [Dependency Map](https://miro.com/app/board/uXjVKg1J6qo=/?share_link_id=795066474192)
 
 ## Update Schedule
-The next major public release will include full support for multiplayer. The time horizon for this update is not currently predictable.
+The next major public release is 2026-Q3 will include full support for multiplayer that doesn't ask you to draw the rest of the owl.
 
 ## Solution Design
 Unlike regular unreal, we have powerful time synchronization primitives built on shadow copies and a concept of subframe accuracy. This allows us to quickly compose updates by simply zipping them together using the timestamp. With the concept of zip-and-reconcile available to us, we have a way to do exact state recovery without needing true determinism OR a full gamestate transmission.
