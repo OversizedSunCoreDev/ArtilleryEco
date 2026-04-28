@@ -78,6 +78,9 @@ struct WorldRecord
 	bool IsReady = false;
 	bool IsForbidden = false;
 	bool IsSubstrate = false;
+	
+	bool SubsystemsReady = true;//starts true!
+	
 };
 
 
@@ -94,7 +97,12 @@ inline USkeletonLord::USkeletonLord(const FObjectInitializer& ObjectInitializer)
 {
 }
 
-#define __LIVE__  std::shared_ptr<WorldRecord> ___LIVING = MyWorldState.expired() || this == nullptr ? nullptr : MyWorldState.lock(); GEngine && ___LIVING != nullptr && ___LIVING->IsReady == true && ___LIVING->IsForbidden == false
+#define __GetWorldRecordBinding  std::shared_ptr<WorldRecord> ___LIVING = MyWorldState.expired() || this == nullptr ? nullptr : MyWorldState.lock();
+#define __IsWorldRecordFullyReady  __GetWorldRecordBinding GEngine && ___LIVING != nullptr && ___LIVING->IsReady == true && ___LIVING->IsForbidden == false
+//This is a much weaker guarantee
+#define __AreArtillerySubsystemsFullyUp  __GetWorldRecordBinding GEngine && ___LIVING != nullptr && ___LIVING->SubsystemsReady == true && ___LIVING->IsForbidden == false
+#define __AreArtillerySubsystemsComingUpSafely  __GetWorldRecordBinding GEngine && ___LIVING != nullptr && ___LIVING->SubsystemsReady == true
+
 //A Key Binder, Keyless Itself (These are used ONLY for subsystems or other ECS pillars that are system preconditions)
 class ISkeletonLord
 {

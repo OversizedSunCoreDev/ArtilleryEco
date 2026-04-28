@@ -15,5 +15,20 @@ public:
 
 	UPROPERTY(EditAnywhere, Config, Category = "Bristlecone")
 	bool log_receive_c;
+
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Bristlecone");
+	int32 ClientToServerSchemaMapperPort;
+
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Bristlecone");
+	int32 ClientToServerSchemaPort;
+
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Bristlecone");
+	int32 ServerToClientMapperPort;
+
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Bristlecone");
+	FString BackhaulAddress;
+
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Bristlecone");
+	int32 BackhaulPort;
 };
 

@@ -1,6 +1,5 @@
 ﻿#pragma once
 #include "ArtilleryDispatch.h"
-#include "Kines.h"
 #include "NeedA.h"
 
 //shares the lifecycle of the owner.

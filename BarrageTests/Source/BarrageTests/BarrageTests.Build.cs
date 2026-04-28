@@ -45,7 +45,8 @@ public class BarrageTests : ModuleRules
 				"CoreUObject",
 				"Chaos",
 				"SkeletonKey",
-				"Barrage"
+				"Barrage",
+				"JoltPhysics"
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);

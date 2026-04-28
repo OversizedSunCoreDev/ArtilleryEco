@@ -23,7 +23,7 @@ namespace Hitmark
 	inline thread_local TSharedPtr<FHitResult> AimFriction = nullptr;
 }
 
-static constexpr uint32 DEFAULT_DASH_DURATION = 18;
+static constexpr uint32 DEFAULT_DASH_DURATION = 22;
 static constexpr double DEFAULT_DASH_MULTIPLIER = 200.f;
 
 static const std::vector<EPhysicsLayer> ExclusionFilters = { EPhysicsLayer::ENEMYPROJECTILE, EPhysicsLayer::DEBRIS, EPhysicsLayer::HITBOX };
@@ -46,19 +46,19 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Movement, meta=(ClampMin="0", UIMin="0"))
 	float TurningBoost = 1.1;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Movement)
-	float MaxStickVelocity = 995;
+	float MaxStickVelocity = 1155;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Movement)
-	float HardMaxVelocity = 1800;
+	float HardMaxVelocity = 1900;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Movement)
 	float Deceleration = 12;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Movement)
 	float Acceleration = 12;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Movement)
-	float AirAcceleration = 3;
+	float AirAcceleration = 5.0;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Movement)
 	float DeadzoneDecel = 13;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Movement)
-	float GroundDecel = Deceleration * 0.75;
+	float GroundDecel = Deceleration * 0.53;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Movement)
 	float AirDecel =  AirAcceleration * 0.6;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Movement)
@@ -69,15 +69,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Movement)
 	float WallClingAfterJumpDelay = 45;	//Jumpticks count DOWN, so a higher value here is ironically shorter. Sigh. whoops.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Movement)
-	float WallJumpImpulse = 600;
+	float WallJumpImpulse = 500;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Movement)
 	float WallClingGravity = 200;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Movement)
-	float NormalGravity = 1880;
+	float NormalGravity = 1980;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Movement)
 	float GroundingForceCoefficient = 0.08;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Movement)
-	float DeadZoneSnapRegion = 220;
+	float DeadZoneSnapRegion = 208;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Movement)
 	float ContactErrorMarginMultiplier = 2;
@@ -85,8 +85,7 @@ public:
 	//This appears to act like it's in meters. Given that it's compared to a "naked" jolt constant, that's not shocking but...
 	float HowCloseIsGroundClose = 18;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Movement)
-	// TODO: this should be lower but I set it high so you can reproduce the "run into a pillar and player jumps up for a frame" bug
-	float HowCloseIsGroundWithinError = 5; // in cm
+	float HowCloseIsGroundWithinError = 4; // in cm
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category=Movement)
 	FPlayerStates States;
 	//you can't touch this from blueprint.
@@ -115,7 +114,10 @@ public:
 	double MovingTowardsBaseMarkerMultiplier = 0.8f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Aim)
 	double MovingAwayFromMarkersFrictionMultiplier = 0.7f;
-
+	
+	static constexpr double NewInputMixrateForDash = 1.6;
+	static constexpr double AppliedForceMixrateForDash = 1;
+	
 	double ShortcastMaxRange = 500; //emergency default ONLY. normally set in constructor!!!!
 	int32  MungeSafety = 0xffffffff;
 	[[nodiscard]] FVector Chaos_LastGameFrameRightVector() const
@@ -152,6 +154,9 @@ public:
 	void ApplyRotation(float Duration, FQuat4f Rotation);
 	void AddOneTickOfForce(FVector3d Force);
 	void AddOneTickOfForce_LocomotionOnly(FVector3d Force);
+	void AddOneTickOfForce_JumpOnly(FVector3d Force);
+	void AddOneTickOfForce_DashOnly(FVector3d Force);
+	void AddOneTickOfForce_LungeOnly(FVector3d Force);
 	// Kludge for now until we double-ify everything
 	void AddOneTickOfForce(FVector3f Force);
 	void SetThrottleModel(double carryover = -1, double gravity = -1, double locomotion = -1, double forces = -1);

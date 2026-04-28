@@ -2,21 +2,21 @@
 
 #pragma once
 
-#include "CoreMinimal.h"
 #include "FBristleconeReceiver.h"
 #include "FBristleconeSender.h"
 #include "Subsystems/WorldSubsystem.h"
-#include "UBristleconeConstants.h"
-#include "BristleconeCommonTypes.h"
 #include "KeyedConcept.h"
-#include "TransformDispatch.h"
+#include "LongboyClient.h"
 #include "UCablingWorldSubsystem.h"
+#include "Interfaces/IPv4/IPv4Endpoint.h"
+#include "UBristleconeWorldSubsystem.generated.h"
+
 
 //This implementation suffers badly from the general resistance to correct template support
 //in the unreal engine. As a result, this subsystem only supports 8 byte messages.
 //Later, I'll defactor this into a pair of base classes that compose the implementation
 //of UObjects, but for now, I'm leaving it. My use-cases only require the 8byte.
-#include "UBristleconeWorldSubsystem.generated.h"
+
 using namespace TheCone;
 
 UCLASS()
@@ -30,7 +30,6 @@ public:
 	}
 
 
-protected:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
 	virtual void Deinitialize() override;
@@ -86,4 +85,7 @@ public:
 	// Receiver information
 	FBristleconeReceiver receiver_runner;
 	TUniquePtr<FRunnableThread> receiver_thread;
+
+	// Maybe this will be per player instead of per world, or perhaps even per game instance (lets figure this out sooner rather than later).
+	TUniquePtr<FLongboyClient> Longboy;
 };

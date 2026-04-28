@@ -64,4 +64,6 @@ void UArtilleryFireControl::OnComponentDestroyed(bool bDestroyingHierarchy)
 	{
 		MyDispatch->Deregister(Gun); // emergency deregister.
 	}
+	
+	MyAttributes.Reset();
 }

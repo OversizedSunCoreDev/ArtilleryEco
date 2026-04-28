@@ -1,10 +1,14 @@
 #pragma once
-#define NOSVML
+#ifndef NOSVML
+	#define NOSVML
+#endif
 #include "LCM_Config.h"
 #if __has_include("sleef.h")
 #    include "sleef.h"
 #else
-#    define NO_SLEEF
+	#ifndef NO_SLEEF
+		#define NO_SLEEF true
+	#endif
 #endif
 #include "immintrin.h"
 #include <cmath>

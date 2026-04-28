@@ -7,10 +7,10 @@
 #include "BarrageDispatch.h"
 #include "Containers/TripleBuffer.h"
 
-FArtilleryBusyWorker::FArtilleryBusyWorker() : RequestorQueue_Abilities_TripleBuffer(nullptr), running(false)
+FArtilleryBusyWorker::FArtilleryBusyWorker()
 {
 	UE_LOG(LogTemp, Display, TEXT("Artillery:BusyWorker: Constructing Artillery"));
-	TagRollbackManagement = TSet<FConservedTags>();
+	TagRollbackManagement = FTMap();
 }
 
 FArtilleryBusyWorker::~FArtilleryBusyWorker()
@@ -30,6 +30,8 @@ void FArtilleryBusyWorker::RunStandardFrameSim(bool& missedPrior, uint64_t& curr
                                                bool& burstDropDetected, PacketElement& current,
                                                bool& RemoteInput)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(FArtilleryBusyWorker::RunStandardFrameSim)
+	
 	//this is an odd thing to do, I know, but we have some book-keeping we want to reserve for each code path.
 	//once this settles a little, I'll refactor, but I'm going to end up reworking this next weekend.
 	if (InputRingBuffer != nullptr && !InputRingBuffer.Get()->IsEmpty())
@@ -158,6 +160,8 @@ void FArtilleryBusyWorker::RunStandardFrameSim(bool& missedPrior, uint64_t& curr
 //correct\true order to run things with the same timestamp in. This is fixable but it's gonna need to wait.
 void FArtilleryBusyWorker::ProcessRequestRouterBusyWorkerThread()
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(FArtilleryBusyWorker::ProcessRequestRouterBusyWorkerThread)
+
 	if (RequestRouter)
 	{
 		for (F_INeedA::FeedMap& WorkerFeedMap : RequestRouter->BusyWorkerAcc)
@@ -173,12 +177,19 @@ void FArtilleryBusyWorker::ProcessRequestRouterBusyWorkerThread()
 					{
 					case ArtilleryRequestType::TagReferenceModel:
 						{
-							TagRollbackManagement.Add(Request.ConservedTags);
+							if (TagRollbackManagement.Find(Request.SourceOrSelf) == nullptr)
+							{
+								TagRollbackManagement.Add(Request.SourceOrSelf, Request.ConservedTags);
+							}
+							else
+							{
+								CustomTimer<"ReferenceInitAttemptedOnInited"> RateCheck;
+							}
 						}
 						break;
 					case ArtilleryRequestType::NoTagReferenceModel:
 						{
-							TagRollbackManagement.Remove(Request.ConservedTags);
+							TagRollbackManagement.Remove(Request.SourceOrSelf);
 						}
 						break;
 					case ArtilleryRequestType::FakeTransformUpdate:
@@ -189,12 +200,11 @@ void FArtilleryBusyWorker::ProcessRequestRouterBusyWorkerThread()
 								TSharedPtr<TransformUpdatesForGameThread> HoldOpenTransformPump =  UBarrageDispatch::SelfPtr->GameTransformPump;
 								if (HoldOpenTransformPump)
 								{
-									HoldOpenTransformPump->Enqueue(TransformUpdate(
+									HoldOpenTransformPump->AddMove(
 										Request.SourceOrSelf,
 										Request.Stamp,
 										FQuat4f(Request.ThingRotator.Quaternion()),
-										FVector3f(Request.ThingVector),
-										0));
+										FVector3f(Request.ThingVector));
 								}
 							}
 						}
@@ -205,7 +215,6 @@ void FArtilleryBusyWorker::ProcessRequestRouterBusyWorkerThread()
 							Fatal,
 							TEXT("ArtilleryDispatch::ProcessRequestRouterGameThread: Received Request Router request for unimplemented request type: [%d]"),
 							Request.GetType());
-						throw;
 					}
 				}
 			}
@@ -220,14 +229,19 @@ void FArtilleryBusyWorker::RunFrameProcessingLoop(bool missedPrior, uint64_t cur
 	while (running)
 	{
 		if (!sent &&
+			!bPaused &&
 			(
-				InputRingBuffer != nullptr && !InputRingBuffer.Get()->IsEmpty()
-				|| SeqNumber % SendHertzFactor <= SendHertzFactor / 2 //we no longer slide all the way to the end.
+				InputRingBuffer != nullptr &&
+				(!InputRingBuffer.Get()->IsEmpty() || SeqNumber % SendHertzFactor <= SendHertzFactor / 2)
+				//we no longer slide all the way to the end.
 				//Instead, we only slide to 1/2, so somewhat less latency than a curious version of 256hz.
-				//I resent it, but the beast of nonetime had to go. 
+				//I resent it, but the beast of nonetime had to go.
+						//it got a last hit in.
+						//jmk 12/6/25
 			)
 		)
 		{
+			TRACE_CPUPROFILER_EVENT_SCOPE(FArtilleryBusyWorker::RunFrameProcessingLoop)
 			CustomTimer<"BusyWorkerCoreLoop"> Time;
 			currentIndexCabling = CablingControlStream->highestInput;
 			PacketElement current = 0;
@@ -239,18 +253,17 @@ void FArtilleryBusyWorker::RunFrameProcessingLoop(bool missedPrior, uint64_t cur
 			*/
 			sent = true;
 			TickliteNow = ContingentInputECSLinkage->Now(); // this updates ONCE PER CYCLE. ONCE. THIS IS INTENDED.
-
+			CustomTimer<"BusyWorkerCoreLoopAfterFrameSim"> TimerSimless;
 			ProcessRequestRouterBusyWorkerThread();
 			//tag container save-off currently happens before player and player-like locomotion.
 			//this SHOULD be the right place, by my limited reasoning, but I could be wrong.
-			for (FConservedTags& TagSet : TagRollbackManagement)
-			{
-				if (TagSet)
-				{
-					TagSet->CacheLayer();	
-				}
-			}
-			
+			// for (auto TagSet : TagRollbackManagement) // do not change to ref.
+			// {
+			// 	if (TagSet.Value)
+			// 	{
+			// 		TagSet.Value->CacheLayer();	
+			// 	}
+			// }
 			ArtilleryDispatch->RunLocomotions();
 			//such a simple thing, after all this work.
 			if (ContingentPhysicsLinkage == nullptr) 
@@ -260,16 +273,25 @@ void FArtilleryBusyWorker::RunFrameProcessingLoop(bool missedPrior, uint64_t cur
 			}
 			else // yeah, I know it's optional, but stylistically, it's important.
 			{
-				ContingentPhysicsLinkage->StackUp();
-
-				StartTicklitesApply->Trigger();
-				StartRunAhead->Trigger();
-				ContingentPhysicsLinkage->StepWorld(TickliteNow, SeqNumber);
+				{
+					CustomTimer<"BusyWorkerPhysicsAll"> TimerPhysAll;
+					ContingentPhysicsLinkage->StackUp();
+					StartTicklitesApply->Trigger();
+					StartRunAhead->Trigger();
+					{
+						CustomTimer<"BusyWorkerPhysicsStep"> TimerPhys;
+						ContingentPhysicsLinkage->StepWorld(TickliteNow, SeqNumber);
+					}
+				}
 				// ReSharper disable once CppExpressionWithoutSideEffects (it has _ rather a lot _ of side-effects)
 				ContingentPhysicsLinkage->BroadcastContactEvents();
 				if (ParticleSystemPointer)
 				{
 					ParticleSystemPointer->ArtilleryTick(); //currently a no-op.
+				}
+				if (SkeletalMeshSystemPointer)
+				{
+					SkeletalMeshSystemPointer->ArtilleryTick();
 				}
 				if (ProjectileSystemPointer)
 				{
@@ -300,7 +322,6 @@ void FArtilleryBusyWorker::RunFrameProcessingLoop(bool missedPrior, uint64_t cur
 		else if (lsbTime + (1.3 * (HalfStep).count()) <= (LastIncrementWindow + Period))
 		{
 			std::this_thread::sleep_for(HalfStep);
-			lsbTime = NarrowClock::getSlicedMicrosecondNow();
 		}
 		
 		lsbTime = ContingentInputECSLinkage->Now();
@@ -309,6 +330,8 @@ void FArtilleryBusyWorker::RunFrameProcessingLoop(bool missedPrior, uint64_t cur
 
 uint32 FArtilleryBusyWorker::Run()
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(FArtilleryBusyWorker::Run)
+
 	UE_LOG(LogTemp, Display, TEXT("Artillery:BusyWorker: Running Artillery thread"));
 	if (RequestorQueue_Abilities_TripleBuffer == nullptr)
 	{
@@ -336,8 +359,7 @@ uint32 FArtilleryBusyWorker::Run()
 	// we prefer to land near the _start_ of a period, so we bias.
 	constexpr auto HalfStep = std::chrono::microseconds(Period / 2);
 
-	//we can now start the sim. we latch only on the apply step.
-	StartTicklitesSim->Trigger();
+
 	//we are started by Artillery Dispatch, but we can't use it in the .h file to avoid dependencies.
 	//so we know it's live, but we don't take a ref to it until this point.
 	//we only use it for GrantFeed, but it's important that we start abiding by separation of concerns

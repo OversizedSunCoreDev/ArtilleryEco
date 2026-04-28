@@ -70,18 +70,24 @@ public:
 	}
 	
 	void UpdateTransferTime() {
-		transfer_time = NarrowClock::getSlicedMicrosecondNow();
+		uint32 new_time = NarrowClock::getSlicedMicrosecondNow();
+		// verify it fits in the 16 bit range, if not, reset to 0 and start again. This means that if we have a packet that is delayed by more than 65ms, it will appear to have been sent just now, but that's still better than it appearing to have been sent in the far past. Or is it?
+		if (new_time > TNumericLimits<uint16>::Max()) {
+			transfer_time = 0;
+		} else {
+			transfer_time = static_cast<uint16>(new_time);
+		}
 	}
 
 	long GetCycleMeta() const {
 		return cycle_metadata;
 	}
 
-	void UpdateCycleOrMeta(long update) {
+	void UpdateCycleOrMeta(uint16 update) {
 		cycle_metadata = update;
 	}
 
-	void UpdateTransferTime(long forceTimeStamp) {
+	void UpdateTransferTime(uint16 forceTimeStamp) {
 		transfer_time = forceTimeStamp;
 	}
 
@@ -109,8 +115,8 @@ private:
 	//When we have a 16 byte use case, I'll come back and tidy this up
 	//by making those headers an optional type component
 	//but for now, the extra debug info is really really useful.
-	long transfer_time;
-	long cycle_metadata;
+	uint16 cycle_metadata;
+	uint16 transfer_time;
 	// Data clone
 	CLONE_TYPE clone_array[CLONE_SIZE];
 };

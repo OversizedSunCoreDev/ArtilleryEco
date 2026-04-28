@@ -37,6 +37,8 @@ public class ThistleRuntime : ModuleRules
 			"GameplayBehaviorsModule",
 			"MassAIBehavior", 
 			"GameplayStateTreeModule",
+			"LocomoCore",
+			"JoltPhysics",
 		]);
 		
 		PrivateDependencyModuleNames.AddRange([
@@ -53,7 +55,7 @@ public class ThistleRuntime : ModuleRules
             "NavigationSystem",
             "StateTreeModule",
             "GameplayStateTreeModule",
-            "MassAIBehavior",
+            "MassAIBehavior", "MegafunkUtils",
 		]);
 		
 		DynamicallyLoadedModuleNames.AddRange([]);

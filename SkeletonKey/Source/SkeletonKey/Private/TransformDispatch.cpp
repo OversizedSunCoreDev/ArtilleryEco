@@ -6,7 +6,7 @@
 
 UTransformDispatch::UTransformDispatch()
 {
-	ObjectToTransformMapping = MakeShareable(new KineLookup());
+	ObjectToTransformMapping = MakeShareable(new KineLookup(4096));
 }
 
 UTransformDispatch::~UTransformDispatch()
@@ -34,17 +34,18 @@ void UTransformDispatch::RegisterObjectToShadowTransform(FSkeletonKey Target, US
 	ObjectToTransformMapping->insert_or_assign(Target, kine);
 }
 
-TSharedPtr<Kine> UTransformDispatch::GetKineByObjectKey(FSkeletonKey Target) const
+inline TSharedPtr<Kine> UTransformDispatch::GetKineByObjectKey(FSkeletonKey Target) const
 {
 	TSharedPtr<KinematicRef> ref;
-	ObjectToTransformMapping->find(Target, ref);
+	ObjectToTransformMapping->visit(Target, [&ref](auto& a){ref = a.second;});
 	return ref ? ref : nullptr;
 }
+
 
 TSharedPtr<ActorKine> UTransformDispatch::GetActorKineByObjectKey(FSkeletonKey Target) const
 {
 	TSharedPtr<Kine> ref;
-	ObjectToTransformMapping->find(Target, ref);
+	ObjectToTransformMapping->visit(Target, [&ref](auto& a){ref = a.second;});
 	// TODO: this isn't safe, will probably throw if its not actually an ActorKine
 	return ref ? StaticCastSharedPtr<ActorKine>(ref) : nullptr;
 }
@@ -52,7 +53,7 @@ TSharedPtr<ActorKine> UTransformDispatch::GetActorKineByObjectKey(FSkeletonKey T
 TWeakObjectPtr<AActor> UTransformDispatch::GetAActorByObjectKey(FSkeletonKey Target) const
 {
 	TSharedPtr<ActorKine> ActorKinePtr = GetActorKineByObjectKey(Target);
-	return ActorKinePtr.IsValid() ? ActorKinePtr->MySelf : nullptr;
+	return ActorKinePtr.IsValid() && Target.IsValid() ? ActorKinePtr->MySelf : nullptr;
 }
 
 //actual release happens 
@@ -71,7 +72,7 @@ void UTransformDispatch::ReleaseKineByKey(FSkeletonKey Target)
 TOptional<FTransform> UTransformDispatch::CopyOfTransformByObjectKey(FSkeletonKey Target) 
 {
 	TSharedPtr<KinematicRef> ref;
-	ObjectToTransformMapping->find(Target, ref);
+	ObjectToTransformMapping->visit(Target, [&ref](auto& a){ref = a.second;});
 	return ref ? ref.Get()->CopyOfTransformLike() : TOptional<FTransform>();
 }
 
@@ -96,6 +97,8 @@ void UTransformDispatch::Initialize(FSubsystemCollectionBase& Collection)
 void UTransformDispatch::Deinitialize()
 {
 	SelfPtr = nullptr;
+	ObjectToTransformMapping->clear();
+	
 	Super::Deinitialize();
 }
 

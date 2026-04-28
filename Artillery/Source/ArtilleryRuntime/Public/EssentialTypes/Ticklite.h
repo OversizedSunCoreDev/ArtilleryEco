@@ -70,8 +70,8 @@ namespace Ticklites
 
 namespace Arty
 {
-	typedef TPair<TSharedPtr<TicklitePrototype>, TicklitePhase> StampLiteRequest;
-	typedef TArray< TSharedPtr<TicklitePrototype>> TickliteGroup;
+	typedef TPair<TicklitePrototype*, TicklitePhase> StampLiteRequest;
+	typedef std::vector< TicklitePrototype*> TickliteGroup;
 	typedef TCircularQueue<StampLiteRequest> TickliteRequests;
-	typedef TSharedPtr<TCircularQueue<StampLiteRequest>> TickliteBuffer;
+	typedef TCircularQueue<StampLiteRequest> TickliteBuffer;
 }

@@ -3,9 +3,6 @@
 #include "CoreMinimal.h"
 #include "ArtilleryShell.h"
 #include "UObject/ObjectMacros.h"
-#include "UObject/Interface.h"
-#include "GameFramework/Actor.h"
-#include "UObject/ScriptMacros.h"
 #include "KeyedConcept.h"
 #include "ArtilleryActorControllerConcepts.generated.h"
 

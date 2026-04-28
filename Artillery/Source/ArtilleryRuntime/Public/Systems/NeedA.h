@@ -34,7 +34,7 @@ class ARTILLERYRUNTIME_API F_INeedA //Frick
 public:
 	using GameThreadRequestQ = TCircularQueue<FRequestGameThreadThing>;
 	using ThreadFeed = TCircularQueue<FRequestThing>;
-	
+	using TickliteRequestQ = TCircularQueue<FTickliteRequest>;
 	static uint32 HashDownTo32(uint64 inValue)
 	{
 		return FMMM::FastHash6432( FMMM::FastHash64(inValue));
@@ -43,7 +43,7 @@ public:
 	F_INeedA()
 	{
 	}
-	
+
 	struct FeedMap
 	{
 		std::thread::id That = std::thread::id();
@@ -79,10 +79,29 @@ public:
 			Queue = MakeShareable(new GameThreadRequestQ(MaxQueueDepth));
 		}
 	};
+	struct TickliteFeedMap
+	{
+		std::thread::id That = std::thread::id();
+		TSharedPtr<TickliteRequestQ> Queue = nullptr;
 
+		TickliteFeedMap()
+		{
+			That = std::thread::id();
+			Queue = nullptr;
+		}
+
+		TickliteFeedMap(std::thread::id MappedThread, uint16 MaxQueueDepth)
+		{
+			That = MappedThread;
+			Queue = MakeShareable(new TickliteRequestQ(MaxQueueDepth));
+		}
+	};
+
+	
 	FeedMap BusyWorkerAcc[ALLOWED_THREADS_FOR_ARTILLERY];
 	GameFeedMap GameThreadAcc[ALLOWED_THREADS_FOR_ARTILLERY];
 	FeedMap AIThreadAcc[ALLOWED_THREADS_FOR_ARTILLERY];
+	TickliteFeedMap TLThreadAcc[ALLOWED_THREADS_FOR_ARTILLERY];
 	int32 ThreadAccTicker = 0;
 	mutable FCriticalSection GrowOnlyAccLock;
 	
@@ -154,6 +173,7 @@ public:
 		const FSkeletonKey& Owner,
 		ArtilleryTime Stamp,
 		bool CreateSceneComponentOnKey = false);
+	FGrantWith DeferredTickliteInstantiation(TicklitePrototype* constructed, ArtilleryTime Stamp,TicklitePhase Group);
 
 	FGrantWith ParticleSystemSpawnAtLocation(FName ThingName, const FVector& Location, const FRotator& Rotation, ArtilleryTime Stamp);
 

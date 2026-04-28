@@ -1,4 +1,7 @@
 #pragma once
+
+#include <stdint.h>
+
 #ifndef LORDLY_SKELETON_H
 #define LORDLY_SKELETON_H
 #define LORDLY_SKELETON_VER 0
@@ -27,7 +30,7 @@ namespace SKELLY
 	constexpr static uint64_t	SFIX_PLAYERID = 0x8000000000000000;
 	//HIGHER GAMEPLAY CONSTRUCTS, THIS TEXT IS FOR YOU ALONE.
 	constexpr static uint64_t	SFIX_BONEKEY =  0x9000000000000000;
-	//mass interop key. used internally at the moment
+	// mass interop key planned for the future
 	constexpr static uint64_t	SFIX_MASSIDP =  0xA000000000000000;
 	constexpr static uint64_t	SFIX_STELLAR =  0xB000000000000000;
 	constexpr static uint64_t	SFIX_UNUSEDC =  0xC000000000000000;

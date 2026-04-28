@@ -4,10 +4,12 @@
 #include "Containers/CircularQueue.h"
 #include <thread>
 
+#include "ConservedStream.hpp"
 #include "MashFunctions.h"
 #include "SkeletonTypes.generated.h"
 
 using BristleTime = long; //this will become uint32. don't bitbash this.
+//currently: duration_cast<duration<uint32_t, std::micro>>(system_clock::now().time_since_epoch()).count();
 using ArtilleryTime = BristleTime;
 typedef uint32_t InputStreamKey;
 
@@ -210,7 +212,29 @@ struct TransformUpdate
 	uint64 sequence;
 	FQuat4f Rotation;// this alignment looks wrong. Like outright wrong.
 	FVector3f Position;
-	uint32 speed;// unused at the moment, here to support smearing if needed.
+	uint8 UnusedA;
+	uint8 Speed;
+	uint8 RunAtLeastOnce;
+	uint8 UnusedB;
+	void FlagRun()
+	{
+		RunAtLeastOnce = 1;
+	}
+};
+
+
+//currently, this is unused. which is a little depressing.
+//you can check out 3e84989bf40321efa25f01d2317f0193f07a7717 to see what it looked like
+//but for now, it's slower to pack and unpack, which makes a dark sort of sense.
+struct PackedTransformUpdate
+{
+	FSkeletonKey ObjectKey;
+	FVector3f Rotation;// this alignment looks wrong. Like outright wrong.
+	FVector3f Position;
+ void FlagRun()
+ {
+	 
+ }
 };
 
 template<class FeedType>
@@ -372,7 +396,8 @@ inline FSkeletonKey& FSkeletonKey::operator=(const FConstellationKey& rhs)
 	return *this;
 }
 
-using TransformUpdatesForGameThread = TCircularQueue<TransformUpdate>;
+
+
 
 typedef TArray<ActorKey> ActorKeyArray;
 

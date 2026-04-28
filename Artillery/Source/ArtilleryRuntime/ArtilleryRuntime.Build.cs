@@ -1,7 +1,5 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
-using System;
 using System.IO;
-using EpicGames.Core;
 using UnrealBuildTool;
 
 public class ArtilleryRuntime : ModuleRules
@@ -50,6 +48,8 @@ public class ArtilleryRuntime : ModuleRules
 				"LocomoCore",
 				"Niagara", 
 				"Niagara", 
+				"JoltPhysics", 
+				"MegafunkUtils",
 				// ... add other public dependencies that you statically link with here ...
 			}
 			);
@@ -63,6 +63,7 @@ public class ArtilleryRuntime : ModuleRules
 				"Engine",
 				"Slate",
 				"SlateCore",
+				"TraceLog",
 				"GameplayAbilities",
 				"GameplayTasks",
 				"GameplayTags",
@@ -70,16 +71,17 @@ public class ArtilleryRuntime : ModuleRules
 				"SkeletonKey", 
 				"Barrage", 
 				"LocomoCore",
+				"Landscape",
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);
-
-
-		DynamicallyLoadedModuleNames.AddRange(
-			new string[]
+		
+		if (Target.bBuildEditor)
+		{
+			PrivateDependencyModuleNames.AddRange(new string[]
 			{
-				// ... add any modules that your module loads dynamically here ...
-			}
-			);
+				"UnrealEd"
+			});
+		}
 	}
 }

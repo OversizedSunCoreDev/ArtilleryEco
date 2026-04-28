@@ -17,7 +17,8 @@ void UStaticGunLoader::Initialize(FSubsystemCollectionBase& Collection)
 	}
 	if (Seek == nullptr)
 	{
-		throw "Hey, there's no gun data file in any of the places we look.";
+		  
+		UE_LOG(LogTemp, Error, TEXT("GunLoader: Hey, there's no gun data file in any of the places we look."));
 	}
 	Definitions = Cast<UDataTable>(Seek); 
 	Definitions->ForeachRow<FGunDefinitionRow>(
@@ -34,7 +35,7 @@ void UStaticGunLoader::Initialize(FSubsystemCollectionBase& Collection)
 			if (LoadFrom.IsValid())
 			{
 				//UE_LOG(LogTemp, Warning, TEXT("GunLoader: Loading..."));
-				UScriptStruct* StructMetadata = FindObject<UScriptStruct>(LoadFrom, false);
+				UScriptStruct* StructMetadata = FindObject<UScriptStruct>(LoadFrom, EFindObjectFlags::None);
 				//for reference, this log line + input
 				//UScriptStruct* pointofcomp = FArtilleryGun::StaticStruct();
 				//UE_LOG(LogTemp, Warning, TEXT("GunLoader: FArtilleryGun Info: [%s], [%s]"), *pointofcomp->GetStructCPPName(), *pointofcomp->GetStructPathName().ToString());

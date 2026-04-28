@@ -45,8 +45,8 @@
 // RightTrigger,
 // Followed by six virtual buttons
 // StickFlick
-// Unused
-// Unused
+// Left Stick Click
+// Right Stick Click
 // Unused
 // Unused
 // Unused

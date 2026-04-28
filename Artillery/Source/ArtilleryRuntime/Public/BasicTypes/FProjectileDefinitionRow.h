@@ -1,10 +1,10 @@
 ﻿#pragma once
 
-#include "CoreMinimal.h"
-#include "CoreTypes.h"
 #include "Engine/DataTable.h"
 
 #include "FProjectileDefinitionRow.generated.h"
+class UNiagaraDataChannelAsset;
+class UStaticMesh;
 
 USTRUCT(BlueprintType)
 struct FProjectileDefinitionRow : public FTableRowBase

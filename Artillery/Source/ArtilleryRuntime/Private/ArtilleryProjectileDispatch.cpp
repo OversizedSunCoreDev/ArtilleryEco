@@ -8,6 +8,8 @@
 
 void UArtilleryProjectileDispatch::ArtilleryTick()
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(UArtilleryProjectileDispatch::ArtilleryTick)
+
 	//On Tick, we see if anybody needs to go.
 	++ExpirationCounter;
 	auto Ref = Deadliner.UpdateAndConsume();
@@ -113,15 +115,14 @@ void UArtilleryProjectileDispatch::Deinitialize()
 	ExpirationCounter = 0;
 	if (HoldOpen)
 	{
-		KeyToItemCuckooMap::locked_table HoldOpenLocked = HoldOpen->lock_table();
-		for (std::pair<FSkeletonKey, TWeakObjectPtr<AInstancedMeshManager>> RemainingKey : HoldOpenLocked)
+		HoldOpen->visit_all([](auto& RemainingKey)
 		{
 			TWeakObjectPtr<AInstancedMeshManager> Hold = RemainingKey.second;
 			if (Hold != nullptr)
 			{
 				Hold->CleanupInstance(RemainingKey.first);
 			}
-		}
+		});
 	}
 	
 	if (HoldOpenManagers)
@@ -184,7 +185,8 @@ FSkeletonKey UArtilleryProjectileDispatch::QueueProjectileInstance(const FName P
 		                                  Gun, MyDispatch->GetShadowNow(), Layer, LifetimeInTicks);
 		if (TagArray != nullptr)
 		{
-			FConservedTags TagContainer = MyDispatch->GetOrRegisterConservedTags(ProjectileKey);
+			bool Found = false; // this is primarily a debug reporting mechanism.
+			FConservedTags TagContainer = MyDispatch->GetOrRegisterConservedTags(ProjectileKey,Found);
 			if (TagContainer.IsValid())
 			{
 				for (FGameplayTag& Tag : *TagArray)
@@ -252,8 +254,9 @@ void UArtilleryProjectileDispatch::DeleteProjectile(const FSkeletonKey Target)
 	if (UArtilleryDispatch::SelfPtr)
 	{
 		TWeakObjectPtr<AInstancedMeshManager> MeshManager;
-		ProjectileKeyToMeshManagerMapping->find(Target, MeshManager);
-		UArtilleryDispatch::SelfPtr->DeregisterGameplayTags(Target);
+		//->visit(Target, [&In](auto& a) { In = a.second; })
+		ProjectileKeyToMeshManagerMapping->visit(Target, [&MeshManager](auto& a) { MeshManager = a.second; });
+		//Tag deregistration is now mandatory for all tombstoned primitives.
 		if (MeshManager.IsValid())
 		{
 			MeshManager->CleanupInstance(Target);
@@ -275,7 +278,8 @@ TWeakObjectPtr<AInstancedMeshManager> UArtilleryProjectileDispatch::GetProjectil
 	const FSkeletonKey ProjectileKey)
 {
 	TWeakObjectPtr<AInstancedMeshManager> ManagerRef;
-	ProjectileKeyToMeshManagerMapping->find(ProjectileKey, ManagerRef);
+	//->visit(Target, [&MeshManager](auto& a) { MeshManager = a.second; })
+	ProjectileKeyToMeshManagerMapping->visit(ProjectileKey, [&ManagerRef](auto& a) { ManagerRef = a.second; });//->find(ProjectileKey, ManagerRef);
 	return ManagerRef;
 }
 
@@ -283,7 +287,7 @@ TWeakObjectPtr<USceneComponent> UArtilleryProjectileDispatch::GetSceneComponentF
 	const FSkeletonKey ProjectileKey)
 {
 	TWeakObjectPtr<AInstancedMeshManager> ManagerRef;
-	ProjectileKeyToMeshManagerMapping->find(ProjectileKey, ManagerRef);
+	ProjectileKeyToMeshManagerMapping->visit(ProjectileKey, [&ManagerRef](auto& a) { ManagerRef = a.second; });//->find(ProjectileKey, ManagerRef);
 	return ManagerRef.IsValid() ? ManagerRef->GetSceneComponentForInstance(ProjectileKey) : nullptr;
 }
 
@@ -329,7 +333,7 @@ void UArtilleryProjectileDispatch::OnBarrageContactAdded(const BarrageContactEve
 				if (KeyIntoArtillery.IsValid())
 				{
 					FGunKey GunKey;
-					bool found = ProjectileToGunMapping->find(KeyIntoArtillery, GunKey);
+					size_t found = ProjectileToGunMapping->visit(KeyIntoArtillery, [&GunKey](auto& a) { GunKey = a.second; }); //->find(KeyIntoArtillery, GunKey);
 					if (found)
 					{
 						TSharedPtr<FArtilleryGun> ProjectileGun = MyDispatch->GetPointerToGun(GunKey);
@@ -341,6 +345,7 @@ void UArtilleryProjectileDispatch::OnBarrageContactAdded(const BarrageContactEve
 								FSkeletonKey EntityKeyIntoArtillery = hold->KeyOutOfBarrage;
 								if (EntityKeyIntoArtillery.IsValid())
 								{
+									//TODO: Make this a bool so that we can have bouncy grenades.
 									ProjectileGun.Get()->ProjectileCollided(KeyIntoArtillery, EntityKeyIntoArtillery);
 								}
 							}

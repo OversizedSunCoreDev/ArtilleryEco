@@ -68,7 +68,7 @@ FBoxSphereBounds UBarrageDebugComponent::CalcBounds(const FTransform& LocalToWor
 	return Invalid;
 }
 
-#if UE_ENABLE_DEBUG_DRAWING
+#if UE_ENABLE_DEBUG_DRAWING && BARRAGE_DEBUG_ENABLED
 FDebugRenderSceneProxy* UBarrageDebugComponent::CreateDebugSceneProxy()
 {
 	UWorld* World = GetWorld();
@@ -124,8 +124,11 @@ FDebugRenderSceneProxy* UBarrageDebugComponent::CreateDebugSceneProxy()
 			FEveryBarrageDebugRenderProxy* EvilVileThis = const_cast<FEveryBarrageDebugRenderProxy*>(static_cast<const FEveryBarrageDebugRenderProxy*>(this));
 			EvilVileThis->DumpShapes();
 			{
-				QUICK_SCOPE_CYCLE_COUNTER(STAT_BarrageJolt_DBG_GetSingleBody);
-				JPH::BodyLockRead BodyReadLock(EvilVileThis->PhysicsSystem->GetBodyLockInterface(), TargetBodyID);
+				// Pin the weakptr to a shared ptr
+				if (TSharedPtr<JPH::PhysicsSystem> SharedPhysicsSystem = EvilVileThis->PhysicsSystem.Pin()) {
+					QUICK_SCOPE_CYCLE_COUNTER(STAT_BarrageJolt_DBG_GetSingleBody);
+					JPH::BodyLockRead BodyReadLock(SharedPhysicsSystem->GetBodyLockInterface(), TargetBodyID);
+				}
 			}
 			{
 				QUICK_SCOPE_CYCLE_COUNTER(STAT_BarrageJolt_DBG_BuildSingleCommands);

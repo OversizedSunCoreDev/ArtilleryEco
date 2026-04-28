@@ -339,8 +339,8 @@ JPH_NAMESPACE_BEGIN
 			CollidingPairsBehavior(BodyPairCollector& ioCollector, BodyManager* BM, std::shared_ptr<NodeBlob> Shadowed,
 			                       const ObjectLayerPairFilter& inOF, EMBED::HashBlob& Target,
 			                       float inSpeculativeContactDistance)
-				: Collector(ioCollector), mBM(BM), mCachedBodiesRef(Shadowed),
-				  SpeculativeContactDistance(inSpeculativeContactDistance), mObjectLayerPairFilter(inOF), hash(Target)
+				: Collector(ioCollector), mBM(BM), hash(Target),
+				  mCachedBodiesRef(Shadowed), SpeculativeContactDistance(inSpeculativeContactDistance), mObjectLayerPairFilter(inOF)
 			{
 			}
 
@@ -614,7 +614,7 @@ JPH_NAMESPACE_BEGIN
 	{
 		BodyVector& bodies = mBodyManager->GetBodies();
 
-		JPH_ASSERT((int)mBodyIDs.size() >= inNumber);
+		JPH_ASSERT(bodies.size() >= inNumber);
 
 		// Remove bodies
 		for (const BodyID *b = ioBodies, *b_end = ioBodies + inNumber; b < b_end; ++b)

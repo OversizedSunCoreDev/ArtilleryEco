@@ -20,7 +20,7 @@ UBarrageAutoBox::UBarrageAutoBox(const FObjectInitializer& ObjectInitializer) : 
 	}
 
 	bWantsInitializeComponent = true;
-	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.bCanEverTick = false;
 	MyParentObjectKey = 0;
 	bAlwaysCreatePhysicsState = false;
 	UPrimitiveComponent::SetNotifyRigidBodyCollision(false);
@@ -74,13 +74,15 @@ bool UBarrageAutoBox::RegistrationImplementation()
 				}
 				auto offset = FVector3d(OffsetCenterToMatchBoundedShapeX, OffsetCenterToMatchBoundedShapeY, OffsetCenterToMatchBoundedShapeZ);
 				UBarrageDispatch* Physics = GetWorld()->GetSubsystem<UBarrageDispatch>();
+				auto Rotation = FQuat4f(GetOwner()->GetActorRotation().Quaternion());
 				FBBoxParams params = FBarrageBounder::GenerateBoxBounds(
 					GetOwner()->GetActorLocation(),
 					FMath::Max(extents.X, .1),
 					FMath::Max(extents.Y, 0.1),
 					FMath::Max(extents.Z, 0.1),
 					offset,
-					MyMassClass.Category);
+					//DETERMINISM RISK: loss of precision. this should use intentional quant or comparable.
+					MyMassClass.Category, Rotation);
 
 				MyBarrageBody = Physics->CreatePrimitive(params, MyParentObjectKey, static_cast<uint16>(Layer), false, false, isMovable);
 				if (MyBarrageBody)
@@ -88,10 +90,6 @@ bool UBarrageAutoBox::RegistrationImplementation()
 					AnyMesh->WakeRigidBody();
 					IsReady = true;
 					AnyMesh->SetSimulatePhysics(false);
-					for (auto Child : this->GetAttachChildren())
-					{
-						Child->SetRelativeLocation_Direct(Child->GetRelativeLocation() - offset);
-					}
 				}
 			}
 		}
@@ -128,9 +126,9 @@ FPrimitiveSceneProxy* UBarrageAutoBox::CreateSceneProxy()
 		FBarrageBoxSceneProxy(const UBarrageAutoBox* InComponent, FVector3f&& BarragePosition)
 			: FPrimitiveSceneProxy(InComponent)
 			, bDrawOnlyIfSelected(false)
-			, BarragePosition(MoveTemp(BarragePosition))
-			, BoxExtents(InComponent->DiameterXYZ)
 			, bHasBarrageBody(InComponent->GetBarrageBody().IsValid())
+			, BoxExtents(InComponent->DiameterXYZ)
+			, BarragePosition(MoveTemp(BarragePosition))
 		{
 			bWillEverBeLit = false;
 

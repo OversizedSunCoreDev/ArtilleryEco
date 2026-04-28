@@ -26,7 +26,7 @@ class FAutoGunCommunication
 template<typename AutoGunTicklite>
 class AutoWrapperForGun : public FAutoGunCommunication
 {
-	using AutoGunTicklitePtr = TSharedPtr<AutoGunTicklite>;
+	using AutoGunTicklitePtr = AutoGunTicklite*;
 	
 public:
 	AutoWrapperForGun(UArtilleryDispatch* Dispatch, AutoGunTicklitePtr MyGunTriggerHandler, uint16 CadenceInTicks,
@@ -118,7 +118,7 @@ template<uint8 cadence>
 class CadencedAutoGun : public AutoWrapperForGun<TL_CadencedTicklite>
 {
 	//TSharedPtr<> is enforced.
-	CadencedAutoGun(UArtilleryDispatch* Dispatch, TSharedPtr<TL_CadencedTicklite> GunTriggerTicklite)
+	CadencedAutoGun(UArtilleryDispatch* Dispatch, TL_CadencedTicklite* GunTriggerTicklite)
 	: AutoWrapperForGun(Dispatch, GunTriggerTicklite, cadence, false, false)
 	{
 	}

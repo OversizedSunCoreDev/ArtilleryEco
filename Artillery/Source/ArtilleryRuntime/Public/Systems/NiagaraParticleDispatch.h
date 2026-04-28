@@ -15,14 +15,6 @@
 #include "ORDIN.h"
 #include "ParticleRecord.h"
 
-THIRD_PARTY_INCLUDES_START
-PRAGMA_PUSH_PLATFORM_DEFAULT_PACKING
-#include "libcuckoo/cuckoohash_map.hh"
-//typedef libcuckoo::cuckoohash_map<FSkeletonKey, ParticleRecord> ParticleCuckoo;
-typedef libcuckoo::cuckoohash_map<FSkeletonKey, ParticleRecord> KeyToRecordCuckoo;
-typedef TMap<FName, KeyToRecordCuckoo> ParticleCuckoo;
-PRAGMA_POP_PLATFORM_DEFAULT_PACKING
-THIRD_PARTY_INCLUDES_END
 
 #include "NiagaraParticleDispatch.generated.h"
 
@@ -45,6 +37,7 @@ enum E_NiagaraVariableType
 {
 	NONE,
 	Position,
+	Float,
 };
 
 //template <class VariableType>
@@ -105,7 +98,7 @@ class ARTILLERYRUNTIME_API UNiagaraParticleDispatch : public UTickableWorldSubsy
 public:
 	UNiagaraParticleDispatch(): MyDispatch(nullptr)
 	{
-		NameToNiagaraSystemMapping = MakeShareable(new TMap<FString, UNiagaraSystem*>());
+		NameToNiagaraSystemMapping = MakeShareable(new TMap<FString, TSoftObjectPtr<UNiagaraSystem>>());
 		ParticleIDToComponentMapping = MakeShareable(new TMap<FParticleID, TWeakObjectPtr<UNiagaraComponent>>());
 		ComponentToParticleIDMapping = MakeShareable(new TMap<TWeakObjectPtr<UNiagaraComponent>, FParticleID>());
 		BoneKeyToParticleIDMapping = MakeShareable(new TMap<FBoneKey, FParticleID>());
@@ -141,7 +134,7 @@ protected:
 	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
 	virtual void Deinitialize() override;
 
-	TSharedPtr<TMap<FString, UNiagaraSystem*>> NameToNiagaraSystemMapping;
+	TSharedPtr<TMap<FString, TSoftObjectPtr<UNiagaraSystem>>> NameToNiagaraSystemMapping;
 	TSharedPtr<TMap<FParticleID, TWeakObjectPtr<UNiagaraComponent>>> ParticleIDToComponentMapping;
 	TSharedPtr<TMap<TWeakObjectPtr<UNiagaraComponent>, FParticleID>> ComponentToParticleIDMapping;
 

@@ -6,13 +6,16 @@ enum PhysicsInputType
 {
 	SelfMovement,
 	Velocity,
+	DashForce,
+	JumpForce,
+	LungeForce,
 	OtherForce,
 	Rotation,
 	SetPosition,
 	SetGravityFactor,
 	SetCharacterGravity,
 	AIMovement,
-	
+	SetAngularVelocity,
 	// Throttle only applies to characters at the moment, but may come to be used for vehicles.
 	// Throttle offers four variables. Generally, these scale:
 	//x: carry over velocity from the prior tick

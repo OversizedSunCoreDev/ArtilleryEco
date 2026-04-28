@@ -1,14 +1,55 @@
 ﻿#include "FWorldSimOwner.h"
 
 #include "BarrageContactListener.h"
+#include "MashFunctions.h"
 #include "CoordinateUtils.h"
+#include "LandscapeComponent.h"
+#include "LandscapeProxy.h"
 #include "Experimental/CollisionGroupUnaware_FleshBroadPhase.h"
 #include "PhysicsCharacter.h"
+#include "StaticMeshCompiler.h"
 #include "CastShapeCollectors/SphereCastCollector.h"
 #include "CastShapeCollectors/SphereSearchCollector.h"
 #include "CollisionDetectionFilters/FirstHitRayCastCollector.h"
 #include "Chaos/TriangleMeshImplicitObject.h"
+#include "Engine/StaticMesh.h"
+#include "Conversion/BarrageChaosToJoltConversion.h"
 #include "Jolt/Physics/Collision/BroadPhase/BroadPhaseBruteForce.h"
+#include "PhysicsProxy/SingleParticlePhysicsProxy.h"
+
+
+
+int32 GBarrageJoltThreadCountOverride = 0;
+static FAutoConsoleVariableRef CVarBarrageJoltThreadCountOverride(
+	TEXT("barrage.JoltThreadCountOverride"),
+	GBarrageJoltThreadCountOverride,
+	TEXT("User-specified override number of threads the jolt job system uses when simulating phyiscs. Can be changed at runtime in non-shipping builds for now. Only applies above 0."),
+	ECVF_Default
+);
+
+float GCustomBarrageJoltThreadFraction = .75f;
+static FAutoConsoleVariableRef CVarCustomBarrageJoltThreadMultipier(
+	TEXT("barrage.JoltThreadCountMultiplier"),
+	GCustomBarrageJoltThreadFraction,
+	TEXT("Current proportion of logical cores the jolt job system uses. Can be changed at runtime in non-shipping builds for now. Expected to be a normalized value from 0 to 1"
+	  "barrage.JoltThreadCountOverride ignores this value"),
+	ECVF_Default
+);
+
+int32 GetDesiredBarrageJobThreadCount() 
+{
+	if (GBarrageJoltThreadCountOverride > 0) 
+	{
+		return GBarrageJoltThreadCountOverride;
+	}
+
+	// We don't use unreal tasks for speed reasons but we still want to avoid using more than a proportion of cores
+	// By default this is 75% of the system cores
+	const int32 CoreCount = FPlatformMisc::NumberOfCoresIncludingHyperthreads();
+	const int32 PortionedCores = (CoreCount * FMath::Min(GCustomBarrageJoltThreadFraction, 1.f));
+
+	return FMath::Max(1, PortionedCores);
+}
 
 using namespace JOLT;
 //it's going to be quite tempting to make that initexit a const or a reference. don't.
@@ -18,12 +59,8 @@ FWorldSimOwner::FWorldSimOwner(float cDeltaTime, InitExitFunction JobThreadIniti
 	DeltaTime = cDeltaTime;
 
 	BarrageToJoltMapping = MakeShareable(new KeyToBody());
-	BoxCache = MakeShareable(new BoundsToShape());
 	CharacterToJoltMapping = MakeShareable(new TMap<FBarrageKey, TSharedPtr<FBCharacterBase>>());
 	//mTestBroadPhase = std::make_shared<CollisionGroupUnaware_FleshBroadPhase>();
-	// Register allocation hook. In this example we'll just let Jolt use malloc / free but you can override these if you want (see Memory.h).
-	// This needs to be done before any other Jolt function is called.
-	RegisterDefaultAllocator();
 
 	//hey future friend! collision listeners, character collision, and character collision listeners live below. so...
 	//if you are looking for character collision behavior, this is the line that sets it up.
@@ -31,24 +68,14 @@ FWorldSimOwner::FWorldSimOwner(float cDeltaTime, InitExitFunction JobThreadIniti
 	contact_listener = character_contact_listener;
 	Allocator = MakeShareable(new TempAllocatorImpl(AllocationArenaSize));
 	physics_system = MakeShareable(new PhysicsSystem());
-	// Install trace and assert callbacks
-	Trace = TraceImpl;
-	JPH_IF_ENABLE_ASSERTS(AssertFailed = AssertFailedImpl;)
-
-		// Create a factory, this class is responsible for creating instances of classes based on their name or hash and is mainly used for deserialization of saved data.
-		// It is not directly used in this example but still required.
-		Factory::sInstance = new Factory();
-
-	// Register all physics types with the factory and install their collision handlers with the CollisionDispatch class.
-	// If you have your own custom shape types you probably need to register their handlers with the CollisionDispatch before calling this function.
-	// If you implement your own default material (PhysicsMaterial::sDefault) make sure to initialize it before this function or else this function will create one for you.
-	RegisterTypes();
+	
+	// alloc/trace/assert callbacks and type registration is now done in the jolt module to force it to happen once
 
 	// We need a job system that will execute physics jobs on multiple threads. Typically
 	// you would implement the JobSystem interface yourself and let Jolt Physics run on top
 	// of your own job scheduler. JobSystemThreadPool is a (pretty good) example implementation.
 	job_system = MakeShareable(
-		new JobSystemThreadPool(cMaxPhysicsJobs, cMaxPhysicsBarriers, 5));
+		new JobSystemThreadPool(cMaxPhysicsJobs, cMaxPhysicsBarriers, GetDesiredBarrageJobThreadCount()));
 	job_system->SetThreadInitFunction(JobThreadInitializer);
 
 
@@ -244,29 +271,15 @@ EMotionQuality LayerToMotionQualityMapping(uint16 Layer)
 	}
 }
 
-Ref<Shape> FWorldSimOwner::AttemptBoxCache(double JoltX, double JoltY, double JoltZ, float HEReduceMin)
+Ref<Shape> FWorldSimOwner::MakeBox(double JoltX, double JoltY, double JoltZ, float HEReduceMin)
 {
 	Vec3 Bounds(JoltX, JoltY, JoltZ);
-	void* At = &Bounds;
-	uint64 BoundsHash = HashBytes(At, sizeof(Bounds));
-	if (!BoxCache->contains(BoundsHash))
-	{
-		Ref<Shape> NewShape = new BoxShape(Vec3(JoltX, JoltY, JoltZ), FMath::Min(HEReduceMin / 2.f, 0.01));
-		BoxCache->insert_or_assign(BoundsHash, NewShape);
-		return NewShape;
-	}
-	Ref<Shape> Result;
-	if (BoxCache->find(BoundsHash, Result))
-	{
-		return Result;
-	}
 	Ref<Shape> NewShape = new BoxShape(Vec3(JoltX, JoltY, JoltZ), FMath::Min(HEReduceMin / 2.f, 0.01));
-	BoxCache->insert_or_assign(BoundsHash, NewShape);
 	return NewShape;
 }
 
 //we need the coordinate utils, but we don't really want to include them in the .h
-FBarrageKey FWorldSimOwner::CreatePrimitive(FBBoxParams& ToCreate, uint16 Layer, bool IsSensor, bool forceDynamic, bool isMovable)
+FBarrageKey FWorldSimOwner::CreatePrimitive(FBBoxParams& ToCreate, uint16 Layer, bool IsSensor, bool forceDynamic, bool isMovable, float AngularDamp, JPH::EAllowedDOFs AllowedDOF)
 {
 	//if movable, check if dynamic. if not movable but dynamic, come on guys.
 	EMotionType MovementType = isMovable ?
@@ -281,7 +294,7 @@ FBarrageKey FWorldSimOwner::CreatePrimitive(FBBoxParams& ToCreate, uint16 Layer,
 	}
 
 	//not really sure how much our cache helps us, but it could in theory improve GJK perf? Removed for perf testing.
-	Ref<Shape> CachedShape = AttemptBoxCache(ToCreate.JoltX, ToCreate.JoltY, ToCreate.JoltZ, FMath::Min(HEReduceMin / 2.f, 0.02));
+	Ref<Shape> CachedShape = MakeBox(ToCreate.JoltX, ToCreate.JoltY, ToCreate.JoltZ, FMath::Min(HEReduceMin / 2.f, 0.02));
 
 	// We don't expect an error here, but you can check floor_shape_result for HasError() / GetError()
 	// Create the settings for the body itself. Note that here you can also set other properties like the restitution / friction.
@@ -295,13 +308,12 @@ FBarrageKey FWorldSimOwner::CreatePrimitive(FBBoxParams& ToCreate, uint16 Layer,
 	box_body_settings.mMassPropertiesOverride = msp;
 	box_body_settings.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
 	box_body_settings.mIsSensor = IsSensor;
+	box_body_settings.mRotation = CoordinateUtils::ToBarrageRotation(ToCreate.Rotation);
 	box_body_settings.mMotionQuality = MotionQuality;
 	box_body_settings.mRestitution = 0.0;
-
-	if (MovementType == EMotionType::Dynamic && (Layer == Layers::MOVING || Layer == Layers::ENEMY))
-	{
-		box_body_settings.mAllowedDOFs = EAllowedDOFs::TranslationX | EAllowedDOFs::TranslationY | EAllowedDOFs::TranslationZ | EAllowedDOFs::RotationY;
-	}
+	box_body_settings.mMaxAngularVelocity = DegreesToRadians(90);
+	box_body_settings.mAngularDamping = AngularDamp;
+	box_body_settings.mAllowedDOFs = AllowedDOF;
 
 	// Create the actual rigid body
 	Body* box_body = body_interface->CreateBody(box_body_settings);
@@ -319,12 +331,12 @@ FBarrageKey FWorldSimOwner::CreatePrimitive(FBBoxParams& ToCreate, uint16 Layer,
 	BodyID BodyIDTemp = box_body->GetID();
 	FBarrageKey FBK = GenerateBarrageKeyFromBodyId(BodyIDTemp);
 	//Barrage key is unique to WORLD and BODY. This is crushingly important.
-	BarrageToJoltMapping->insert(FBK, BodyIDTemp);
+	BarrageToJoltMapping->insert_or_assign(FBK, BodyIDTemp);
 
 	return FBK;
 }
 
-FBarrageKey FWorldSimOwner::CreatePrimitive(FBCapParams& ToCreate, uint16 Layer, bool IsSensor, bool forceDynamic, bool isMovable)
+FBarrageKey FWorldSimOwner::CreatePrimitive(FBCapParams& ToCreate, uint16 Layer, bool IsSensor, bool forceDynamic, bool isMovable, float AngularDamp, JPH::EAllowedDOFs AllowedDOF)
 {
 	//if movable, check if dynamic. if not movable but dynamic, come on guys.
 	EMotionType MovementType = isMovable ?
@@ -343,13 +355,14 @@ FBarrageKey FWorldSimOwner::CreatePrimitive(FBCapParams& ToCreate, uint16 Layer,
 		MovementType, Layer);
 	JPH::MassProperties msp;
 	msp.ScaleToMass(ToCreate.MassClass); //actual mass in kg
+	cap_body_settings.mAngularDamping = AngularDamp;
+	cap_body_settings.mAllowedDOFs = (EAllowedDOFs)AllowedDOF;
 	cap_body_settings.mMassPropertiesOverride = msp;
 	cap_body_settings.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
 	cap_body_settings.mIsSensor = IsSensor;
+	cap_body_settings.mRotation = CoordinateUtils::ToBarrageRotation( ToCreate.Rotation);
 	cap_body_settings.mMotionQuality = MotionQuality;
 	cap_body_settings.mRestitution = 0.08;
-	cap_body_settings.mAllowedDOFs = EAllowedDOFs::TranslationX | EAllowedDOFs::TranslationY | EAllowedDOFs::TranslationZ | EAllowedDOFs::RotationX | EAllowedDOFs::RotationY | EAllowedDOFs::RotationZ;
-
 	// Create the actual rigid body
 	Body* box_body = body_interface->CreateBody(cap_body_settings);
 	// Note that if we run out of bodies this can return nullptr
@@ -359,7 +372,7 @@ FBarrageKey FWorldSimOwner::CreatePrimitive(FBCapParams& ToCreate, uint16 Layer,
 	BodyID BodyIDTemp = box_body->GetID();
 	FBarrageKey FBK = GenerateBarrageKeyFromBodyId(BodyIDTemp);
 	//Barrage key is unique to WORLD and BODY. This is crushingly important.
-	BarrageToJoltMapping->insert(FBK, BodyIDTemp);
+	BarrageToJoltMapping->insert_or_assign(FBK, BodyIDTemp);
 
 	return FBK;
 }
@@ -386,7 +399,7 @@ FBarrageKey FWorldSimOwner::CreatePrimitive(FBCharParams& ToCreate, uint16 Layer
 	//AddInternalQueuing(BodyIDTemp, 0);// we can't figure this out yet. we'll have to set it later or rearch for data exposure reasons. --JMK, can kicka
 	//Barrage key is unique to WORLD and BODY. This is crushingly important.
 	FBarrageKey FBK = GenerateBarrageKeyFromBodyId(BodyIDTemp);
-	BarrageToJoltMapping->insert(FBK, BodyIDTemp);
+	BarrageToJoltMapping->insert_or_assign(FBK, BodyIDTemp);
 	CharacterToJoltMapping->Add(FBK, NewCharacter);
 	return FBK;
 }
@@ -404,7 +417,7 @@ FBarrageKey FWorldSimOwner::CreatePrimitive(FBSphereParams& ToCreate, uint16 Lay
 	AddInternalQueuing(BodyIDTemp, 0);// we can't figure this out yet. we'll have to set it later or rearch for data exposure reasons. --JMK, can kicka
 	FBarrageKey FBK = GenerateBarrageKeyFromBodyId(BodyIDTemp);
 	//Barrage key is unique to WORLD and BODY. This is crushingly important.
-	BarrageToJoltMapping->insert(FBK, BodyIDTemp);
+	BarrageToJoltMapping->insert_or_assign(FBK, BodyIDTemp);
 	return FBK;
 }
 
@@ -425,8 +438,16 @@ FBarrageKey FWorldSimOwner::CreatePrimitive(FBCapParams& ToCreate, uint16 Layer,
 	AddInternalQueuing(BodyIDTemp, 0);// You know, it feels worse each time I use it.
 	FBarrageKey FBK = GenerateBarrageKeyFromBodyId(BodyIDTemp);
 	//Barrage key is unique to WORLD and BODY. This is crushingly important.
-	BarrageToJoltMapping->insert(FBK, BodyIDTemp);
+	BarrageToJoltMapping->insert_or_assign(FBK, BodyIDTemp);
 	return FBK;
+}
+
+void FWorldSimOwner::GetBodiesList(BodyIDVector &outBodyIDs)
+{
+	if (physics_system)
+	{
+		physics_system->GetBodies(outBodyIDs);
+	}
 }
 
 //If you set layer to nonmoving, you should set movement type to nonmoving as well or you're going to have
@@ -438,6 +459,9 @@ FBLet FWorldSimOwner::LoadComplexStaticMesh(FBTransform& MeshTransform,
 	const UStaticMeshComponent* StaticMeshComponent,
 	FSkeletonKey Outkey, Layers::EJoltPhysicsLayer Layer, EMotionType Movement, bool IsSensor, bool ForceActualMesh, FVector CenterOfMassTranslation)
 {
+	
+	TRACE_CPUPROFILER_EVENT_SCOPE(FWorldSimOwner::LoadComplexStaticMesh)
+
 	// using ParticlesType = Chaos::TParticles<Chaos::FRealSingle, 3>;
 	// using ParticleVecType = Chaos::TVec3<Chaos::FRealSingle>;
 	using ::CoordinateUtils;
@@ -457,130 +481,155 @@ FBLet FWorldSimOwner::LoadComplexStaticMesh(FBTransform& MeshTransform,
 		//simple collision tends to use primitives, in which case, don't call this
 		//or compound shapes which will get added back in.
 	}
-	TObjectPtr<UStaticMesh> CollisionMesh = StaticMeshComponent->GetStaticMesh();
-	if (!CollisionMesh || ForceActualMesh)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Falling back to ACTUAL MESH."));
-		CollisionMesh = StaticMeshComponent->GetStaticMesh();
-	}
+	
+	UStaticMesh* CollisionMesh = StaticMeshComponent->GetStaticMesh();
 	if (!CollisionMesh)
 	{
 		return nullptr;
 	}
-	if (!CollisionMesh->IsCompiling() || !CollisionMesh->IsPostLoadThreadSafe())
+	
+	// In the editor static meshes could still be compiling, so we can be fancy and wait on them here (might be better to just fail?)
+#if WITH_EDITOR
+	if (FStaticMeshCompilingManager::Get().IsAsyncCompilationAllowed(CollisionMesh) && FStaticMeshCompilingManager::Get().IsAsyncStaticMeshCompilationEnabled()) {
+		while (CollisionMesh->IsCompiling())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Barrage: waiting on async mesh compilation for mesh %s"), *CollisionMesh->GetName());
+			FPlatformProcess::Sleep(.25f);
+		}
+	}
+	else {
+		if (CollisionMesh->IsCompiling()) {
+			ensureMsgf(false, TEXT("Editor static mesh compilation prevented "));
+			return nullptr;
+		}
+	}
+#endif
+	
+	UBodySetup* collbody = CollisionMesh->GetBodySetup();
+	if (collbody == nullptr)
 	{
-		UBodySetup* collbody = CollisionMesh->GetBodySetup();
-		if (collbody == nullptr)
+		return nullptr;
+	}
+
+	//Here we go!
+	JPH::ShapeSettings* JoltShapeSetting = Barrage::Conversion::UnrealBodySetupToJolt(collbody, true);
+	if (!JoltShapeSetting)
+	{
+		// Try again but use complex this time
+		JoltShapeSetting = Barrage::Conversion::UnrealBodySetupToJolt(collbody, false, true);
+	}
+	
+	if (!JoltShapeSetting)
+	{
+		return nullptr;
+	}
+	
+	JPH::ShapeSettings::ShapeResult ShapeCreationResult;
+	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(Create Shape)
+		ShapeCreationResult = JoltShapeSetting->Create();
+		if (ShapeCreationResult.HasError())
 		{
+			ensureMsgf(false, TEXT("Jolt body creation failed! Error: %hs"), ShapeCreationResult.GetError().c_str());
 			return nullptr;
 		}
+	}
 
-		//Here we go!
-		TArray<Chaos::FTriangleMeshImplicitObjectPtr>& MeshSet = collbody->TriMeshGeometries;
-		JPH::VertexList JoltVerts;
-		JPH::IndexedTriangleList JoltIndexedTriangles;
-		uint32 tris = 0;
-		for (Chaos::FTriangleMeshImplicitObjectPtr& Mesh : MeshSet)
-		{
-			tris += Mesh->Elements().GetNumTriangles();
-		}
-		JoltVerts.reserve(tris);
-		JoltIndexedTriangles.reserve(tris);
-		for (Chaos::FTriangleMeshImplicitObjectPtr& Mesh : MeshSet)
-		{
-			//indexed triangles are made by collecting the vertexes, then generating triples describing the triangles.
-			//this allows the heavier vertices to be stored only once, rather than each time they are used. for large models
-			//like terrain, this can be extremely significant. though, it's not truly clear to me if it's worth it.
-			const Chaos::FTrimeshIndexBuffer& VertToTriBuffers = Mesh->Elements();
-			const Chaos::TArrayCollectionArray<Chaos::TVector<float, 3>>& Verts = Mesh->Particles().X();
-			if (VertToTriBuffers.RequiresLargeIndices())
-			{
-				for (auto& aTri : VertToTriBuffers.GetLargeIndexBuffer())
-				{
-					JoltIndexedTriangles.push_back(IndexedTriangle(aTri[2], aTri[1], aTri[0]));
-				}
-			}
-			else
-			{
-				for (auto& aTri : VertToTriBuffers.GetSmallIndexBuffer())
-				{
-					JoltIndexedTriangles.push_back(IndexedTriangle(aTri[2], aTri[1], aTri[0]));
-				}
-			}
+	//TODO: should we be holding the shape ref in gamesim owner?
+	const Ref<Shape>& CreatedShape = ShapeCreationResult.Get();
 
-			for (auto& vtx : Verts)
-			{
-				//need to figure out how to defactor this without breaking typehiding or having to create a bunch of util.h files.
-				//though, tbh, the util.h is the play. TODO: util.h ?
-				JoltVerts.push_back(CoordinateUtils::ToJoltCoordinates(vtx));
-			}
-		}
-		JPH::MeshShapeSettings FullMesh(JoltVerts, JoltIndexedTriangles);
-		//just the last boiler plate for now.
-		JPH::ShapeSettings::ShapeResult err = FullMesh.Create();
-		if (err.HasError())
-		{
-			return nullptr;
-		}
-		//TODO: should we be holding the shape ref in gamesim owner?
-		auto& shape = err.Get();
-
-		BodyCreationSettings creation_settings;
-		creation_settings.mMotionType = Movement;
-		creation_settings.mObjectLayer = Layer;
-		creation_settings.mFriction = 0.5f;
-		creation_settings.mOverrideMassProperties = EOverrideMassProperties::MassAndInertiaProvided;
-		creation_settings.mRestitution = 0;
-		creation_settings.mMassPropertiesOverride.SetMassAndInertiaOfSolidBox(shape->GetLocalBounds().GetExtent() * 2, 1);
-		creation_settings.mMassPropertiesOverride.mMass = EBWeightClasses::HugeEnemy;
-		creation_settings.mMotionQuality = MotionQuality;
-		creation_settings.mUseManifoldReduction = true;
-		creation_settings.mIsSensor = IsSensor;
-		creation_settings.mAllowSleeping = false;
-		Shape::ShapeResult result = shape->ScaleShape(MeshTransform.GetJoltScale());
-		if (result.HasError() || result.IsEmpty())
-		{
-			throw;
-		}
-		//reminder: translation and position do differ.
-		if (CenterOfMassTranslation == FVector::ZeroVector && MeshTransform.GetRotationQuat() == FQuat4f::Identity)
-		{
-			creation_settings.SetShape(result.Get());
-		}
-		else
-		{
-			Ref<Shape> OriginAndRotationApplied = new RotatedTranslatedShape(CoordinateUtils::ToJoltCoordinates(CenterOfMassTranslation), CoordinateUtils::ToJoltRotation(MeshTransform.GetRotationQuat()), result.Get());
-			creation_settings.SetShape(OriginAndRotationApplied);
-		}
-		creation_settings.mPosition = CoordinateUtils::ToJoltCoordinates(MeshTransform.GetUnrealLocation());
+	BodyCreationSettings creation_settings;
+	creation_settings.mMotionType = Movement;
+	creation_settings.mObjectLayer = Layer;
+	creation_settings.mFriction = 0.5f;
+	creation_settings.mOverrideMassProperties = EOverrideMassProperties::MassAndInertiaProvided;
+	creation_settings.mRestitution = 0;
+	creation_settings.mMassPropertiesOverride.SetMassAndInertiaOfSolidBox(CreatedShape->GetLocalBounds().GetExtent() * 2, 1);
+	creation_settings.mMassPropertiesOverride.mMass = EBWeightClasses::HugeEnemy;
+	creation_settings.mMotionQuality = MotionQuality;
+	creation_settings.mUseManifoldReduction = true;
+	creation_settings.mIsSensor = IsSensor;
+	creation_settings.mAllowSleeping = false;
+	Shape::ShapeResult result = CreatedShape->ScaleShape(MeshTransform.GetJoltScale());
+	if (result.HasError() || result.IsEmpty())
+	{
+		throw;
+	}
+	//reminder: translation and position do differ.
+	if (CenterOfMassTranslation == FVector::ZeroVector && MeshTransform.GetRotationQuat() == FQuat4f::Identity)
+	{
+		creation_settings.SetShape(result.Get());
+	}
+	else
+	{
+		Ref<Shape> OriginAndRotationApplied = new RotatedTranslatedShape(CoordinateUtils::ToJoltCoordinates(CenterOfMassTranslation), CoordinateUtils::ToJoltRotation(MeshTransform.GetRotationQuat()), result.Get());
+		creation_settings.SetShape(OriginAndRotationApplied);
+	}
+	creation_settings.mPosition = CoordinateUtils::ToJoltCoordinates(MeshTransform.GetUnrealLocation());
+	
+	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(Create body)
 		BodyID bID = body_interface->CreateBody(creation_settings)->GetID();
+		//body creation is batched BUT the barrage key is valid. this allows queued actions. it's also a lil spooky.
 		AddInternalQueuing(bID, 0);// You know that scene where data tries alcohol, hates it, and immediately orders another?
 		FBarrageKey FBK = GenerateBarrageKeyFromBodyId(bID);
-		BarrageToJoltMapping->insert(FBK, bID);
+		BarrageToJoltMapping->insert_or_assign(FBK, bID);
 		FBLet shared = MakeShareable(new FBarragePrimitive(FBK, Outkey));
 		return shared;
 	}
-	return nullptr;
+}
+
+void FWorldSimOwner::CreateHeightfieldLandscapeMesh(TNotNull<const ALandscapeProxy*> InLandscapeActor) {
+	
+	for (const ULandscapeComponent* LandscapeComp : InLandscapeActor->LandscapeComponents) {
+		
+		if (const ULandscapeHeightfieldCollisionComponent* CollisionComp = LandscapeComp->GetCollisionComponent()) {
+			
+			//
+			auto BodyInstance = CollisionComp->GetBodyInstance();
+
+
+			auto& ActorGameHandle = BodyInstance->ActorHandle->GetGameThreadAPI();
+			
+			// Barrage::Conversion::TriMeshToJoltMeshShape()
+
+			if (JPH::ShapeSettings* ShapeSettings = Barrage::Conversion::ConvertChaosGeoToJoltBody(*ActorGameHandle.GetGeometry())) {
+				
+				auto CreationResult = ShapeSettings->Create();
+				if (CreationResult.HasError()) {
+					return;
+				}
+				
+				const FTransform& UnrealTransform = CollisionComp->GetComponentTransform();
+				
+				JPH::BodyCreationSettings BodyCreationSettings;
+				BodyCreationSettings.SetShape(CreationResult.Get());
+				BodyCreationSettings.mPosition = CoordinateUtils::ToJoltCoordinates(UnrealTransform.GetLocation());
+				BodyCreationSettings.mRotation = CoordinateUtils::ToJoltRotation(UnrealTransform.GetRotation());
+				BodyCreationSettings.mMotionType = EMotionType::Static;
+				BodyCreationSettings.mObjectLayer = Layers::EJoltPhysicsLayer::NON_MOVING;
+
+				
+				body_interface->CreateAndAddBody(BodyCreationSettings, EActivation::DontActivate);
+				// physics_system->
+				// CreationResult
+			}
+		}
+	}
 }
 
 void FWorldSimOwner::StepSimulation()
 {
-	// Step the world
-	TSharedPtr<JPH::TempAllocatorImpl> AllocHoldOpen = Allocator;
-	TSharedPtr<JPH::JobSystemThreadPool> JobHoldOpen = job_system;
+	TRACE_CPUPROFILER_EVENT_SCOPE(Physics Update);
+	
+	//todo: can we move these to be held for the duration of the run?
 	TSharedPtr<JPH::PhysicsSystem> PhysicsHoldOpen = physics_system;
-
-	TRACE_CPUPROFILER_EVENT_SCOPE_STR("Physics Update");
 	// If you take larger steps than 1 / 60th of a second you need to do multiple collision steps in order to keep the simulation stable
 	// we run pretty fast, so... normally fine.
 	constexpr int cCollisionSteps = 1;
-	if (AllocHoldOpen && JobHoldOpen)
-	{
-		TRACE_CPUPROFILER_EVENT_SCOPE_STR("Physics Update");
 
-		PhysicsHoldOpen->Update(DeltaTime, cCollisionSteps, AllocHoldOpen.Get(), JobHoldOpen.Get());
-	}
-
+	PhysicsHoldOpen->Update(DeltaTime, cCollisionSteps, Allocator.Get(), job_system.Get());
+	
 }
 
 bool FWorldSimOwner::OptimizeBroadPhase()
@@ -600,7 +649,10 @@ FBarrageKey FWorldSimOwner::GenerateBarrageKeyFromBodyId(const BodyID& Input) co
 
 FBarrageKey FWorldSimOwner::GenerateBarrageKeyFromBodyId(const uint32 RawIndexAndSequenceNumberInput) const
 {
-	uint64_t KeyCompose = PointerHash(this);
+	//TODO: determinism risk. We may be generating barrage keys in two parallel sims.
+	//this needs to uniquely identify the key as a final check but we also need to be able to hand sims back and forth.
+	//soooo.... this might actually screw us.
+	uint64_t KeyCompose = MashFunctions::FastHash32(RawIndexAndSequenceNumberInput);
 	KeyCompose = KeyCompose << 32;
 	KeyCompose |= RawIndexAndSequenceNumberInput;
 	return FBarrageKey(KeyCompose);
@@ -608,15 +660,22 @@ FBarrageKey FWorldSimOwner::GenerateBarrageKeyFromBodyId(const uint32 RawIndexAn
 
 FWorldSimOwner::~FWorldSimOwner()
 {
-	UnregisterTypes();
-	Factory::sInstance = nullptr;
-
 	//this is the canonical order.
 	//grab our hold open.		
 	TSharedPtr<JPH::PhysicsSystem> HoldOpen = physics_system;
 	physics_system.Reset(); //cast it into the fire.
 	CharacterToJoltMapping->Reset();//free characters so they don't double free inner shapes.
 	std::this_thread::yield(); //Cycle.
+
+	const double ReferenceWaitStart = FPlatformTime::Seconds();
+	while (HoldOpen.GetSharedReferenceCount() > 1) {
+		if (FPlatformTime::Seconds() - ReferenceWaitStart > 1.0f) {
+			// If you hit it is likely something is holding a reference to physics_system from a place that is destroyed after this
+			ensureAlwaysMsgf(false, TEXT("~FWorldSimOwner still has more than one reference count after waiting a second! (%i)"), HoldOpen.GetSharedReferenceCount());
+			break;
+		}
+	}
+	
 	HoldOpen.Reset();
 	job_system.Reset();
 	Allocator.Reset();

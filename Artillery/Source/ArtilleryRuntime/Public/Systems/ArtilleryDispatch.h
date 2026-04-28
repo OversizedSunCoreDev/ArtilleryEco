@@ -15,15 +15,14 @@
 #include "FArtilleryTicklitesThread.h"
 #include "FJThread.h"
 #include "GameplayTagContainer.h"
-#include "KeyCarry.h"
 #include "TransformDispatch.h"
 
 THIRD_PARTY_INCLUDES_START
 PRAGMA_PUSH_PLATFORM_DEFAULT_PACKING
-#include "libcuckoo/cuckoohash_map.hh"
-typedef libcuckoo::cuckoohash_map<FSkeletonKey, AttrMapPtr> AttrCuckoo;
+#include "seq/concurrent_map.hpp"
+typedef seq::concurrent_map<FSkeletonKey, AttrMapPtr> AttrCuckoo;
 
-typedef libcuckoo::cuckoohash_map<FSkeletonKey, IdMapPtr> IdentCuckoo;
+typedef seq::concurrent_map<FSkeletonKey, IdMapPtr> IdentCuckoo;
 PRAGMA_POP_PLATFORM_DEFAULT_PACKING
 THIRD_PARTY_INCLUDES_END
 
@@ -98,6 +97,13 @@ class ARTILLERYRUNTIME_API UArtilleryDispatch : public UTickableWorldSubsystem, 
 
 public:
 	static inline UArtilleryDispatch* SelfPtr = nullptr;
+	
+	UPROPERTY()
+	TObjectPtr<UTransformDispatch> TransformDispatch;
+	UPROPERTY()
+	TObjectPtr<UBarrageDispatch> BarrageDispatch;
+
+	
 	using MachineLet = IArtilleryControllite*;
 	using Machlet = MachineLet;
 
@@ -122,14 +128,16 @@ public:
 	friend class F_INeedA;
 	TSharedPtr<F_INeedA> RequestRouter;
 
-	ArtilleryTime GetShadowNow() const { return ArtilleryAsyncWorldSim.TickliteNow; }
+	ArtilleryTime GetShadowNow() const
+	{
+		return ArtilleryAsyncWorldSim.TickliteNow;
+	}
 	
 	void REGISTER_ENTITY_FINAL_TICK_RESOLVER(const ActorKey& Self);
-	void REGISTER_PROJECTILE_FINAL_TICK_RESOLVER(uint32 MaximumLifespanInTicks, const FSkeletonKey& Self);
 	void REGISTER_GUN_FINAL_TICK_RESOLVER(const FGunKey& Self, const FArtilleryGun* ExistCheck);
 	void INITIATE_JUMP_TIMER(const FSkeletonKey& Self);
-	void Bop(FSkeletonKey Target, uint16 TicksFromNow, FVector ForceAppliedOnce);
-
+	void Bop(FSkeletonKey Target, uint16 TicksFromNow, FVector ForceAppliedOnce, PhysicsInputType ForceType = PhysicsInputType::OtherForce);
+	
 	//Forwarding for the TickliteThread.
 	TOptional<FTransform> GetTransformShadowByObjectKey(const FSkeletonKey& Target, ArtilleryTime Now) const
 	{
@@ -146,6 +154,11 @@ public:
 	{
 		ArtilleryAsyncWorldSim.ParticleSystemPointer = ReferenceToSubsystem;
 	}
+	
+	void SetSkeletalMeshDispatch(ITickHeavy* ReferenceToSubsystem)
+	{
+		ArtilleryAsyncWorldSim.SkeletalMeshSystemPointer = ReferenceToSubsystem;
+	}
 
 	void SetEventLogSystem(ITickHeavy* ReferenceToSubsystem)
 	{
@@ -158,10 +171,16 @@ public:
 	//dispatch API so that we can use stronger type guarantees throughout our codebase.
 	//Called FROM the thread being set up.
 	void ThreadSetup();
+	
+	// In here we end and complete all artillery threaded work
+	// Intended to be called from the unreal game thread. 
+	// Currently called on world end play but in some cases it might need to be even earlier so it's useful to expose
+	void FinishAndCleanupThreadsAndTicklites();
 
 protected:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
+	virtual void OnWorldEndPlay(UWorld& InWorld) override;
 	virtual void Deinitialize() override;
 	TSharedPtr<FWorldSimOwner> HoldOpen;
 	
@@ -215,6 +234,7 @@ protected:
 	/**
 	 * Will hold the configuration for the gun definitions
 	 */
+	UPROPERTY()
 	TObjectPtr<UDataTable> GunDefinitionsManifest;
 	//TODO: This is a dummy function and should be replaced NLT 10/20/24.
 	//It loads from the PROJECT directory. This cannot ship, but will work for all purposes at the moment.
@@ -246,7 +266,9 @@ protected:
 
 public:
 	typedef FArtilleryTicklitesWorker<UArtilleryDispatch> FTicklitesWorker;
+#define StructureFullTL(Instance,OuterType, InnerType,...) OuterType* Instance = new OuterType( InnerType(__VA_ARGS__))
 	
+#define installGun(Instance,Type,...) TSharedPtr<Type> Instance = MakeShared<Type>(__VA_ARGS__)
 	struct ARTILLERYRUNTIME_API TL_ThreadedImpl 
 	{
 		virtual ~TL_ThreadedImpl() = default;
@@ -263,6 +285,8 @@ public:
 			}
 		}
 
+		// currently, artillery time is generated using: return duration_cast<duration<uint32_t, std::micro>>(system_clock::now().time_since_epoch()).count();
+		// and shadownow is updated only at the start of a tick. this is intended. time is "still" during a tick.
 		static ArtilleryTime GetShadowNow()
 		{
 			return ADispatch->GetShadowNow();
@@ -272,7 +296,7 @@ public:
 	//DUMMY FOR NOW.
 	//TODO: IMPLEMENT THE GUNMAP FROM INSTANCE UNTO CLASS
 	//TODO: REMEMBER TO SAY AMMO A BUNCH
-	FORCENOINLINE void RequestAddTicklite(TSharedPtr<TicklitePrototype> ToAdd, TicklitePhase Group)
+	FORCENOINLINE void RequestAddTicklite(TicklitePrototype* ToAdd, TicklitePhase Group)
 	{
 		ArtilleryTicklitesWorker_LockstepToWorldSim.RequestAddTicklite(ToAdd, Group);
 	}
@@ -377,7 +401,7 @@ public:
 	// ReSharper disable once CppMemberFunctionMayBeConst
 	FConservedTags GetExistingConservedTags(FSkeletonKey in);
 
-	FConservedTags GetOrRegisterConservedTags(FSkeletonKey in);
+	FConservedTags GetOrRegisterConservedTags(FSkeletonKey in, bool& outExisting);
 
 	void DeregisterGameplayTags(FSkeletonKey in);
 
@@ -409,8 +433,8 @@ private:
 	AIWorker ArtilleryAIWorker_LockstepToWorldSim;
 	TickliteWorker ArtilleryTicklitesWorker_LockstepToWorldSim;
 	TUniquePtr<FJThread> WorldSim_Thread = MakeUnique<FJThread>();
+	TUniquePtr<FJThread> Ticklite_Thread = MakeUnique<FJThread>();
 	TUniquePtr<FRunnableThread> WorldSim_AI_Thread;
-	TUniquePtr<FRunnableThread> WorldSim_Ticklites_Thread;
 	FSharedEventRef StartTicklitesSim;
 	FSharedEventRef StartTicklitesApply;
 	FSharedEventRef StartRunAhead;

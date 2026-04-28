@@ -326,7 +326,7 @@ public:
 		bSuccess = ApplyDamage(Target, DamageToApply);
 	}
 
-	static bool ApplyDamage(FSkeletonKey Target, float DamageToApply)
+	static bool ApplyDamage(FSkeletonKey Target, float DamageToApply, FVector SourceLocation = FVector::ZeroVector)
 	{
 		bool bSuccess = false;
 		if(UArtilleryDispatch::SelfPtr)
@@ -335,6 +335,14 @@ public:
 			{
 				bSuccess = true;
 				TargetProposedDamageAtr->AddToCurrentValue(DamageToApply);
+			}
+			if (bSuccess && !SourceLocation.IsZero())
+			{
+				bool bVecFound = false;
+				if (Attr3Ptr SourceAttr = implK2_GetAttr3Ptr(Target, E_VectorAttrib::TargetLocation, bVecFound))
+				{
+					SourceAttr->SetCurrentValue(SourceLocation);
+				}
 			}
 		}
 		return bSuccess;
@@ -357,7 +365,8 @@ public:
 	
 	static FConservedTags InternalTagsByKey(FSkeletonKey Key, bool& bFound)
 	{
-		FConservedTags ret = UArtilleryDispatch::SelfPtr->GetOrRegisterConservedTags(Key);
+		bool Found = false;
+		FConservedTags ret = UArtilleryDispatch::SelfPtr->GetOrRegisterConservedTags(Key, Found);
 		bFound = ret.IsValid();
 		return ret;
 	}
@@ -530,6 +539,7 @@ public:
 		{
 			ArtilleryTime Now = UArtilleryDispatch::SelfPtr->GetShadowNow();
 			FBLet Prim = UArtilleryDispatch::SelfPtr->GetFBLetByObjectKey(Target, Now);
+			UArtilleryDispatch::SelfPtr->DeregisterGameplayTags(Target); //release tags if any.
 			if (Prim && Prim->Me == FBShape::Projectile)
 			{
 				UArtilleryProjectileDispatch::SelfPtr->DeleteProjectile(Target); // quite a bit extra has to happen, but it does all happen.
@@ -559,8 +569,8 @@ public:
 		}
 
 		UTimerTickliteHandlerComponent* TimerComponent = Cast<UTimerTickliteHandlerComponent>(NewTimerTickliteComponent);
-		FTTimer TimerTicklite(TimerComponent, LifetimeInTicks);
-		UArtilleryDispatch::SelfPtr->RequestAddTicklite(MakeShareable(new TL_Timer(TimerTicklite)), Early);
+		StructureFullTL(TimerTicklite, TL_Timer, FTTimer, TimerComponent, LifetimeInTicks);
+		UArtilleryDispatch::SelfPtr->RequestAddTicklite(TimerTicklite, Early);
 		return TimerComponent;
 	}
 

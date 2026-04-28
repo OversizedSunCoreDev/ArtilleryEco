@@ -7,8 +7,11 @@ FArtilleryGun::~FArtilleryGun()
 	{
 		MyDispatch->Deregister(MyGunKey);
 	}
-		
-	if(Prefire != nullptr) //we always assign all or none, so we can just check prefire atm. this might change.
+	
+	// IsValid is a better check than nullptr for UObjects that might have been GC'd or flagged already.
+	// but that flag does not include destruction lifecycle flags, which invalidate internal index.
+	// Is this really necessary at this point as it seems UE is doing it's UE thing?
+	if(IsValid(Prefire) && !Prefire->HasAnyFlags(EObjectFlags::RF_FinishDestroyed | EObjectFlags::RF_BeginDestroyed)) //we always assign all or none, so we can just check prefire atm. this might change.
 	{
 		Prefire->RemoveFromRoot();
 		Fire->RemoveFromRoot();
@@ -43,7 +46,7 @@ void FArtilleryGun::FireGun(FArtilleryStates OutcomeStates, int DallyFramesToOmi
 {
 	if(!ReadyToFire)
 	{
-		throw; //your gun is broken. if you don't like this, override this function.
+		return; //your gun is broken. if you don't like this, override this function.
 	}
 		
 	if (OutcomeStates == FArtilleryStates::Fired)
@@ -178,5 +181,16 @@ FArtilleryGun::FArtilleryGun(): MyDispatch(nullptr), MyTransformDispatch(nullptr
 
 void FArtilleryGun::ProjectileCollided(const FSkeletonKey ProjectileKey, const FSkeletonKey HitEntity)
 {
+	FVector SourceLoc = FVector::ZeroVector;
+	if (MyTransformDispatch)
+	{
+		// Use the Owner location as the source of damage
+		TOptional<FTransform> OwnerTransform = MyTransformDispatch->CopyOfTransformByObjectKey(MyProbableOwner);
+		if (OwnerTransform.IsSet())
+		{
+			SourceLoc = OwnerTransform.GetValue().GetLocation();
+		}
+	}
+
 	UArtilleryLibrary::ApplyDamage(HitEntity, 100);
 }

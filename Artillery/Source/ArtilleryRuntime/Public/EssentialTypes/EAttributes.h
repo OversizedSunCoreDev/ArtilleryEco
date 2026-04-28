@@ -1,7 +1,6 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "ConservedAttribute.h"
-
 #include "ConservedKey.h"
 #include "ConservedVector.h"
 #include "EAttributes.generated.h"
@@ -24,8 +23,12 @@ enum class E_AttribKey : uint8
 	JumpsAvailable,
 	JumpHeight,
 	ProposedDamage,
+	StunDuration,
 	IsLockedOn,
 	IsActive,
+
+	//Status Attributes
+	IFrames,
 	
 	// Gun Attributes
 	Ammo,
@@ -81,7 +84,8 @@ enum class E_VectorAttrib : uint8
 	InitialPositionVec,
 	InitialRotationVec,
 	Destination,
-	Location //GENERALLY AT LEAST ONE TICK OLD! USE THE ESTIMATOR WITH IT!!!!!!
+	Location, //GENERALLY AT LEAST ONE TICK OLD! USE THE ESTIMATOR WITH IT!!!!!!
+	TargetLocation // Used for any generic target location purposes
 };
 
 namespace Arty
@@ -130,6 +134,8 @@ namespace Arty
 	typedef TSharedPtr<IdentityMap> IdMapPtr;
 	typedef TSharedPtr<Attr3Map> Attr3MapPtr;
 }
+
+
 
 #if ENABLE_VISUAL_LOG
 #define VISLOG_ATTRIBUTE(artillery_dispatch, key, attribute) if (FVisualLogger::IsRecording()) UE_VLOG(GetOwner(), LogPawnAction, Log, TEXT("%s> " #attribute ": %f"),*GetName(), artillery_dispatch->GetAttr(key, attribute)->CurrentValue)

@@ -4,6 +4,9 @@
 #include "HAL/Runnable.h"
 #include <Ticklite.h>
 
+#include <timeapi.h>
+#include "LowLogTimeAndRate.h"
+
 //this is a busy-style thread, which runs preset bodies of work in a specified order. Generally, the goal is that it never
 //actually sleeps. In fact, it only ever waits on the Artillery busy thread.
 // 
@@ -60,39 +63,45 @@ class FArtilleryTicklitesWorker : public FRunnable
 	TickliteGroup ExecutionGroups[GroupCount];
 
 protected:
-	TickliteBuffer QueuedAdds;
 	
-	TSharedPtr<TicklitePrototype> TickliteAdd(TSharedPtr<TicklitePrototype> AllocatedTL,  TicklitePhase Group)
+	void TickliteAdd(TicklitePrototype* ReleaseLifecycleControl,  TicklitePhase Group)
 	{
-		switch (Group)
+		if (ReleaseLifecycleControl != nullptr)
 		{
-		case TicklitePhase::Early :
+			switch (Group)
 			{
-				ExecutionGroups[0].Add(AllocatedTL);
-				return AllocatedTL;
-			}
-		case TicklitePhase::Normal :
-			{
-				ExecutionGroups[1].Add( AllocatedTL);
-				return AllocatedTL;
-			}
-		case TicklitePhase::Late :
-			{
-				ExecutionGroups[2].Add(AllocatedTL);
-				return AllocatedTL;
-			}
-		case TicklitePhase::PASS_THROUGH :
-			{
-				ExecutionGroups[3].Add(AllocatedTL);
-				return AllocatedTL;
-			}
-		case TicklitePhase::FINAL_TICK_RESOLVE:
-			{
-				ExecutionGroups[4].Add(AllocatedTL);
-				return AllocatedTL;
+			case TicklitePhase::Early :
+				{
+					ExecutionGroups[0].push_back(ReleaseLifecycleControl);
+					ReleaseLifecycleControl->RunGroup = TicklitePhase::Early;
+					break;
+				}
+			case TicklitePhase::Normal :
+				{
+					ExecutionGroups[1].push_back( ReleaseLifecycleControl);
+					ReleaseLifecycleControl->RunGroup = TicklitePhase::Normal;
+					break;
+				}
+			case TicklitePhase::Late :
+				{
+					ExecutionGroups[2].push_back(ReleaseLifecycleControl);
+					ReleaseLifecycleControl->RunGroup = TicklitePhase::Late;
+					break;
+				}
+			case TicklitePhase::PASS_THROUGH :
+				{
+					ExecutionGroups[3].push_back(ReleaseLifecycleControl);
+					ReleaseLifecycleControl->RunGroup = TicklitePhase::PASS_THROUGH;
+					break;
+				}
+			case TicklitePhase::FINAL_TICK_RESOLVE:
+				{
+					ExecutionGroups[4].push_back(ReleaseLifecycleControl);
+					ReleaseLifecycleControl->RunGroup = TicklitePhase::FINAL_TICK_RESOLVE;
+					break;
+				}
 			}
 		}
-		return nullptr;
 	}
 	//we may be able to remove sim or move it outside the run loop. I don't think there's anything wrong with simulating
 	//as fast as we can, and it buys us a lot of perf time by not sleeping the thread until it's apply time.
@@ -104,6 +113,7 @@ public:
 	//Templating here is used to both make reparenting easier if needed later and to simplify our dependency tree
 	UDispatch* DispatchOwner;
 	
+	TSharedPtr<F_INeedA> RequestRouter;
 	TOptional<FTransform> GetCopyOfShadowTransform(FSkeletonKey Target, ArtilleryTime Now)
 	{
 		return DispatchOwner->GetTransformShadowByObjectKey(Target,  Now);
@@ -117,12 +127,15 @@ public:
 	
 	FArtilleryTicklitesWorker(): LocalNow(0), DispatchOwner(nullptr), running(false)
 	{
-		QueuedAdds = MakeShareable(new TickliteRequests(8192));
 	}
 
-	void RequestAddTicklite(TSharedPtr<TicklitePrototype> ToAdd, TicklitePhase Group)
+	void RequestAddTicklite(TicklitePrototype* ToAdd, TicklitePhase Group)
 	{
-		QueuedAdds->Enqueue(StampLiteRequest(ToAdd, Group));
+		auto pin = RequestRouter;
+		 if (pin)
+		 {
+		 	pin->DeferredTickliteInstantiation(ToAdd, DispatchOwner->GetShadowNow(), Group);
+		 }
 	}
 	
 	ArtilleryTime GetShadowNow() const
@@ -133,6 +146,11 @@ public:
 	AttrPtr GetAttrib(FSkeletonKey Target, AttribKey Attr)
 	{
 		return DispatchOwner->GetAttrib(Target, Attr);
+	}
+	
+	AttrMapPtr GetAttribMap(FSkeletonKey Target)
+	{
+		return DispatchOwner->GetAttribMap(Target);
 	}
 
 	//the auto& here acts as an abbreviated function template.
@@ -193,12 +211,16 @@ public:
 	{
 		LocalNow = 0;
 		UE_LOG(LogTemp, Display, TEXT("Artillery: Booting SimTicklites thread."));
+		for(TickliteGroup& Group : ExecutionGroups)
+		{
+			Group.reserve(1024);
+		}
 		running = true;
 		return true;
 	}
 	
 	//TODO: ADD NULL GUARDS OR COPY. PREFER GUARD.
-	void CalcINE(TSharedPtr<TicklitePrototype>& x)
+	void CalcINE(TicklitePrototype* x)
 	{
 		if( x->ShouldExpireTickable())
 		{
@@ -211,67 +233,123 @@ public:
 		}
 	}
 
+
+	void ProcessRequestRouterWorkerThread()
+	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(ProcessRequestRouterAIWorkerThread) 
+
+		if (RequestRouter)
+		{
+			for (auto& WorkerFeedMap : RequestRouter->TLThreadAcc)
+			{
+				TSharedPtr<F_INeedA::TickliteRequestQ> HoldOpen;
+				if (WorkerFeedMap.Queue && ((HoldOpen = WorkerFeedMap.Queue)) && WorkerFeedMap.That != std::thread::id()) //if there IS a thread.
+				{
+					FTickliteRequest RouterQueue;
+					while (HoldOpen->Dequeue(RouterQueue))
+					{
+						//PINPOINT: YATICKLITETHREADBOYRUNNETHREQUESTSHERE
+						if (RouterQueue.GetType() == ArtilleryRequestType::DeferredTickliteInstantiation)
+						{
+							TickliteAdd(RouterQueue.AllocatedTicklite, RouterQueue.MyGroup);
+						}
+					}
+				}
+			}
+		}
+	}
+
+	/*
+	 * as of 12/22/25, here's our sample timings. They don't make a ton of sense. I guess we're just getting hammered on cache misses?
+	 *	Average time for function id.TicklitesWorker is nanoseconds = '12218864' at roughly one call per '12219283.200000'.
+	 *	Average time for function id.TicklitesImmediatelyPostCalc is nanoseconds = '10444050' at roughly one call per '12219210.400000'.
+	 *	Average time for function id.TicklitesImmediatelyPreWait is nanoseconds = '6060117' at roughly one call per '12219216.000000'.
+	 *	Average time for function id.TicklitesWorkerPostWait is nanoseconds = '6009295' at roughly one call per '12219015.000000'.
+	 *	
+	 *
+	 */
 	//adding cadence is going to be quite annoying.
 	virtual uint32 Run() override
 	{
-		StartTicklitesSim->Wait();
+		timeBeginPeriod(1);
 		DispatchOwner->ThreadSetup();
 		while(running) {
-
-			for(TickliteGroup& Group : ExecutionGroups)
+			
+			CustomTimer<"TicklitesWorkerTotal"> Timer;
+			
 			{
-				for(TSharedPtr<TicklitePrototype> Tickable : Group)
+				TRACE_CPUPROFILER_EVENT_SCOPE(FArtilleryTicklitesWorker: calculate groups)
+				for(TickliteGroup& Group : ExecutionGroups)
 				{
-					CalcINE(Tickable);
+					for(auto Tickable : Group)
+					{
+						CalcINE(Tickable);
+					}
 				}
 			}
+			ProcessRequestRouterWorkerThread();
 			
-			//if we have any ticklite requests, perform their calculations here and then
-			//add them.
-			//TODO: Reassess 12/10/24
-			//this may cause consistency issues during resim, as artillery guns are fired on the main thread
-			//which is not cadence-locked to the artillery threads. however, during resim, I believe this can be
-			//resolved with the ticklite's add timestamp. and until we have resim, this is a non-issue.
-			while(!QueuedAdds->IsEmpty())
 			{
-				const StampLiteRequest AddTup = *QueuedAdds->Peek();
-				TSharedPtr<TicklitePrototype> ptr =  TickliteAdd(AddTup.Key, AddTup.Value);
-				if(ptr)
-				{
-					CalcINE(ptr);
-				}
-				QueuedAdds->Dequeue();
-			}
-			
-			StartTicklitesApply->Wait();
-			StartTicklitesApply->Reset(); // we can run long on sim, not on apply.
+				TRACE_CPUPROFILER_EVENT_SCOPE(FArtilleryTicklitesWorker: Wait duration) 
 
+				CustomTimer<"TicklitesImmediatelyPreWait"> Tick;
+				StartTicklitesApply->Wait();
+				StartTicklitesApply->Reset(); // we can run long on sim, not on apply.
+			}
+				CustomTimer<"TicklitesWorkerApply"> TimerPostWait;
+			
+			TRACE_CPUPROFILER_EVENT_SCOPE(FArtilleryTicklitesWorker: apply groups) 
 			for (auto& Group : ExecutionGroups)
 			{
 				//this is just to make it clearer, 0 works just as well.
-				int finalsize =  Group.IsEmpty() ? -1 : Group.Num();
+				int finalsize =  Group.empty() ? -1 : Group.size();
+				
 				for(int index = 0; index < finalsize;)
 				{
 					//either a ticklite expires, and the count remaining drops by one, or we process it and move to next.
-					if(Group[index]->ShouldExpireTickable())
+					//TODO good chance we must save the ticklites from older frames that have expired if we want any hope at determinism
+					//TODO THIS VIOLATES ORDERING. ...kinda. it's complicated. look, you almost certainly don't want it here.
+					//we probably need to use sorted array anyway.
+					auto null = Group[index] == nullptr;
+					//as of skylake,the penalty for prefetching a nullptr is now very low, lower than a branch in extremely hot loops.
+					_mm_prefetch(reinterpret_cast<char const*>(Group.back()), _MM_HINT_T1);
+					_mm_prefetch(reinterpret_cast<char const*>(Group[index]), _MM_HINT_T1);
+					_mm_prefetch(reinterpret_cast<char const*>(Group[index+1]), _MM_HINT_T1);
+					if (!null && !Group[index]->ShouldExpireTickable())
 					{
-						 Group[index]->OnExpireTickable();
-						//TODO good chance we must save the ticklites from older frames that have expired if we want any hope at determinism
-						//TODO THIS VIOLATES ORDERING. ...kinda. it's complicated. look, you almost certainly don't want it here.
-						//we probably need to use sorted array anyway.
-						Group.RemoveAtSwap(index, EAllowShrinking::No); //https://github.com/JKurzer/Bristle54/issues/24#issue-2567178871 GH Issue 24: SWQP?!
-						
-						--finalsize;//hohoho. merry nothingmas.
+						Group[index]->ApplyTickable();
+						++index;
 					}
 					else
 					{
-						Group[index]->ApplyTickable();
-						index++;
+						if (!null)
+						{
+							Group[index]->OnExpireTickable();
+							volatile auto j = (Group[index]);
+							delete j;
+						}
+						Group[index] = Group.back();
+						Group.pop_back();
+						--finalsize;//hohoho. merry nothingmas.
 					}
-				}
-			}	
+				}	
+			}
 		}
-	
+		
+		// Delete remaining tickables
+		for(TickliteGroup& Group : ExecutionGroups)
+		{
+			for(auto& Tickable : Group)
+			{
+				if (Tickable)
+				{
+					delete Tickable;
+					Tickable = nullptr;
+				}
+			}
+		}
+		
+		timeEndPeriod(1);
 		return 0;
 	}
 

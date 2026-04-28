@@ -44,6 +44,10 @@
 			"Enabled": true
 		},
 		{
+			"Name": "Locomo",
+			"Enabled": true
+		},
+		{
 			"Name": "MassGameplay",
 			"Enabled": true
 		},		

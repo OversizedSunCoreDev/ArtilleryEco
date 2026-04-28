@@ -124,7 +124,7 @@ struct THISTLERUNTIME_API FArtilleryCompareRelatedCondition : public FArtilleryA
 
 	/** The relationship between the target key and the key whose attribute we want to test.*/
 	UPROPERTY(EditAnywhere, Category = Condition)
-	E_IdentityAttrib Relationship;
+	E_IdentityAttrib Relationship = {};
 };
 
 /**

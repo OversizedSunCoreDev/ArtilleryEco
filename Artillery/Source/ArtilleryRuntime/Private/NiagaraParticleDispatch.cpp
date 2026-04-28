@@ -63,11 +63,12 @@ UNiagaraSystem* UNiagaraParticleDispatch::GetOrLoadNiagaraSystem(FString Niagara
 {
 	if (NameToNiagaraSystemMapping->Contains(NiagaraSystemLocation))
 	{
-		return *NameToNiagaraSystemMapping->Find(NiagaraSystemLocation);
+		auto FoundSystem = NameToNiagaraSystemMapping->Find(NiagaraSystemLocation);
+		return (*FoundSystem).LoadSynchronous();
 	}
-	UNiagaraSystem* LoadedSystem = LoadObject<UNiagaraSystem>(nullptr, *NiagaraSystemLocation, nullptr, LOAD_None, nullptr);
+	TSoftObjectPtr<UNiagaraSystem> LoadedSystem = TSoftObjectPtr<UNiagaraSystem>(FSoftObjectPath(NiagaraSystemLocation));
 	NameToNiagaraSystemMapping->Add(NiagaraSystemLocation, LoadedSystem);
-	return LoadedSystem;
+	return LoadedSystem.LoadSynchronous();
 }
 
 FParticleID UNiagaraParticleDispatch::SpawnFixedNiagaraSystem(FString NiagaraSystemLocation, FVector Location, FRotator Rotation, FVector Scale, bool bAutoDestroy, ENCPoolMethod PoolingMethod, bool bAutoActivate, bool bPreCullCheck)
@@ -118,7 +119,7 @@ FParticleID UNiagaraParticleDispatch::SpawnAttachedNiagaraSystem(FString Niagara
 	TSharedPtr<Kine> SceneCompKinePtr;
 	//this is the line that was actually causing some of our crashes, as it was a direct access.
 	//it should be fine now that we're rolled to lbc.
-	TransformDispatch->ObjectToTransformMapping->find(AttachToComponentKey, SceneCompKinePtr);
+	TransformDispatch->ObjectToTransformMapping->visit(AttachToComponentKey, [&](auto& a){SceneCompKinePtr = a.second;});
 	if(SceneCompKinePtr)
 	{
 		TSharedPtr<BoneKine> Bone = StaticCastSharedPtr<BoneKine>(SceneCompKinePtr);
@@ -155,9 +156,12 @@ FParticleID UNiagaraParticleDispatch::SpawnAttachedNiagaraSystem(FString Niagara
 							case Position:
 								NewNiagaraComponent->SetVariablePosition(Param.VariableName, Param.VariableValue);
 								break;
+							case Float:
+								// I don't feel like fucking with templates right now lol
+								NewNiagaraComponent->SetVariableFloat(Param.VariableName, Param.VariableValue[0]);
+								break;
 							default:
 								UE_LOG(LogTemp, Error, TEXT("UNiagaraParticleDispatch::SpawnAttachedNiagaraSystemInternal: Parameter type [%d] is not implemented, cannot proceed."), Param.Type);
-								throw;
 							}
 						}
 					}
@@ -188,6 +192,7 @@ void UNiagaraParticleDispatch::DeregisterNiagaraParticleComponent(UNiagaraCompon
 		{
 			BoneKeyToParticleIDMapping->Remove(*ParticleBoneKey);
 			KeyToParticleParamMapping->Remove(*ParticleBoneKey);
+			UArtilleryDispatch::SelfPtr->DeregisterGameplayTags(FSkeletonKey(*ParticleBoneKey));
 		}
 	} 
 }

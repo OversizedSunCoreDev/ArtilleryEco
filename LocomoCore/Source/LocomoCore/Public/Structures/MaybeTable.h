@@ -2,6 +2,7 @@
 #include "MashFunctions.h"
 
 //the maybe table exists at the intersection of probabilistic counting, bloomfilters, and braindead hashing.
+//https://marc-b-reynolds.github.io/math/2019/08/10/Avalanche.html is a fairly similar process, but still not very.
 struct FMaybeTable
 {
 public:

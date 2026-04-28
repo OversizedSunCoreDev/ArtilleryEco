@@ -59,10 +59,14 @@ bool FCabling::SendIfWindowEdge(bool sent, int seqNumber, uint64_t currentRead, 
 	return sent;
 }
 
-uint64_t FCabling::FromKeyboardState(uint32_t keyCount, GameInputKeyState (&states)[16])
+uint64_t FCabling::FromKeyboardAndMouseState(uint32_t keyCount, GameInputKeyState (&states)[16],
+                                             const GameInputMouseButtons& mouseButtons, float MouseX, float MouseY)
 {
 	double xMagnitude = 0.0;
 	double yMagnitude = 0.0;
+
+	FCableInputPacker boxing;
+	boxing.buttons = 0;
 
 	for (uint32_t i = 0; i < keyCount; i++)
 	{
@@ -91,26 +95,33 @@ uint64_t FCabling::FromKeyboardState(uint32_t keyCount, GameInputKeyState (&stat
 		{
 			xMagnitude += 1.0;
 		}
+		if (states[i].codePoint == VK_SPACE)
+		{
+			boxing.buttons.set(10, true);
+			// boxing.buttons.set(11, true);
+		}
 	}
 
-	FCableInputPacker boxing;
+
 	boxing.lx = boxing.IntegerizedStick(xMagnitude);
 	boxing.ly = boxing.IntegerizedStick(yMagnitude);
-	boxing.rx = boxing.IntegerizedStick(0.0);
-	boxing.ry = boxing.IntegerizedStick(0.0);
-	boxing.buttons = 0; // temporarily no buttons
+	boxing.rx = boxing.IntegerizedStick(MouseX);
+	boxing.ry = boxing.IntegerizedStick(MouseY);
+
+	if ((mouseButtons & GameInputMouseButtons::GameInputMouseLeftButton) != 0)
+	{
+		boxing.buttons.set(13, true);
+	}
+	if ((mouseButtons & GameInputMouseButtons::GameInputMouseRightButton) != 0)
+	{
+		boxing.buttons.set(12, true);
+	}
+
 	uint64_t currentRead = boxing.PackImpl();
 	//don't check events because we may set an event to indicate that we're on keeb input....
 	return currentRead;
 }
 
-uint64_t FCabling::KeyboardState(IGameInputReading* reading, GameInputKeyState (&states)[16])
-{
-	uint32_t keyCount = reading->GetKeyCount();
-	reading->GetKeyState(keyCount, states);
-
-	return FromKeyboardState(keyCount, states);
-}
 
 uint64_t FCabling::FromGamePadState(GameInputGamepadState state)
 {
@@ -136,6 +147,11 @@ uint64_t FCabling::FromGamePadState(GameInputGamepadState state)
 	{
 		boxing.buttons.set(14, true);
 	}
+
+	//we'll need a little damping over these which is why they're classed as virtual.
+	boxing.buttons.set(15, (state.buttons & GameInputGamepadLeftThumbstick) != 0);
+	
+	boxing.buttons.set(16, (state.buttons & GameInputGamepadRightThumbstick) != 0);
 	this->RingForGamepadKeybinds.add(GuessedInputCount, boxing);
 	uint64_t currentRead = boxing.PackImpl();
 
@@ -169,6 +185,12 @@ uint32 FCabling::Run()
 	HRESULT gameInputSpunUp = GameInputCreate(&g_gameInput);
 	IGameInputDevice* g_gamepad = nullptr;
 	IGameInputReading* reading;
+	constexpr static float LowGainMouse[5] = {0, 0.33, 0.44, 0.55, .75};
+	constexpr static float MidGainMouse[9] = {0, 0.25, 0.35, 0.45, .55, .6, .65, 0.70, .8};
+	
+	constexpr static float HighGainMouse[12] = {0, 0.18, 0.22, 0.26, 0.30, 0.345, 0.44, .54, .64, .72, 0.72, .8};
+
+
 	GameInputKeyState states[16] = {{0, 0, 0, false}}; //the first 0,0 indicates the end of valid data.
 	bool Sent = false;
 	//odd behavior occurs if the compiler is allowed to optimize this all the way down
@@ -178,6 +200,11 @@ uint32 FCabling::Run()
 	uint64_t PriorReadingKeyboard = 0;
 	RingForGamepadKeybinds = FlickBuffer();
 	uint64_t PriorReadingGamepad = 0;
+
+	// Not quantized, these are raw mouse positions.
+	float PrevMouseX = 0;
+	float PrevMouseY = 0;
+
 	//Hi! Jake here! Reminding you that this will CYCLE
 	//That's known. Isn't that fun? :) Don't reorder these, by the way.
 	uint32_t lastPollTime = NarrowClock::getSlicedMicrosecondNow();
@@ -191,7 +218,7 @@ uint32 FCabling::Run()
 
 	constexpr auto HalfStep = std::chrono::microseconds(Period / 2);
 	const uint64_t BlankGamepad = FromGamePadState(GameInputGamepadState());
-	const uint64_t BlankKeyboard = FromKeyboardState(16, states);
+	const uint64_t BlankKeyboard = FromKeyboardAndMouseState(16, states, {}, 0, 0);
 
 	timeBeginPeriod(1);
 
@@ -200,6 +227,8 @@ uint32 FCabling::Run()
 	//https://learn.microsoft.com/en-us/gaming/gdk/_content/gc/input/advanced/input-keyboard-mouse will be fun
 	//https://handmade.network/forums/t/8710-using_microsoft_gameinput_api_with_multiple_controllers#29361
 	//Looks like PS4/PS5 won't be too bad, just gotta watch out for Fun Device ID changes.
+	double adaptX = 1;
+	double adaptY = 1;
 	while (running)
 	{
 		if (lastPollTime + Period <= lsbTime)
@@ -214,14 +243,70 @@ uint32 FCabling::Run()
 			IGameInputDevice* keyboard = nullptr;
 			uint64_t KeyboardCurrentRead = BlankKeyboard;
 			uint64_t GamepadCurrentRead = BlankGamepad;
-			
+
+			IGameInputDevice* Mouse = nullptr;
+
+			GameInputMouseState mouseState = {};
+
+			// mouse first state is considered first (probably not what you want though)
+			float MouseXDelta = 0;
+			float MouseYDelta = 0;
+			if (g_gameInput && !Sent && SUCCEEDED(g_gameInput->GetCurrentReading(GameInputKindMouse, Mouse, &reading)))
+			{
+				if (reading->GetMouseState(&mouseState))
+				{
+					float delX = (float)mouseState.positionX - PrevMouseX;
+					float delY = (float)mouseState.positionY - PrevMouseY;
+					auto absX = FMath::CeilToInt(abs(delX));
+					auto absY = FMath::CeilToInt(abs(delY));
+					adaptX = FMath::Max(adaptX, absX);
+					adaptY = FMath::Max(adaptY, absY);
+					if (adaptX < 5 && adaptY < 5) //|| (absX + absY) < 2)
+					{
+						MouseXDelta = FMath::Sign(delX) * LowGainMouse[absX]; 
+						MouseYDelta = -FMath::Sign(delY) * LowGainMouse[absY];
+					}
+					else if (adaptX < 9 && adaptY < 9)
+					{
+						MouseXDelta = FMath::Sign(delX) * MidGainMouse[absX]; 
+						MouseYDelta = -FMath::Sign(delY) * MidGainMouse[absY];
+					}
+					else if (adaptX < 13 && adaptY < 13)
+					{
+						MouseXDelta = FMath::Sign(delX) * HighGainMouse[absX]; 
+						MouseYDelta = -FMath::Sign(delY) * HighGainMouse[absY];
+					}
+					else if (adaptX < 37 && adaptY < 37)
+					{
+						MouseXDelta = FMath::Sign(delX) * HighGainMouse[absX/3]; 
+						MouseYDelta = -FMath::Sign(delY) * HighGainMouse[absY/4];
+					}
+					else
+					{
+						MouseXDelta = FMath::Sign(delX) * FMath::Min(absX/58.0, .9); 
+						MouseYDelta = -FMath::Sign(delY) *  FMath::Min(absY/67.0, .8);
+					}
+
+					PrevMouseX = mouseState.positionX;
+					PrevMouseY = mouseState.positionY;
+					adaptX -= 2;
+					adaptY -= 2;
+				}
+
+				reading->Release();
+			}
+
 			//get the keeb...
-			if (g_gameInput &&
+			if (g_gameInput && !Sent &&
 				SUCCEEDED(g_gameInput->GetCurrentReading(GameInputKindKeyboard, keyboard, &reading)))
 			{
 				//if we don't have a WASD input, we don't send, and we'll check the controller next.
-				KeyboardCurrentRead = KeyboardState(reading, states);
+				uint32_t keyCount = reading->GetKeyCount();
+				reading->GetKeyState(keyCount, states);
 				reading->Release();
+
+				KeyboardCurrentRead = FromKeyboardAndMouseState(keyCount, states, mouseState.buttons, MouseXDelta,
+				                                                MouseYDelta);
 			}
 			// AND get the gamepad... we need both inputs to check which has data.
 			if (g_gameInput &&
@@ -262,7 +347,7 @@ uint32 FCabling::Run()
 			//this is performed even if they're null data packets. Godspeed.
 			PriorReadingGamepad = GamepadCurrentRead;
 			PriorReadingKeyboard = KeyboardCurrentRead;
-			
+
 			if (TickCounter % sampleHertz == 0)
 			{
 				long long now = std::chrono::steady_clock::now().time_since_epoch().count();
@@ -304,7 +389,7 @@ uint32 FCabling::Run()
 	{
 		g_gameInput->Release();
 	}
-	
+
 	timeEndPeriod(1);
 	GuessedInputCount = 0;
 	return 0;

@@ -60,6 +60,8 @@
 * 
 */
 
+class UChaosTrackingArmorPiece;
+
 UENUM()
 enum EnemyCategory
 {
@@ -74,7 +76,9 @@ enum class EThistleMoveState : uint8
 	Moving,
 	SlowingDown,
 	ReactingToPush,
-	FollowingLeader
+	FollowingLeader,
+	Blocking,
+	Physics
 };
 
 UCLASS()
@@ -123,7 +127,7 @@ public:
 	bool Idle = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Movement)
-	float MaxHP = 200.0f;
+	float MaxHP = 300.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Movement)
 	float MaxShields = 0.0f;
@@ -235,8 +239,7 @@ public:
 	bool CheckStuck(float DeltaSeconds);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Behavior", meta = (DisplayName = "Rotation Speed"))
-	float RotationSpeed = 1.f;
-
+	float RotationSpeed = 0.1f;
 
 protected:
 	// Called when the game starts or when spawned
@@ -254,9 +257,7 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Movement")
 	float MaxForce = 500.0f;
-
-
-	FVector CurrentVelocity = FVector::ZeroVector;
+	
 
 	// State specific handlers
 	void HandleIdleState();
@@ -290,7 +291,10 @@ public:
 	float PushReactionTime = 0.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Movement", meta = (ClampMin = "0.0", UIMin = "0.0"))
-	float SteerInterp = 1.f;
+	float SteerInterp = 10.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Movement", meta = (ClampMin = "0.0", UIMin = "0.0"))
+	float AimInterp = 1.f;
 
 
 	float PushReactionTimer = 0.0f;
@@ -311,6 +315,43 @@ public:
 
 	float CompareNavMeshHeight();
 
-	void AimRotateMeshComponent();
+	void AimRotateMeshComponent(float DeltaTime);
 
+	float LastKnownHealth = -1.f;
+
+	UFUNCTION(BlueprintNativeEvent, Category = "Thistle|Damage")
+	void OnDamaged(float DamageAmount, float CurrentHealth);
+	virtual void OnDamaged_Implementation(float DamageAmount, float CurrentHealth);
+
+	UPROPERTY(BlueprintReadOnly, Category = "AI Behavior|Shield")
+	TObjectPtr<UChaosTrackingArmorPiece> ShieldComponent;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AI Behavior|Shield")
+	FVector ShieldInitialLocation;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AI Behavior|Shield")
+	bool bCanBlock = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AI Behavior|Shield")
+	float BlockTimer = 0.0f;
+
+	// Configuration
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Behavior|Shield")
+	FVector ShieldBlockRelativeOffset = FVector(60.f, 0.f, 20.f); // Position "In Front" relative to actor
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Behavior|Shield")
+	float BlockDuration = 2.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI Behavior|Shield")
+	float ShieldDeploySpeed = 10.0f; // Interpolation speed for raising shield
+
+	FVector LastDamageSourceLoc = FVector::ZeroVector;
+	bool bHasValidDamageSource = false;
+
+public:
+	// State Handlers
+	void HandleBlockingState(float DeltaTime);
+	void TriggerShieldBlock();
+	void EndShieldBlock();
+	void CheckCanBlock();
 };

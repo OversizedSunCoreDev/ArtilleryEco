@@ -1,16 +1,22 @@
 ﻿// Copyright 2025 Oversized Sun Inc. All Rights Reserved.
 
 #pragma once
+// ReSharper disable CppUnusedIncludeDirective
 
 #include "FBarrageKey.h"
 #include "SkeletonKey.h"
 #include "HAL/Platform.h"
+#include "seq/concurrent_map.hpp"
 THIRD_PARTY_INCLUDES_START
 
-PRAGMA_PUSH_PLATFORM_DEFAULT_PACKING
+
 #include <Jolt/Jolt.h>
+// Disable common warnings triggered by Jolt, you can use JPH_SUPPRESS_WARNING_PUSH / JPH_SUPPRESS_WARNING_POP to store and restore the warning state
+JPH_SUPPRESS_WARNING_PUSH
+JPH_SUPPRESS_WARNINGS 
 #include <Jolt/Geometry/OrientedBox.h>
 #include <Jolt/Geometry/RayAABox.h>
+#include <Jolt/Physics/Body/AllowedDOFs.h>
 #include <Jolt/Physics/Body/BodyManager.h>
 #include <Jolt/Physics/Body/BodyPair.h>
 #include <Jolt/Physics/Collision/AABoxCast.h>
@@ -46,19 +52,20 @@ PRAGMA_PUSH_PLATFORM_DEFAULT_PACKING
 #include "LocomoCore/Public/Distances/AtypicalDistances.h"
 #include "LocomoCore/Public/Distances/ZOrderDistances.h"
 #include "PhysicsEngine/BodySetup.h"
-#include "libcuckoo/cuckoohash_map.hh"
 #include "Jolt/Geometry/RayAABox.h"
 #include "Jolt/Math/HalfFloat.h"
 
 #include <Memory/IntraTickThreadblindAlloc.h>
-typedef libcuckoo::cuckoohash_map<FSkeletonKey, FBarrageKey> KeyToKey;
+typedef seq::concurrent_map<FSkeletonKey, FBarrageKey> KeyToKey;
+typedef seq::concurrent_map<FBarrageKey, JPH::BodyID> KeyToBody;
 
-typedef libcuckoo::cuckoohash_map<uint64_t, JPH::Ref<JPH::Shape>> BoundsToShape;
-typedef libcuckoo::cuckoohash_map<FBarrageKey, JPH::BodyID> KeyToBody;
-// Disable common warnings triggered by Jolt, you can use JPH_SUPPRESS_WARNING_PUSH / JPH_SUPPRESS_WARNING_POP to store and restore the warning state
-JPH_SUPPRESS_WARNINGS
 
-PRAGMA_POP_PLATFORM_DEFAULT_PACKING
+constexpr inline static JPH::EAllowedDOFs StandardBoxAllowedDOFs = JPH::EAllowedDOFs::TranslationX | JPH::EAllowedDOFs::TranslationY | JPH::EAllowedDOFs::TranslationZ | JPH::EAllowedDOFs::RotationY | JPH::EAllowedDOFs::RotationX;
+constexpr inline static JPH::EAllowedDOFs RelaxedBoxDOFs = JPH::EAllowedDOFs::All;
+constexpr inline static JPH::EAllowedDOFs StandardCapAllowedDOFs = JPH::EAllowedDOFs::TranslationX | JPH::EAllowedDOFs::TranslationY | JPH::EAllowedDOFs::TranslationZ | JPH::EAllowedDOFs::RotationY;
+
+JPH_SUPPRESS_WARNING_POP
+
 THIRD_PARTY_INCLUDES_END
 
 class IsolatedJoltIncludes

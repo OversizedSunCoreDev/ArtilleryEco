@@ -19,9 +19,10 @@ typedef int32 SOCKLEN;
 
 #endif
 #include <Runtime/Sockets/Private/BSDSockets/SocketsBSD.h>
+#include "LongboyCrypto.h"
 
 FBristleconeSender::FBristleconeSender()
-: consecutive_zero_bytes_sent(0), running(false) {
+: consecutive_zero_bytes_sent(0), running(false), SessionId(0), CipherKey(0), Crypto(nullptr) {
 	UE_LOG(LogTemp, Display, TEXT("Bristlecone:Sender: Constructing Bristlecone Sender"));
 
 	target_endpoints = MakeShareable(new TArray<FIPv4Endpoint>());
@@ -33,6 +34,22 @@ FBristleconeSender::~FBristleconeSender() {
 	UE_LOG(LogTemp, Display, TEXT("Bristlecone:Sender: Destructing Bristlecone Sender"));
 }
 
+void FBristleconeSender::SetSessionData(uint64 sessionId, uint64 cipherKey)
+{
+	// uh probs make this thread safe now
+	SessionId = sessionId;
+	CipherKey = cipherKey;
+	if (Crypto == nullptr)
+	{
+		Crypto = new FLongboyCrypto(CipherKey);
+	}
+	else
+	{
+		delete Crypto;
+		Crypto = new FLongboyCrypto(CipherKey);
+	}
+}
+
 void FBristleconeSender::BindSource(TheCone::SendQueue QueueCandidate)
 {
 	Queue.Reset();
@@ -42,7 +59,7 @@ void FBristleconeSender::BindSource(TheCone::SendQueue QueueCandidate)
 void FBristleconeSender::AddTargetAddress(FString target_address_str) {
 	FIPv4Address target_address;
 	FIPv4Address::Parse(target_address_str, target_address);
-	FIPv4Endpoint target_endpoint = FIPv4Endpoint(target_address, DEFAULT_PORT);
+	FIPv4Endpoint target_endpoint = FIPv4Endpoint(target_address, GetDefault<UBristleconeConstants>()->ClientToServerSchemaPort);
 	target_endpoints->Emplace(target_endpoint);
 }
 
@@ -133,8 +150,13 @@ bool FBristleconeSender::Init() {
 }
 
 uint32 FBristleconeSender::Run() {
-	int counter = 0;
+	uint16 counter = 0;
 	FControllerState sending_state;
+
+	const auto Config = GetDefault<UBristleconeConstants>();
+	const uint16 ClientToServerMapperPort = Config->ClientToServerSchemaMapperPort;
+	const uint16 ClientToServerPort = Config->ClientToServerSchemaPort;
+	const uint16 ServerToClientMapperPort = Config->ServerToClientMapperPort;
 	
 	while(sender_socket_high) {
 		auto H1 = sender_socket_low;
@@ -144,6 +166,82 @@ uint32 FBristleconeSender::Run() {
 		WakeSender->Wait(8);
 
 		WakeSender->Reset();
+
+		// Ping to the mapper sockets to update session state.
+		{
+			auto HoldOpen = target_endpoints;
+			if (HoldOpen && H1 && H2 && H3)
+			{
+				// ; ABNF format of the messages we send to mapper ports.
+				// <MAPPER_MESSAGE>             ::= <SESSION_ID> <MIRRORING>        ; notify server of a new port and endpoint mapping for this session, and how many mirror ports to expect.
+				// 
+				// <SESSION_MAPPER_HEARTBEAT>   ::= <SESSION_ID>                    ; heartbeat message, no mirroring info, just need to keep the session alive and let the mapper know we're still here.
+				// 
+				// <MIRROR_MAPPER_HEARTBEAT>    ::= <MIRROR_INDEX>                  ; heartbeat message for mirror, mirror index only needed if mirroring > 1
+				// 
+				// <DATAGRAM_MESSAGE>           ::= <HEADER> <PAYLOAD>              ; A full message, payloads contain game input.
+				// 
+				// <HEADER>                     ::= <CYCLE> <TIMESTAMP>             ; This is the format POST decryption using the shared cipher key.
+				// 
+				// <SESSION_ID>                 ::= 8*OCTET                         ; backhaul server assigned session id
+				// <MIRRORING>                  ::= 1*OCTET                         ; number of mirror indices to activate
+				// <CYCLE>                      ::= 2*OCTET                         ; cycle number for this packet, modulo 65536
+				// <TIMESTAMP>                  ::= 2*OCTET                         ; sender small timestamp - small because we have tiny time ranges of validity
+				// <PAYLOAD>                    ::= *OCTET                          ; game input data, size is compile time defined. Encrypted using the shared cipher key.
+				for (auto& endpoint : (*HoldOpen)) {
+					// same address, different port
+					FIPv4Endpoint ActualEndpoint = FIPv4Endpoint(endpoint.Address, ClientToServerMapperPort);
+					FIPv4Endpoint MirrorHeartbeatEndpoint = FIPv4Endpoint(endpoint.Address, ClientToServerPort);
+					FIPv4Endpoint HeartbeatEndpoint = FIPv4Endpoint(endpoint.Address, ServerToClientMapperPort);
+					int32 bytes_sent;
+					// for now, session Id is static value of 1 in uint64 form.
+					const struct _ {
+						uint64 SessionId;
+						uint8  Mirroring;
+					} msg{ SessionId, 2U };
+					constexpr size_t msg_size = sizeof(msg);
+					auto holdopen = ActualEndpoint;
+					bool packet_sent = H2->SendTo(reinterpret_cast<const uint8*>(&msg), msg_size,
+						bytes_sent, *holdopen.ToInternetAddr());
+					packet_sent = H1->SendTo(reinterpret_cast<const uint8*>(&msg), msg_size,
+						bytes_sent, *holdopen.ToInternetAddr());
+					packet_sent = H3->SendTo(reinterpret_cast<const uint8*>(&msg), msg_size,
+						bytes_sent, *holdopen.ToInternetAddr());
+
+					// TODO: perform over a time period
+					holdopen = HeartbeatEndpoint;
+					constexpr size_t msg_session_size = sizeof(msg.SessionId);
+					constexpr size_t msg_session_offset = offsetof(decltype(msg), SessionId);
+					packet_sent = H2->SendTo(reinterpret_cast<const uint8*>(&msg) + msg_session_offset, msg_session_size,
+						bytes_sent, *holdopen.ToInternetAddr());
+					packet_sent = H1->SendTo(reinterpret_cast<const uint8*>(&msg) + msg_session_offset, msg_session_size,
+						bytes_sent, *holdopen.ToInternetAddr());
+					packet_sent = H3->SendTo(reinterpret_cast<const uint8*>(&msg) + msg_session_offset, msg_session_size,
+						bytes_sent, *holdopen.ToInternetAddr());
+
+					// We sent the sessionId heartbeat, now the protocol wants some mirroring heartbests.
+					holdopen = MirrorHeartbeatEndpoint;
+					for (uint8 MirrorIdx = 0; MirrorIdx < msg.Mirroring; ++MirrorIdx)
+					{
+						constexpr size_t msg_mirror_idx_size = sizeof(MirrorIdx);
+						packet_sent = H2->SendTo(reinterpret_cast<const uint8*>(&MirrorIdx), msg_mirror_idx_size,
+							bytes_sent, *holdopen.ToInternetAddr());
+						packet_sent = H1->SendTo(reinterpret_cast<const uint8*>(&MirrorIdx), msg_mirror_idx_size,
+							bytes_sent, *holdopen.ToInternetAddr());
+						packet_sent = H3->SendTo(reinterpret_cast<const uint8*>(&MirrorIdx), msg_mirror_idx_size,
+							bytes_sent, *holdopen.ToInternetAddr());
+					}
+
+					if(bytes_sent == 0) {
+						consecutive_zero_bytes_sent++;
+					}
+					else {
+						consecutive_zero_bytes_sent = 0;
+					}
+				}
+			}
+		}
+
 		// Update ring array
 		//BRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR
 		while(!Queue.Get()->IsEmpty())
@@ -152,6 +250,7 @@ uint32 FBristleconeSender::Run() {
 			sending_state.controller_arr = *Queue->Peek(); //assign by value or you'll have a bad time.
 			packet_container.InsertNewDatagram(&sending_state);
 			packet_container.GetPacket()->UpdateCycleOrMeta(counter);
+
 			auto HoldOpen = target_endpoints;
 			if(HoldOpen && H1 && H2 && H3)
 			{
@@ -159,12 +258,30 @@ uint32 FBristleconeSender::Run() {
 					int32 bytes_sent;
 					//we may want a mode to timestamp each individual packet during testing so we can get a unique rtt
 					const FControllerStatePacket* current_controller_state = packet_container.GetPacket();
+					// Create a working copy for right now, will update to do everything in place if possible, but this is easier to write for now.
+					FControllerStatePacket working_copy = *current_controller_state;
+					// log the current controller state as an array of int8 for debugging purposes
+					const uint8* controller_state_bytes = reinterpret_cast<const uint8*>(&working_copy);
+					uint8* mutable_controller_state_bytes = reinterpret_cast<uint8*>(&working_copy);
+					constexpr size_t controller_state_size = sizeof(FControllerStatePacket);
+
+					// TODO: figure out all of this to see if it can be encrypted in place versus allocation, or use an arena.
+					Crypto->EncryptHeader(
+						reinterpret_cast<const uint32*>(controller_state_bytes),
+						reinterpret_cast<uint32*>(mutable_controller_state_bytes)
+					);
+					Crypto->EncryptBody(
+						controller_state_bytes + sizeof(uint32),
+						mutable_controller_state_bytes + sizeof(uint32),
+						controller_state_size - sizeof(uint32)
+					);
+
 					auto holdopen = endpoint;
-					bool packet_sent = H2->SendTo(reinterpret_cast<const uint8*>(current_controller_state), sizeof(FControllerStatePacket),
+					bool packet_sent = H2->SendTo(controller_state_bytes, controller_state_size,
 						bytes_sent, *holdopen.ToInternetAddr());
-					packet_sent = H1->SendTo(reinterpret_cast<const uint8*>(current_controller_state), sizeof(FControllerStatePacket),
+					packet_sent = H1->SendTo(controller_state_bytes, controller_state_size,
 						bytes_sent, *holdopen.ToInternetAddr());
-					packet_sent = H3->SendTo(reinterpret_cast<const uint8*>(current_controller_state), sizeof(FControllerStatePacket),
+					packet_sent = H3->SendTo(controller_state_bytes, controller_state_size,
 						bytes_sent, *holdopen.ToInternetAddr());
 
 

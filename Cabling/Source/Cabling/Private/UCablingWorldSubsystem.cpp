@@ -37,6 +37,8 @@ bool UCablingWorldSubsystem::RegistrationImplementation()
 }
 
 void UCablingWorldSubsystem::OnWorldBeginPlay(UWorld& InWorld) {
+	Super::OnWorldBeginPlay(InWorld);
+	
 }
 
 void UCablingWorldSubsystem::Deinitialize() {

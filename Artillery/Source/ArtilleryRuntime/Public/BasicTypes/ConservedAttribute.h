@@ -58,6 +58,11 @@ struct ARTILLERYRUNTIME_API FConservedAttributeData : public FGameplayAttributeD
 		BaseValue = NewValue;
 		++BaseHead;
 	};
+
+	double GetPriorValue()
+	{
+		return CurrentHistory[CurrentHistory.GetNextIndex(CurrentHead-2)]; // ugh
+	}
 	
 	double operator*(FConservedAttributeData const& rhs) 
 	{ 

@@ -18,26 +18,6 @@
 
 // All Jolt symbols are in the JPH namespace
 
-// Callback for traces, connect this to your own trace function if you have one
-static void TraceImpl(const char* inFMT, ...)
-{
-	// Format the message
-	va_list list;
-	va_start(list, inFMT);
-	char buffer[1024];
-	vsnprintf(buffer, sizeof(buffer), inFMT, list);
-	va_end(list);
-}
-
-// We're also using STL classes in this example
-#ifdef JPH_ENABLE_ASSERTS
-// Callback for asserts, connect this to your own assert handler if you have one
-static bool AssertFailedImpl(const char* inExpression, const char* inMessage, const char* inFile, JPH::uint inLine)
-{
-	// Breakpoint
-	return true;
-};
-#endif // JPH_ENABLE_ASSERTS
 
 class FBCharacterBase
 {
@@ -48,13 +28,36 @@ public:
 	JPH::RVec3 mInitialPosition = JPH::RVec3::sZero();
 	float mHeightStanding = 1.35f;
 	float mMaxSpeed = 15.0f;
+	float mMaxDash = 18;
+	float mMaxLunge = 18;
+	float mMaxJump = 18;
+	float mDashLinearFriction = 0;
+	float mLungeLinearFriction = 0;
+	float mJumpLinearFriction = 0;
 	float mRadiusStanding = 0.3f;
 	JPH::CharacterVirtualSettings mCharacterSettings;
 	JPH::CharacterVirtual::ExtendedUpdateSettings mUpdateSettings;
 	// Accumulated during IngestUpdate
 	JPH::Quat mThrottleModel = JPH::Quat(100, 100, 100, 100);
+	
+	JPH::Quat mDefaultThrottleModel = JPH::Quat(100, 100, 100, 100);
 	JPH::Vec3 mLocomotionUpdate = JPH::Vec3::sZero();
+
+	//these are Dash, jump, lunge, and forces for the default, but honestly, you can use these to represent
+	//whatever you need them to. Dash, jump, and lunge are non-inertial forces, which means that they
+	//have their own friction, are added after speedlimits, and generally do not behave like physical forces.
+	//This is extremely useful for jumps and dashes, which often need to move the player faster than you would otherwise
+	//permit, but probably should not interfere with the player's control inputs persay, and likely shouldn't be allowed to
+	//accumulate as part of inertia, unless you really love shooting players through map collision
+	JPH::Vec3 mDashUpdate = JPH::Vec3::sZero();
+	JPH::Vec3 mJumpUpdate = JPH::Vec3::sZero();
+	JPH::Vec3 mLungeUpdate = JPH::Vec3::sZero();
 	JPH::Vec3 mForcesUpdate = JPH::Vec3::sZero();
+	// 1.0: input forces are discarded after the first frame they are applied
+	// 0.0: input forces do not naturally decay at all.
+	float mDashFriction = 1.0;
+	float mLungeFriction = 1.0;
+	float mJumpFriction = 0.893;
 	JPH::Vec3 mGravity = JPH::Vec3::sZero();
 	JPH::Quat mCapsuleRotationUpdate = JPH::Quat::sIdentity();
 	JPH::Ref<JPH::CharacterVirtual> mCharacter = JPH::Ref<JPH::CharacterVirtual>();
@@ -82,7 +85,6 @@ public:
 	//https://stackoverflow.com/questions/2254263/order-of-member-constructor-and-destructor-calls
 	//BodyId is actually a freaking 4byte struct, so it's _worse_ potentially to have a pointer to it than just copy it.
 	TSharedPtr<KeyToBody> BarrageToJoltMapping;
-	TSharedPtr<BoundsToShape> BoxCache;
 	TSharedPtr<TMap<FBarrageKey, TSharedPtr<FBCharacterBase>>> CharacterToJoltMapping;
 	//std::shared_ptr<JPH::CollisionGroupUnaware_FleshBroadPhase> mTestBroadPhase;
 	
@@ -92,7 +94,7 @@ public:
 	 */
 	bool GetBodyIDOrDefault(FBarrageKey Key, JPH::BodyID& result) const
 	{
-		bool FoundBodyID = BarrageToJoltMapping->find(Key, result);
+		bool FoundBodyID = (bool)BarrageToJoltMapping->visit(Key, [&result](auto& a) { result = a.second; });
 		if(!FoundBodyID)
 		{
 			result = JPH::BodyID(); // invalid BUT characters HAVE NO FLESSSSSSSH BLEHHHHHH (seriously, without an inner shape, they lack a body)
@@ -100,7 +102,7 @@ public:
 		return FoundBodyID;
 	}
 
-	const unsigned int AllocationArenaSize = 256 * 1024 * 1024;
+	const unsigned int AllocationArenaSize = 32 * 1024 * 1024;
 	TSharedPtr<JPH::TempAllocatorImpl> Allocator;
 	// List of active characters in the scene so they can collide
 	//https://github.com/jrouwe/JoltPhysics/blob/e3ed3b1d33f3a0e7195fbac8b45b30f0a5c8a55b/Jolt/Physics/Character/CharacterVirtual.h#L143
@@ -187,6 +189,7 @@ public:
 			{
 			case static_cast<JPH::BroadPhaseLayer::Type>(JOLT::BroadPhaseLayers::NON_MOVING): return "NON_MOVING";
 			case static_cast<JPH::BroadPhaseLayer::Type>(JOLT::BroadPhaseLayers::MOVING): return "MOVING";
+			case static_cast<JPH::BroadPhaseLayer::Type>(JOLT::BroadPhaseLayers::ENEMYHITBOX): return "ENEMYHITBOX";
 			case static_cast<JPH::BroadPhaseLayer::Type>(JOLT::BroadPhaseLayers::DEBRIS): return "DEBRIS";
 			default: JPH_ASSERT(false);
 				return "INVALID";
@@ -202,6 +205,9 @@ public:
 	class ObjectVsBroadPhaseLayerFilterImpl : public JPH::ObjectVsBroadPhaseLayerFilter
 	{
 	public:
+		static inline const JPH::EAllowedDOFs StandardBoxAllowedDOFs = JPH::EAllowedDOFs::TranslationX | JPH::EAllowedDOFs::TranslationY | JPH::EAllowedDOFs::TranslationZ | JPH::EAllowedDOFs::RotationZ | JPH::EAllowedDOFs::RotationX;
+		static inline const JPH::EAllowedDOFs StandardCapAllowedDOFs = JPH::EAllowedDOFs::TranslationX | JPH::EAllowedDOFs::TranslationY | JPH::EAllowedDOFs::TranslationZ | JPH::EAllowedDOFs::RotationZ;
+
 		virtual bool ShouldCollide(JPH::ObjectLayer inLayer1, JPH::BroadPhaseLayer inLayer2) const override
 		{
 			switch (inLayer1)
@@ -219,7 +225,7 @@ public:
 			case Layers::ENEMY:
 				return inLayer2 != JOLT::BroadPhaseLayers::DEBRIS;
 			case Layers::ENEMYHITBOX: //TODO: do we need to modify this to get true freedom from bonks?
-				return inLayer2 != JOLT::BroadPhaseLayers::DEBRIS && inLayer2 != JOLT::BroadPhaseLayers::ENEMYHITBOX;
+				return inLayer2 != JOLT::BroadPhaseLayers::DEBRIS && inLayer2 != JOLT::BroadPhaseLayers::ENEMYHITBOX && inLayer2 != JOLT::BroadPhaseLayers::NON_MOVING;
 			case Layers::CAST_QUERY:
 				return inLayer2 != JOLT::BroadPhaseLayers::DEBRIS;
 			case Layers::CAST_QUERY_LEVEL_GEOMETRY_ONLY:
@@ -283,7 +289,7 @@ public:
 
 	// This determines how many mutexes to allocate to protect rigid bodies from concurrent access. Set it to 0 for the default settings.
 	// mutexes are cheap! (they aren't)
-	const unsigned int cNumBodyMutexes = 128;//for a LOT of reasons, we actually want the locks on the bodies to be quite granular.
+	const unsigned int cNumBodyMutexes = 2.5f * std::thread::hardware_concurrency();//for a LOT of reasons, we actually want the locks on the bodies to be quite granular.
 
 	// This is the max amount of body pairs that can be queued at any time (the broad phase will detect overlapping
 	// body pairs based on their bounding boxes and will insert them into a queue for the narrowphase). If you make this buffer
@@ -291,10 +297,7 @@ public:
 	// Note: This value is low because this is a simple test. For a real project use something in the order of 65536.
 	const unsigned int cMaxBodyPairs = 65536;
 
-	// This is the maximum size of the contact constraint buffer. If more contacts (collisions between bodies) are detected than this
-	// number then these contacts will be ignored and bodies will start interpenetrating / fall through the world.
-	// number then these contacts will be ignored and bodies will start interpenetrating / fall through the world.
-	// Note: This value is low because this is a simple test. For a real project use something in the order of 10240.
+	// This is the maximum size of the contact constraint buffer.
 	const unsigned int cMaxContactConstraints = 16384;
 	
 	//do not move this up. see C++ standard ~ 12.6.2
@@ -324,17 +327,19 @@ public:
 	// Cast a ray at something and get the first thing it hits
 	void CastRay(FVector3d CastFrom, FVector3d Direction, const JPH::BroadPhaseLayerFilter& BroadPhaseFilter, const JPH::ObjectLayerFilter& ObjectFilter, const JPH::BodyFilter& BodiesFilter, TSharedPtr<FHitResult> OutHit) const;
 	JPH::EMotionType LayerToMotionTypeMapping(uint16 Layer);
-	JPH::Ref<JPH::Shape> AttemptBoxCache(double JoltX, double JoltY, double JoltZ, float HEReduceMin);
+	JPH::Ref<JPH::Shape> MakeBox(double JoltX, double JoltY, double JoltZ, float HEReduceMin);
 	//we could use type indirection or inheritance, but the fact of the matter is that this is much easier
 	//to understand and vastly vastly faster. it's also easier to optimize out allocations, and it's very
 	//very easy to read for people who are probably already drowning in new types.
 	//finally, it allows FBShapeParams to be a POD and so we can reason about it really easily.
-	FBarrageKey CreatePrimitive(FBBoxParams& ToCreate, uint16 Layer, bool IsSensor = false, bool forceDynamic = false, bool isMovable = true);
-	FBarrageKey CreatePrimitive(FBCapParams& ToCreate, uint16 Layer, bool IsSensor, bool forceDynamic, bool isMovable);
+	
+	FBarrageKey CreatePrimitive(FBBoxParams& ToCreate, uint16 Layer, bool IsSensor = false, bool forceDynamic = false, bool isMovable = true, float AngularDamp = 0.1, JPH::EAllowedDOFs AllowedDOF = StandardBoxAllowedDOFs);
+	FBarrageKey CreatePrimitive(FBCapParams& ToCreate, uint16 Layer, bool IsSensor, bool forceDynamic, bool isMovable, float AngularDamp = 0.1, JPH::EAllowedDOFs AllowedDOF = StandardCapAllowedDOFs);
 	FBarrageKey CreatePrimitive(FBCharParams& ToCreate, uint16 Layer);
 	FBarrageKey CreatePrimitive(FBSphereParams& ToCreate, uint16 Layer, bool IsSensor = false);
 	FBarrageKey CreatePrimitive(FBCapParams& ToCreate, uint16 Layer, bool IsSensor = false, FMassByCategory::BMassCategories MassClass = FMassByCategory::BMassCategories::MostEnemies);
-
+	using BodyIDVector = JPH::Array<JPH::BodyID>;
+	void GetBodiesList(BodyIDVector &outBodyIDs);
 	//Under normal circumstances, you will _not_ want to set the layer and movement to anything else.
 	//the use of static mesh colliders is quite slow, and primitive shapes or compound primitives work for most purposes
 	//The exception is non-moving static mesh colliders, which are well optimized in Jolt. However, you may wish to have specialized
@@ -347,6 +352,11 @@ public:
 		Layers::EJoltPhysicsLayer Layer = Layers::EJoltPhysicsLayer::NON_MOVING,
 		JPH::EMotionType Movement = JPH::EMotionType::Static,
 		 bool IsSensor = false, bool ForceActualMesh = false, FVector CenterOfMassTranslation = {0,0,0});
+	
+	
+	
+	void CreateHeightfieldLandscapeMesh(TNotNull<const ALandscapeProxy*> NotNull);
+
 
 	//This'll be trouble.
 	//https://www.youtube.com/watch?v=KKC3VePrBOY&lc=Ugw9YRxHjcywQKH5LO54AaABAg
@@ -357,12 +367,20 @@ public:
 	//Generally, as we add and remove objects, we'll want to perform this, but we really don't want to run it every tick. We can either use trigger logic or a cadenced ticklite
 	bool OptimizeBroadPhase();
 
+	
 	void FinalizeReleasePrimitive(FBarrageKey BarrageKey)
 	{
-		//TODO return owned Joltstuff to pool or dealloc
-		JPH::BodyID result;
-		//as we add character handling, it'll be extremely difficult to do it here.
-		if (BarrageToJoltMapping->find(BarrageKey, result) && !result.IsInvalid()) 
+
+		if (CharacterToJoltMapping->Contains(BarrageKey))
+		{
+			CharacterToJoltMapping->Remove(BarrageKey);
+		}
+
+		//Even though the barrage key is convertible to the jolt key, we want to use the barrage-jolt mapping here for
+		//lifecycle certainty. It's also not as perf critical.
+		JPH::BodyID result = JPH::BodyID(BarrageKey.KeyIntoBarrage & UINT32_MAX);
+		// if they COULD exist, we proceed.
+		if (!result.IsInvalid())
 		{
 			body_interface->RemoveBody(result);
 			body_interface->DestroyBody(result);
@@ -375,6 +393,7 @@ public:
 	~FWorldSimOwner();
 	bool UpdateCharacter(FBPhysicsInput& Update);
 	bool UpdateCharacters(TSharedPtr<TArray<FBPhysicsInput>> Array);
+	
 private:
 	//don't. not unless you understand deeply. that includes me. yes, I know, future jake, you think you're smart.
 	//maybe. but this was a... decision.

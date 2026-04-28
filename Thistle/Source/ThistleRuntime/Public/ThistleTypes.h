@@ -47,7 +47,7 @@ struct THISTLERUNTIME_API F_ArtilleryKeyInstanceData
 	UPROPERTY(VisibleAnywhere, Category = Input)
 	FSkeletonKey KeyOf;
 
-	F_ArtilleryKeyInstanceData& operator=(const FSkeletonKey& rhs)
+	F_ArtilleryKeyInstanceData& operator=(const FSkeletonKey rhs)
 	{
 		KeyOf = rhs;
 		return *this;
@@ -83,16 +83,16 @@ struct THISTLERUNTIME_API F_RelatedKey
 	GENERATED_BODY()
 	/** Key to use. */
 	UPROPERTY(VisibleAnywhere, Category = Input)
-	FSkeletonKey InputKey;
+	FSkeletonKey InputKey = FSkeletonKey();
 
 	UPROPERTY(EditAnywhere, Category = Input)
-	E_IdentityAttrib Relationship;
+	E_IdentityAttrib Relationship = E_IdentityAttrib::Target;
 
 	UPROPERTY(EditAnywhere, Category = Output)
-	bool Found;
+	bool Found = false;
 	
 	UPROPERTY(EditAnywhere, Category = Output)
-	FSkeletonKey OutputKey;
+	FSkeletonKey OutputKey = FSkeletonKey();
 };
 
 USTRUCT(BlueprintType)
@@ -102,11 +102,11 @@ struct THISTLERUNTIME_API F_SetRelatedKey
 
 	/** Source IS_RELATED_BY Relationship TO Updated Key*/
 	UPROPERTY(EditAnywhere, Category = Input)
-	FSkeletonKey SourceKey; //read only
+	FSkeletonKey SourceKey = FSkeletonKey(); //read only
 
 	/** Relationship connects source to the updated key*/
 	UPROPERTY(EditAnywhere, Category = Input)
-	E_IdentityAttrib Relationship;
+	E_IdentityAttrib Relationship = E_IdentityAttrib::Target;
 
 	/** Related Key IS_THE relationship OF Source
 	 *  For example, Related Key is the TARGET of Source
@@ -114,7 +114,7 @@ struct THISTLERUNTIME_API F_SetRelatedKey
 	 *  This is stored as Tank Target Player - because we map From Verb To in the standard fact triple style
 	 */
 	UPROPERTY(EditAnywhere, Category = Input)
-	FSkeletonKey UpdateToRelatedKey;
+	FSkeletonKey UpdateToRelatedKey = FSkeletonKey();
 };
 
 USTRUCT(BlueprintType)
@@ -134,7 +134,7 @@ struct THISTLERUNTIME_API F_TAttributeInstanceData : public F_ArtilleryKeyInstan
 
 	/** Tag to check for in the container. */
 	UPROPERTY(EditAnywhere, Category = Input)
-	E_AttribKey AttributeName;
+	E_AttribKey AttributeName = E_AttribKey::Speed;
 };
 
 USTRUCT(BlueprintType)
@@ -143,7 +143,7 @@ struct THISTLERUNTIME_API F_TAttributeSetData : public F_TAttributeInstanceData
 	GENERATED_BODY()
 	
 	UPROPERTY(EditAnywhere, Category = Input)
-	float Value;
+	float Value = 0.f;
 };
 
 USTRUCT(BlueprintType)
@@ -153,7 +153,7 @@ struct THISTLERUNTIME_API F_TVec3InstanceData: public  F_ArtilleryKeyInstanceDat
 		
 	/** The vector, if any. Assumed to be worldspace. */
 	UPROPERTY(EditAnywhere, Category = Input)
-	FVector Vec3;
+	FVector Vec3 = FVector::ZeroVector;
 };
 
 USTRUCT(BlueprintType)
@@ -165,7 +165,7 @@ struct THISTLERUNTIME_API F_TPOIInstanceData: public  F_ArtilleryKeyInstanceData
 	E_PointOfInterestMode Mode = E_PointOfInterestMode::KeyOnly;
 	
 	UPROPERTY(VisibleAnywhere, Category = Input, meta = (Optional))
-	FSkeletonKey PointOfInterestKey;
+	FSkeletonKey PointOfInterestKey = FSkeletonKey();
 	/** The vector, if any. Assumed to be worldspace. */
 
 	UPROPERTY(EditAnywhere, Category = Input, meta = (Optional))
@@ -225,7 +225,7 @@ struct THISTLERUNTIME_API FThistleSphereCastInstanceData : public FPointToPoint
 	GENERATED_BODY()
 	
 	UPROPERTY(EditAnywhere, Category = Parameter)
-	float Radius;
+	float Radius = 0.f;
 
 	TSharedPtr<FHitResult> HitResultCache = MakeShared<FHitResult>();
 	UPROPERTY(EditAnywhere, Category = Parameter)

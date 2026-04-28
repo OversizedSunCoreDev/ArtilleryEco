@@ -14,6 +14,7 @@ public:
 	
 	virtual ~FBristleconeSender() override;
 	void BindSource(TheCone::SendQueue Queue);
+	void SetSessionData(uint64 sessionId, uint64 cipherKey);
 	void AddTargetAddress(FString target_address_str);
 	void SetLocalSockets(
 		const TSharedPtr<FSocket, ESPMode::ThreadSafe>& new_socket_high,
@@ -24,10 +25,10 @@ public:
 
 	void ActivateDSCP();
 	
-	virtual bool Init() override;
-	virtual uint32 Run() override;
-	virtual void Exit() override;
-	virtual void Stop() override;
+	virtual bool Init() final;
+	virtual uint32 Run() final;
+	virtual void Exit() final;
+	virtual void Stop() final;
 
 private:
 	void Cleanup();
@@ -45,4 +46,10 @@ private:
 	TSharedPtr<TCircularQueue<uint64_t>> Queue;
 	uint8 consecutive_zero_bytes_sent;
 	bool running;
+
+	// I am pretty sure these should be immutable
+	uint64 SessionId;
+	uint64 CipherKey;
+
+	struct FLongboyCrypto* Crypto;
 };

@@ -95,7 +95,11 @@ public:
 		if(!HasAnyFlags(RF_ClassDefaultObject) && !IsEditorOnly() && !IsTemplate())
 		{
 			//disabled for now.
-			UOrdinatePillar::SelfPtr->REGISTERORDER(++MonotonicKey,1,this);
+			auto wrld = GetWorld();
+			if (wrld)
+			{
+				wrld->GetSubsystem<UOrdinatePillar>()->REGISTERORDER(++MonotonicKey,1,this);
+			}
 		}
 		IsReady = false;
 	}

@@ -22,15 +22,8 @@ void ULongLivedRecords::Initialize(FSubsystemCollectionBase& Collection)
 
 UOrdinatePillar::UOrdinatePillar()
 {
-	SelfPtr = this;
 	MyWorld = nullptr;
-	if (!ORDINATION_Fallback.burnt)
-	{
-		ORDINATION_Fallback.burnt = true;
-		auto& A = Data;
-		Data = ORDINATION_Fallback;
-		ORDINATION_Fallback = A;
-	}
+
 
 	if (MyWorld != nullptr)
 	{
@@ -42,11 +35,7 @@ UOrdinatePillar::UOrdinatePillar()
 	{
 		Group->Empty();
 	}
-	//we also fry the fallback.
-	for (ORDIN::InitSequence* Group : ORDINATION_Fallback.GROUPS)
-	{
-		Group->Empty();
-	}
+
 }
 
 UOrdinatePillar::~UOrdinatePillar()
@@ -57,10 +46,8 @@ UOrdinatePillar::~UOrdinatePillar()
 		MyWorld->IsForbidden = true;
 		MyWorld->IsReady = false;
 	}
-	ORDINATION_Fallback.burnt = false;
 	Data.Subsystems.Empty();
-	//and the fallback
-	ORDINATION_Fallback.Subsystems.Empty();
+
 }
 
 void UOrdinatePillar::Deinitialize()
@@ -76,11 +63,6 @@ void UOrdinatePillar::Deinitialize()
 	{
 		Group->Empty();
 	}
-	//we also fry the fallback.
-	for (ORDIN::InitSequence* Group : ORDINATION_Fallback.GROUPS)
-	{
-		Group->Empty();
-	}
 	MyWorld->IsForbidden = true;
 	MyWorld->IsReady = false;
 }
@@ -93,15 +75,15 @@ void UOrdinatePillar::REGISTERLORD(int RegisterAs, ISkeletonLord* YourThisPointe
 	{
 		Data.Subsystems.Add(ORDIN::SubsystemKey(RegisterAs, YourThisPointerAgain));
 	}
-	else if (!ORDINATION_Fallback.burnt)
+	else 
 	{
-		ORDINATION_Fallback.Subsystems.Add(ORDIN::SubsystemKey( RegisterAs, YourThisPointerAgain));
+		UE_LOG(LogTemp, Error, TEXT("CRITICAL ERROR: Ordin DOES NOT currently support a fallback, and you tried to register before your world's copy of ordin was online."));
 	}
 }
 
 void UOrdinatePillar::REGISTERORDER(int RegisterAs, int group, IKeyedConstruct* YourThisPointer)
 {
-	if (GIsRunning && ORDINATION_Fallback.burnt && this && GetWorld())
+	if (GIsRunning && this && GetWorld())
 	{
 		auto WContextType = GetWorld()->WorldType;
 		if (WContextType == EWorldType::PIE || WContextType == EWorldType::Game)
@@ -114,28 +96,23 @@ void UOrdinatePillar::REGISTERORDER(int RegisterAs, int group, IKeyedConstruct* 
 			Data.GROUPS[group]->Add(forcealloc);
 		}
 	}
-	else if (!ORDINATION_Fallback.burnt)
+	else
 	{
-		if (group > 10 || group < 0)
-		{
-			throw std::invalid_argument("Invalid group");
-		}
-		ORDINATION_Fallback.GROUPS[group]->Add(ORDIN::SequencedKey(RegisterAs, YourThisPointer));
+		UE_LOG(LogTemp, Error, TEXT("CRITICAL ERROR: Ordin DOES NOT currently support a fallback, and you tried to register before your world's copy of ordin was online."));
 	}
 }
 
 void UOrdinatePillar::PostInitialize()
 {
-	
+	Super::PostInitialize();
 	if (GetWorld() && GetWorld()->IsGameWorld() && GEngine)
 	{
 		auto uplink = GEngine->GetEngineSubsystem<ULongLivedRecords>();
 		if (uplink) // if uplink is not valid during the postinitialization of world subsystems, we are either in CDO build or a degraded state.
 		{
 			MyWorld = uplink->WorldRecordStart();
-			MyWorld->IsReady = true;
-			MyWorld->IsForbidden = false;
-			Super::PostInitialize();
+			MyWorld->IsReady = false;
+			MyWorld->IsForbidden = true;
 			Data.Subsystems.Sort();
 			for (ORDIN::SubsystemKey Register : Data.Subsystems)
 			{
@@ -145,9 +122,9 @@ void UOrdinatePillar::PostInitialize()
 				}
 				Register.Value->IsReady = false;
 				Register.Value->AttemptRegister();
-				MyWorld->IsReady = MyWorld->IsReady && Register.Value->IsReady;
+				MyWorld->SubsystemsReady = MyWorld->SubsystemsReady && Register.Value->IsReady;
 			}
-			MyWorld->IsReady = true;
+			MyWorld->IsReady = MyWorld->SubsystemsReady;
 			MyWorld->IsForbidden = false;
 			MyWorldState = MyWorld;//setty set.
 		}
@@ -188,11 +165,6 @@ void UOrdinatePillar::OnWorldBeginPlay(UWorld& InWorld)
 	}
 	//we clear once fired!
 	for (ORDIN::InitSequence* Group : Data.GROUPS)
-	{
-		Group->Empty();
-	}
-	//we also fry the fallback.
-	for (ORDIN::InitSequence* Group : ORDINATION_Fallback.GROUPS)
 	{
 		Group->Empty();
 	}

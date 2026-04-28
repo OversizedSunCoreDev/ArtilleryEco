@@ -8,12 +8,22 @@ THIRD_PARTY_INCLUDES_START
 #include "Memory/aligned_allocator.h"
 #define NO_BLAZE true
 #define NOT_THREADSAFE true
-#define NOSVML true
-#define NO_SLEEF true
-#define __SSE2__ true
-#define __AVX2__ true
-#define __AVX__ true
-#define __SSE2__ true
+#ifndef NOSVML
+	#define NOSVML true
+#endif
+#ifndef NO_SLEEF
+	#define NO_SLEEF true
+#endif
+#ifndef __SSE2__
+	#define __SSE2__ true
+#endif
+#ifndef __AVX2__
+	#define __AVX2__ true
+#endif
+#ifndef __AVX__
+	#define __AVX__ true
+#endif
+
 #define LCM_USE_SSE4_2 true
 //HI! you MAY want to change this. Might. Maybe. You know. If you value your life, hope, or sanity.
 

@@ -2,12 +2,29 @@
 
 #include "ArtilleryRuntimeModule.h"
 
+#include "ArtilleryAnimInstance.h"
+
+#if WITH_EDITOR
+#include "Anim/AsyncAnimValidationAndUtils.h"
+#endif
+
 #define LOCTEXT_NAMESPACE "FArtilleryRuntimeModule"
 
 void FArtilleryRuntimeModule::StartupModule()
 {
 	// This code will execute after your module is loaded into memory;
 	// the exact timing is specified in the .uplugin file per-module
+	
+#if WITH_EDITOR
+	{
+		UClass* AnimInstanceClass = UArtilleryAnimInstance::StaticClass();
+		if (ensure(AnimInstanceClass)) {
+			MegafunkUtils::Anim::SetAnimInstanceClassToUseAsyncSafeConstructor<UArtilleryAnimInstance>(AnimInstanceClass);
+		}
+	}
+#endif
+	
+	
 }
 
 void FArtilleryRuntimeModule::ShutdownModule()

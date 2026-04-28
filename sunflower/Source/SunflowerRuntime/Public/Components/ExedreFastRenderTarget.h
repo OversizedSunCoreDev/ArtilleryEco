@@ -10,7 +10,6 @@ class SUNFLOWERRUNTIME_API UExedreWidgetRenderTarget : public UUserWidget
 	GENERATED_UCLASS_BODY()
 
 	public:
-	UExedreWidgetRenderTarget(const FObjectInitializer& ObjectInitializer, FString Path);
 	void SetRenderMaterial( UMaterialInterface* Material, FString Path = "");
 
 	virtual void ReleaseSlateResources(bool bReleaseChildren) override;

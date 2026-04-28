@@ -5,6 +5,8 @@
 #include "FWorldSimOwner.h"
 #include "CoordinateUtils.h"
 #include "FBPhysicsInput.h"
+#include "LandscapeProxy.h"
+#include "LowLogTimeAndRate.h"
 
 //https://github.com/GaijinEntertainment/DagorEngine/blob/71a26585082f16df80011e06e7a4e95302f5bb7f/prog/engine/phys/physJolt/joltPhysics.cpp#L800
 //this is how gaijin uses jolt, and war thunder's honestly a pretty strong comp to our use case.
@@ -21,7 +23,7 @@ bool UBarrageDispatch::RegistrationImplementation()
 	}
 
 	UE_LOG(LogTemp, Warning, TEXT("Barrage:TransformUpdateQueue: Online"));
-	GameTransformPump = MakeShareable(new TransformUpdatesForGameThread(20024));
+	GameTransformPump = MakeShareable(new TransformUpdatesForGameThread());
 	ContactEventPump = MakeShareable(new TCircularQueue<BarrageContactEvent>(8192));
 	FBarragePrimitive::GlobalBarrage = this;
 	//this approach may actually be too slow. it is pleasingly lockless, but it allocs 16megs
@@ -34,7 +36,8 @@ bool UBarrageDispatch::RegistrationImplementation()
 	//which allows us to cleanly break a dependency.
 	std::function<void(int)> bind = std::bind(&UBarrageDispatch::GrantWorkerFeed, this, std::placeholders::_1);
 	JoltGameSim = MakeShareable(new FWorldSimOwner(TickRateInDelta, bind));
-	JoltBodyLifecycleMapping = MakeShareable(new KeyToFBLet());
+	//https://github.com/Thermadiag/seq/blob/main/docs/concurrent_map.md
+	JoltBodyLifecycleMapping = MakeShareable(new KeyToFBLet(8192));
 	TranslationMapping = MakeShareable(new KeyToKey());
 	SelfPtr = this;
 	return true;
@@ -104,7 +107,6 @@ void UBarrageDispatch::Deinitialize()
 				       "Hey, so something's holding live references to the queue. Maybe. Shared Ref Count is not reliable."
 			       ));
 		}
-		HoldOpen->Empty();
 	}
 	HoldOpen = nullptr;
 
@@ -157,12 +159,8 @@ void UBarrageDispatch::SphereSearch(
 	uint32* OutFoundObjectCount,
 	TArray<uint32>& OutFoundObjects)
 {
-	JPH::BodyID CastingBodyID;
-	if (!JoltGameSim->BarrageToJoltMapping->find(ShapeSource, CastingBodyID))
-	{
-		CastingBodyID = JPH::BodyID();
-		// invalid BUT characters HAVE NO FLESSSSSSSH BLEHHHHHH (seriously, without an inner shape, they lack a body)
-	}
+	JPH::BodyID CastingBodyID = JPH::BodyID(ShapeSource.KeyIntoBarrage & UINT32_MAX);
+	// we don't really use the id, so we don't need to do a blocking call.
 	JoltGameSim->SphereSearch(CastingBodyID, Location, Radius, BroadPhaseFilter, ObjectFilter, BodiesFilter,
 	                          OutFoundObjectCount, OutFoundObjects);
 }
@@ -187,11 +185,12 @@ void UBarrageDispatch::CastRay(
 //and it's not clear to me that Shapefulness is going to actually be the defining shared
 //feature. I'm going to wait to refactor the types until testing is complete.
 FBLet UBarrageDispatch::CreatePrimitive(FBBoxParams& Definition, FSkeletonKey OutKey, uint16_t Layer, bool isSensor,
-                                        bool forceDynamic, bool isMovable)
+                                        bool forceDynamic, bool isMovable, float AngularDamp, JPH::EAllowedDOFs AllowedDOF)
 {
 	if (JoltGameSim)
 	{
-		FBarrageKey temp = JoltGameSim->CreatePrimitive(Definition, Layer, isSensor, forceDynamic, isMovable);
+		AllowedDOF = isMovable ? AllowedDOF : JPH::EAllowedDOFs::None;
+		FBarrageKey temp = JoltGameSim->CreatePrimitive(Definition, Layer, isSensor, forceDynamic, isMovable, AngularDamp, AllowedDOF);
 		return ManagePointers(OutKey, temp, Box);
 	}
 	return nullptr;
@@ -203,11 +202,11 @@ FBLet UBarrageDispatch::CreatePrimitive(FBBoxParams& Definition, FSkeletonKey Ou
 //and it's not clear to me that Shapefulness is going to actually be the defining shared
 //feature. I'm going to wait to refactor the types until testing is complete.
 FBLet UBarrageDispatch::CreatePrimitive(FBCapParams& Definition, FSkeletonKey OutKey, uint16_t Layer, bool isSensor,
-										bool forceDynamic, bool isMovable)
+                                        bool forceDynamic, bool isMovable, float AngularDamp, JPH::EAllowedDOFs AllowedDOF)
 {
 	if (JoltGameSim)
 	{
-		FBarrageKey temp = JoltGameSim->CreatePrimitive(Definition, Layer, isSensor, forceDynamic, isMovable);
+		FBarrageKey temp = JoltGameSim->CreatePrimitive(Definition, Layer, isSensor, forceDynamic, isMovable, AngularDamp, AllowedDOF);
 		return ManagePointers(OutKey, temp, Box);
 	}
 	return nullptr;
@@ -280,23 +279,33 @@ FBLet UBarrageDispatch::LoadComplexStaticMesh(FBTransform& MeshTransform,
 //https://github.com/jrouwe/JoltPhysics/blob/master/Samples/Tests/Shapes/MeshShapeTest.cpp
 //probably worth reviewing how indexed triangles work, too : https://www.youtube.com/watch?v=dOjZw5VU6aM
 FBLet UBarrageDispatch::LoadEnemyHitboxFromStaticMesh(FBTransform& MeshTransform,
-											  const UStaticMeshComponent* StaticMeshComponent,
-											  FSkeletonKey OutKey, bool IsSensor, bool UseRawMeshForCollision, FVector CenterOfMassTranslation) 
+                                                      const UStaticMeshComponent* StaticMeshComponent,
+                                                      FSkeletonKey OutKey, bool IsSensor, bool UseRawMeshForCollision,
+                                                      FVector CenterOfMassTranslation)
 {
 	if (JoltGameSim)
 	{
 		FBLet shared = JoltGameSim->LoadComplexStaticMesh(MeshTransform, StaticMeshComponent, OutKey,
-			Layers::ENEMYHITBOX, JoltGameSim->LayerToMotionTypeMapping(Layers::ENEMYHITBOX), IsSensor, UseRawMeshForCollision, CenterOfMassTranslation);
+		                                                  Layers::ENEMYHITBOX,
+		                                                  JoltGameSim->LayerToMotionTypeMapping(Layers::ENEMYHITBOX),
+		                                                  IsSensor, UseRawMeshForCollision, CenterOfMassTranslation);
 		if (shared && shared.IsValid())
 		{
 			FBarragePrimitive::SetGravityFactor(0, shared);
-			shared->Me= FBShape::Complex;
+			shared->Me = FBShape::Complex;
 			JoltBodyLifecycleMapping->insert_or_assign(shared->KeyIntoBarrage, shared);
-			TranslationMapping->insert_or_assign( shared->KeyOutOfBarrage, shared->KeyIntoBarrage);
+			TranslationMapping->insert_or_assign(shared->KeyOutOfBarrage, shared->KeyIntoBarrage);
 			return shared;
 		}
 	}
 	return nullptr;
+}
+
+void UBarrageDispatch::CreateHeightfieldLandscapeMesh(const TNotNull<const ALandscapeProxy*> LandscapeActor)
+{
+	
+	check(JoltGameSim)
+	JoltGameSim->CreateHeightfieldLandscapeMesh(LandscapeActor);
 }
 
 //unlike our other ecs components in artillery, barrage dispatch does not maintain the mappings directly.
@@ -314,8 +323,7 @@ FBLet UBarrageDispatch::GetShapeRef(FBarrageKey Existing) const
 	//this means your calls will all succeed but none will be applied during the apply shadow phase.
 	TSharedPtr<KeyToFBLet> holdopen = JoltBodyLifecycleMapping;
 	FBLet out;
-	//TODO: This line feels SUSPICIOUS!
-	return holdopen && holdopen->find(Existing, out) ? out : nullptr;
+	return holdopen && holdopen->visit(Existing, [&out](auto& a) { out = a.second; }) ? out : nullptr;
 }
 
 FBLet UBarrageDispatch::GetShapeRef(FSkeletonKey Existing) const
@@ -332,13 +340,13 @@ FBLet UBarrageDispatch::GetShapeRef(FSkeletonKey Existing) const
 	if (holdopen)
 	{
 		FBarrageKey key = 0;
-		if (holdopen->find(Existing, key))
+		if (holdopen->visit(Existing, [&key](auto& a) { key = a.second; }))
 		{
 			TSharedPtr<KeyToFBLet> HoldMapping = JoltBodyLifecycleMapping;
 			if (HoldMapping)
 			{
 				FBLet deref;
-				if (HoldMapping->find(key, deref))
+				if (HoldMapping->visit(key, [&deref](auto& a) { deref = a.second; }))
 				{
 					if (FBarragePrimitive::IsNotNull(deref)) //broken out to ease debug.
 					{
@@ -366,6 +374,8 @@ TStatId UBarrageDispatch::GetStatId() const
 
 void UBarrageDispatch::StackUp()
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(UBarrageDispatch::StackUp)
+	
 	uint16_t RefilledUpTo = 0;
 	uint16_t Adding = 0;
 	if (JoltGameSim)
@@ -413,51 +423,60 @@ void UBarrageDispatch::StackUp()
 		}
 		for (int i = 0; i < RefilledUpTo; ++i)
 		{
-			auto& input = InternalSortableSet[i];
-			JPH::BodyID result;
-			const bool bID = JoltGameSim->BarrageToJoltMapping->find(input.Target, result);
-			if (bID && input.metadata == FBShape::Character)
+			FBPhysicsInput& input = InternalSortableSet[i];
+			JPH::BodyID result = JPH::BodyID(input.Target.KeyIntoBarrage & UINT32_MAX);
+			if (!result.IsInvalid())
 			{
-				UpdateCharacter(const_cast<FBPhysicsInput&>(input));
-			}
-
-			if (bID && !result.IsInvalid() && input.metadata != FBShape::Character)
-			{
-				switch (input.Action)
+				switch (input.metadata)
 				{
-				case PhysicsInputType::ADD:
-					//in retrospect, this should have just added another bloody queue set. ugh.
-					//skip, already handled.
-					break;
-				case PhysicsInputType::Rotation:
-					//prolly gonna wanna change this to add torque................... not sure.
-					BodyInt->SetRotation(result, input.State, JPH::EActivation::Activate);
-					break;
-				case PhysicsInputType::OtherForce:
-					BodyInt->AddForce(result, input.State.GetXYZ(), JPH::EActivation::Activate);
-					break;
-				case PhysicsInputType::Velocity:
-					BodyInt->SetLinearVelocity(result, input.State.GetXYZ());
-					break;
-				case PhysicsInputType::SetPosition:
-					BodyInt->SetPosition(result, input.State.GetXYZ(), JPH::EActivation::Activate);
-					break;
-				case PhysicsInputType::SelfMovement:
-					BodyInt->AddForce(result, input.State.GetXYZ(), JPH::EActivation::Activate);
-					break;
-				case PhysicsInputType::AIMovement:
-					BodyInt->AddForce(result, input.State.GetXYZ(), JPH::EActivation::Activate);
-					break;
-				case PhysicsInputType::SetGravityFactor:
-					BodyInt->SetGravityFactor(result, input.State.GetZ());
-					break;
-				case PhysicsInputType::ApplyTorque:
-					BodyInt->AddTorque(result, input.State.GetXYZ(), JPH::EActivation::Activate);
+				case FBShape::Character:
+					UpdateCharacter(input);
 					break;
 				default:
-					UE_LOG(LogTemp, Warning,
-					       TEXT("UBarrageDispatch::StackUp: Unimplemented handling for input action [%d]"),
-					       input.Action);
+					switch (input.Action)
+					{
+					case PhysicsInputType::ADD:
+						//in retrospect, this should have just added another bloody queue set. ugh.
+						//skip, already handled.
+						break;
+					case PhysicsInputType::Rotation:
+						//prolly gonna wanna change this to add torque................... not sure.
+						
+						BodyInt->SetRotation(result, input.State, JPH::EActivation::Activate);
+						break;
+					case PhysicsInputType::OtherForce:
+						BodyInt->AddForce(result, input.State.GetXYZ(), JPH::EActivation::Activate);
+						break;
+					case PhysicsInputType::Velocity:
+						BodyInt->SetLinearVelocity(result, input.State.GetXYZ());
+						break;
+					case PhysicsInputType::SetPosition:
+						BodyInt->SetPosition(result, input.State.GetXYZ(), JPH::EActivation::Activate);
+						break;
+					case PhysicsInputType::SelfMovement:
+						BodyInt->AddForce(result, input.State.GetXYZ(), JPH::EActivation::Activate);
+						break;
+					case PhysicsInputType::AIMovement:
+						BodyInt->AddForce(result, input.State.GetXYZ(), JPH::EActivation::Activate);
+						break;
+					case PhysicsInputType::SetAngularVelocity:
+						BodyInt->SetAngularVelocity(result, input.State.GetXYZ());
+						break;
+					case PhysicsInputType::SetGravityFactor:
+						BodyInt->SetGravityFactor(result, input.State.GetZ());
+						break;
+					case PhysicsInputType::ApplyTorque:
+						BodyInt->AddTorque(result, input.State.GetXYZ(), JPH::EActivation::Activate);
+						break;
+					case PhysicsInputType::ResetForces:
+						BodyInt->SetLinearAndAngularVelocity(result, {0, 0, 0}, {0, 0, 0});
+						break;
+					default:
+						UE_LOG(LogTemp, Warning,
+						       TEXT("UBarrageDispatch::StackUp: Unimplemented handling for input action [%d]"),
+						       input.Action);
+					}
+					break;
 				}
 			}
 		}
@@ -478,61 +497,78 @@ void UBarrageDispatch::StepWorld(uint64 Time, uint64_t TickCount)
 {
 	TSharedPtr<FWorldSimOwner> PinSim = JoltGameSim;
 
-	TRACE_CPUPROFILER_EVENT_SCOPE_STR("Step World");
+	TRACE_CPUPROFILER_EVENT_SCOPE(Step World);
 	if (this && JoltGameSim && PinSim)
 	{
-		if (TickCount % 32 == 0)
+		CustomTimer<"BusyWorkerBarrageStart"> TimerPhysStep;
+		if (TickCount % 64 == 0)
 		{
-			TRACE_CPUPROFILER_EVENT_SCOPE_STR("Broadphase Optimize");
+			TRACE_CPUPROFILER_EVENT_SCOPE(Broadphase Optimize);
 			PinSim->OptimizeBroadPhase();
 		}
 
 		CleanTombs();
+		CustomTimer<"BusyWorkerBarragePostClean"> PostClean;
 		PinSim->StepSimulation();
+		CustomTimer<"BusyWorkerBarragePostStep"> PostStep;
 		TSharedPtr<TMap<FBarrageKey, TSharedPtr<FBCharacterBase>>> HoldOpenCharacters = PinSim->CharacterToJoltMapping;
 		if (HoldOpenCharacters)
 		{
-			// ReSharper disable once CppTemplateArgumentsCanBeDeduced - disabled to clear warning that causes compiler error if "fixed"
-			for (TTuple<FBarrageKey, TSharedPtr<FBCharacterBase>> CharacterKeyAndBase : *HoldOpenCharacters)
+			for (auto& [CharacterKey, CharacterBase]: *HoldOpenCharacters)
 			{
-				if (CharacterKeyAndBase.Value->mCharacter)
+				if (CharacterBase->mCharacter)
 				{
-					if (CharacterKeyAndBase.Value->mCharacter->GetPosition().IsNaN())
+					if (CharacterBase->mCharacter->GetPosition().IsNaN())
 					{
-						CharacterKeyAndBase.Value->mCharacter->SetLinearVelocity(
-							CharacterKeyAndBase.Value->World->GetGravity());
-						CharacterKeyAndBase.Value->mCharacter->SetPosition(CharacterKeyAndBase.Value->mInitialPosition);
-						CharacterKeyAndBase.Value->mForcesUpdate = CharacterKeyAndBase.Value->World->GetGravity();
+						CharacterBase->mCharacter->SetLinearVelocity(
+							CharacterBase->World->GetGravity());
+						CharacterBase->mCharacter->SetPosition(CharacterBase->mInitialPosition);
+						CharacterBase->mForcesUpdate = CharacterBase->World->GetGravity();
 					}
-					CharacterKeyAndBase.Value->StepCharacter();
+					CharacterBase->StepCharacter();
 				}
 			}
 		}
 
+
 		{
-			TRACE_CPUPROFILER_EVENT_SCOPE_STR("Jolt Body Lifecycle Update");
+			CustomTimer<"BusyWorkerBarragePreLifeUpdate"> PreUpdate;
+			TRACE_CPUPROFILER_EVENT_SCOPE(Jolt Body Lifecycle Update);
 			//maintain tombstones
 			TSharedPtr<KeyToFBLet> HoldCuckooLifecycle = JoltBodyLifecycleMapping;
-			TSharedPtr<KeyToKey> HoldCuckooTranslation = TranslationMapping;
-			if (HoldCuckooLifecycle && HoldCuckooLifecycle.Get() && !HoldCuckooLifecycle.Get()->empty())
+			TSharedPtr<FWorldSimOwner> GameSimHoldOpen = JoltGameSim;
+			//this costs basically nothing unless you smash into the lock. gonna have to figure that out soon...
+			auto PinQueue = this->GameTransformPump;
+			if (GameSimHoldOpen && HoldCuckooLifecycle && HoldCuckooLifecycle.Get() && !HoldCuckooLifecycle.Get()->
+				empty() && PinQueue)
 			{
-				KeyToFBLet::locked_table HoldCuckooLifecycleLocked = HoldCuckooLifecycle->lock_table();
-				for (std::pair<const FBarrageKey, FBLet> KeyAndBarragePrimitive : HoldCuckooLifecycleLocked)
+				FWorldSimOwner::BodyIDVector bodies;
+				GameSimHoldOpen->GetBodiesList(bodies);
+
+				FBarragePrimitive* FBP;
+				for (JPH::BodyID CanonAvailableBody : bodies)
 				{
-					if (KeyAndBarragePrimitive.first.KeyIntoBarrage != 0)
+					auto key = GenerateBarrageKeyFromBodyId(CanonAvailableBody);
+
+					//this can only be done here, really.
+					auto found = HoldCuckooLifecycle->visit(key, [&FBP](auto& a) { FBP = a.second.Get(); });
+					if (found && key != 0 && FBP)
 					{
-						FBLet HoldOpenFBP = KeyAndBarragePrimitive.second;
 						//NOTE: nullity check here includes tombstone check. Hence the odd form of the SECOND check.
 						//in other words, this checks != null && !tombstoned
-						if (FBarragePrimitive::IsNotNull(HoldOpenFBP))
+						if (FBP != nullptr && FBP->tombstone == 0)
 						{
-							FBarragePrimitive::TryUpdateTransformFromJolt(HoldOpenFBP, Time);
+							FBarragePrimitive::TryUpdateTransformFromJolt(
+								FBP, CanonAvailableBody, GameSimHoldOpen, PinQueue, Time);
 							//returns a bool that can be used for debug.
 						} //This checks for != null && tombstoned
-						else if (HoldOpenFBP && HoldOpenFBP->tombstone != 0 && Tombs[TombOffset])
-						//just to make it explicit.
+						else if (FBP && FBP->tombstone != 0 && Tombs[TombOffset])
 						{
-							//TODO: MAY NOT BE THREADSAFE. CHECK NLT 10/5/24
+							FBLet HoldOpenFBP;
+							[[maybe_unused]] auto f = HoldCuckooLifecycle->visit(key, [&HoldOpenFBP](auto& a)
+							{
+								HoldOpenFBP = a.second;
+							});
 							Tombs[TombOffset]->Push(HoldOpenFBP);
 						}
 					}
@@ -584,7 +620,7 @@ bool UBarrageDispatch::BroadcastContactEvents() const
 
 inline BarrageContactEvent ConstructContactEvent(EBarrageContactEventType EventType, UBarrageDispatch* BarrageDispatch,
                                                  const JPH::Body& inBody1, const JPH::Body& inBody2,
-                                                 JPH::ContactSettings& ioSettings, FVector point = {0,0,0})
+                                                 JPH::ContactSettings& ioSettings, FVector point = {0, 0, 0})
 {
 	return BarrageContactEvent(
 		EventType, BarrageContactEntity(BarrageDispatch->GenerateBarrageKeyFromBodyId(inBody1.GetID()), inBody1),
@@ -596,7 +632,9 @@ void UBarrageDispatch::HandleContactAdded(const JPH::Body& inBody1, const JPH::B
                                           const JPH::ContactManifold& inManifold,
                                           JPH::ContactSettings& ioSettings)
 {
-	HandleContactAdded(inBody1, inBody2, ioSettings, FVector(CoordinateUtils::FromJoltCoordinates(inManifold.mBaseOffset + inManifold.mRelativeContactPointsOn1[0])));
+	HandleContactAdded(inBody1, inBody2, ioSettings,
+	                   FVector(CoordinateUtils::FromJoltCoordinates(
+		                   inManifold.mBaseOffset + inManifold.mRelativeContactPointsOn1[0])));
 }
 
 void UBarrageDispatch::HandleContactAdded(const BarrageContactEntity Ent1, const BarrageContactEntity Ent2)
@@ -607,10 +645,10 @@ void UBarrageDispatch::HandleContactAdded(const BarrageContactEntity Ent1, const
 }
 
 void UBarrageDispatch::HandleContactAdded(const JPH::Body& inBody1, const JPH::Body& inBody2,
-										  JPH::ContactSettings& ioSettings, FVector point)
+                                          JPH::ContactSettings& ioSettings, FVector point)
 {
 	BarrageContactEvent ContactEventToEnqueue = ConstructContactEvent(EBarrageContactEventType::ADDED, this, inBody1,
-																	  inBody2, ioSettings, point);
+	                                                                  inBody2, ioSettings, point);
 	ContactEventPump->Enqueue(ContactEventToEnqueue);
 }
 
@@ -625,7 +663,6 @@ void UBarrageDispatch::HandleContactPersisted(const JPH::Body& inBody1, const JP
 
 void UBarrageDispatch::HandleContactRemoved(const JPH::SubShapeIDPair& inSubShapePair) const
 {
-	//this is busted now prolly.
 	FBarrageKey BK1 = this->GenerateBarrageKeyFromBodyId(inSubShapePair.GetBody1ID());
 	FBarrageKey BK2 = this->GenerateBarrageKeyFromBodyId(inSubShapePair.GetBody2ID());
 	BarrageContactEvent ContactEventToEnqueue(
@@ -675,15 +712,17 @@ JPH::IgnoreSingleBodyFilter UBarrageDispatch::GetFilterToIgnoreSingleBody(const 
 //Bounds are OPAQUE. do not reference them. they are protected for a reason, because they are
 //subject to semantic changes. the Point is left in the UE space. 
 FBBoxParams FBarrageBounder::GenerateBoxBounds(const FVector3d& point, double xDiam,
-                                               double yDiam, double zDiam,
+                                               double yDiam, double zDiam, 
                                                const FVector3d& OffsetCenterToMatchBoundedShape,
-                                               FMassByCategory::BMassCategories MyMassClass)
+                                               FMassByCategory::BMassCategories MyMassClass,
+                                               const FQuat4f& Rotation)
 {
 	FBBoxParams blob;
 	blob.Point = point;
 	blob.Offset.X = OffsetCenterToMatchBoundedShape.X;
 	blob.Offset.Y = OffsetCenterToMatchBoundedShape.Y;
 	blob.Offset.Z = OffsetCenterToMatchBoundedShape.Z;
+	blob.Rotation = Rotation;
 	blob.JoltX = CoordinateUtils::DiamToJoltHalfExtent(xDiam);
 	blob.JoltY = CoordinateUtils::DiamToJoltHalfExtent(zDiam); //this isn't a typo.
 	blob.JoltZ = CoordinateUtils::DiamToJoltHalfExtent(yDiam);
@@ -715,7 +754,8 @@ FBCapParams FBarrageBounder::GenerateCapsuleBounds(const UE::Geometry::FCapsule3
 
 //Bounds are OPAQUE. do not reference them. they are protected for a reason, because they are
 //subject to change. the Point is left in the UE space, signified by the UE type. 
-FBCapParams FBarrageBounder::GenerateCapsuleBounds(const FVector Center, const float Radius, const float Height, FMassByCategory::BMassCategories Mass, FVector3f Offsets)
+FBCapParams FBarrageBounder::GenerateCapsuleBounds(const FVector Center, const float Radius, const float Height,
+                                                   FMassByCategory::BMassCategories Mass, FVector3f Offsets, FQuat4f Rotation)
 {
 	FBCapParams blob;
 	blob.point = Center;
@@ -724,6 +764,7 @@ FBCapParams FBarrageBounder::GenerateCapsuleBounds(const FVector Center, const f
 	blob.taper = 0.f;
 	blob.MassClass = Mass;
 	blob.Offset = Offsets;
+	blob.Rotation = Rotation;
 	return blob;
 }
 

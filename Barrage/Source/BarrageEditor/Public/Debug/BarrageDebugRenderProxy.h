@@ -65,7 +65,10 @@ protected:
 	void GatherBodyShapeCommands(const JPH::BodyID& BodyID);
 
 	bool bDrawOnlyIfSelected;
-	TSharedPtr<JPH::PhysicsSystem> PhysicsSystem;
+	
+	// (Karl:) I would personally rather debug rendering code not change how the real allocations work
+	// This is a TWeakPtr because if it is shared unreal's render thread could be what destructs the physics system and that is rather unexpected
+	TWeakPtr<JPH::PhysicsSystem> PhysicsSystem;
 
 	void DumpShapes(); //clears all stored shapes
 private:

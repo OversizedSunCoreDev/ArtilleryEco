@@ -66,11 +66,8 @@ public:
 	//hasn't held up as well as I would like.
 	
 	//these need to be added to the rootset to prevent GC erasure. UProperty isn't enough alone, as this class
-	//is not GC reachable. This means that as soon as the reference expires and the sweep completes, as is, you'll
-	//get an error. There are two good solutions: one is keeping a bank of abilities in an ECS component or fire control
-	//machines. I don't love the idea of fire control machines owning abilities directly, but it is idiomatic within
-	//gas. For the time being, we simply add them to Root, but this is highly undesirable. On the other hand, it's easy to change
-	//and does not commit us to an architecture at the moment.
+	//is not GC reachable. This means that as soon as the reference expires and the sweep completes, as was, you'll
+	//get an error.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	TObjectPtr<UArtilleryPerActorAbilityMinimum> Prefire;
 

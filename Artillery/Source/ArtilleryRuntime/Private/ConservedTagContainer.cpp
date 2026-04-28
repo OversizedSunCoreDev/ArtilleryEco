@@ -1,10 +1,12 @@
 ﻿#include "ConservedTagContainer.h"
 
-bool FTagStateRepresentation::Find(uint16 Numerology)
+#include "LowLogTimeAndRate.h"
+
+bool FTagStateRepresentation::Find(uint16 InternalCompressedTagCode)
 {
 	for (uint8 i = 0; i < FAST_TAG_MAX_C; i++)
 	{
-		if (Tags[i] == Numerology)
+		if (Tags[i] == InternalCompressedTagCode)
 		{
 			return true;
 		}
@@ -12,12 +14,12 @@ bool FTagStateRepresentation::Find(uint16 Numerology)
 	return false;
 }
 
-bool FTagStateRepresentation::Remove(uint16 Numerology)
+bool FTagStateRepresentation::Remove(uint16 InternalCompressedTagCode)
 {
 	bool foundandremoved = false;
 	for (uint8 i = 0; i < FAST_TAG_MAX_C; i++)
 	{
-		if (Tags[i] == Numerology)
+		if (Tags[i] == InternalCompressedTagCode)
 		{
 			Tags[i] = 0;
 			[[maybe_unused]] uint32_t A = snagged.fetch_and(0 << i, std::memory_order_acquire);
@@ -27,26 +29,26 @@ bool FTagStateRepresentation::Remove(uint16 Numerology)
 	return foundandremoved;
 }
 
-bool FTagStateRepresentation::Add(uint16 Numerology)
+bool FTagStateRepresentation::Add(uint16 InternalCompressedTagCode)
 {
 	for (uint8 i = 0; i < FAST_TAG_MAX_C; i++)
 	{
 		//attempt weakly to prevent double entry. remove removes all instances, so this isn't a huge problem
 		//we just want to make it only arise when contested in specific ways.
-		if (Tags[i] == Numerology)
+		if (Tags[i] == InternalCompressedTagCode)
 			return true;
 	}
 	for (uint8 i = 0; i < FAST_TAG_MAX_C; i++)
 	{
 		//this protects us from add races pretty well. now to get a double entry we need a fairly specific sequence
 		//to all line up to contend.
-		if (Tags[i] == 0 || Tags[i] == Numerology)
+		if (Tags[i] == 0 || Tags[i] == InternalCompressedTagCode)
 		{
 			uint32_t A = snagged.fetch_and(1 << i, std::memory_order_acquire);
 			if ((A & 1 << i) == 0) //was unset, is now set.
 			{
 				//we got it.
-				Tags[i] = Numerology;
+				Tags[i] = InternalCompressedTagCode;
 				return true;
 			}
 		}
@@ -58,17 +60,26 @@ bool FTagStateRepresentation::Add(uint16 Numerology)
 void FConservedTagContainer::CacheLayer()
 {
 	uint32 index = CurrentHistory.GetNextIndex(CurrentWriteHead);
-	CurrentHistory[index] = MakeShareable(new UnderlyingFTL());
+	if (CurrentHistory[index] != nullptr)
+	{
+		CurrentHistory[index]->SetNumUninitialized(0, EAllowShrinking::No);
+	}
+	else
+	{
+		CurrentHistory[index] = MakeShareable(new UnderlyingFTL());
+	}
 	TSharedPtr<UnderlyingTagReverse> WornRing = DecoderRing.Pin();
+	//TODO: rework this fever dream. profiling indicates an issue somewhere in here.
+	//while a linear pass is fast in many cases, to be honest, I suspect we're spending a lot of time here
+	//enough that it's worth considering something faster like a flathash. a traditional hash is likely too slow on such a small set
+	//but I wonder if we even need to do this at all.
 	if (WornRing && Tags && Tags->Tags)
 	{
-
 		for (uint16_t tagcode : Tags->Tags)
 		{
 			FGameplayTag* ATag = WornRing->Find(tagcode);
 			if (ATag != nullptr)
 			{
-
 				CurrentHistory[index]->Add(*ATag);
 			}
 		}
@@ -98,8 +109,8 @@ bool FConservedTagContainer::Find(FGameplayTag Bot)
 	{
 		if (uint16_t* search = SeenT->Find(Bot); search != nullptr)
 		{
-			uint16_t Numerology = *search;
-			return Tags->Find(Numerology);
+			uint16_t InternalCompressedTagCode = *search;
+			return Tags->Find(InternalCompressedTagCode);
 		}
 	}
 	return false;
@@ -111,8 +122,8 @@ bool FConservedTagContainer::Remove(FGameplayTag Bot)
 	{
 		if (uint16_t* search = SeenT->Find(Bot); search != nullptr)
 		{
-			uint16_t Numerology = *search;
-			return Tags->Remove(Numerology);
+			uint16_t InternalCompressedTagCode = *search;
+			return Tags->Remove(InternalCompressedTagCode);
 		}
 	}
 	return false;
@@ -124,8 +135,8 @@ bool FConservedTagContainer::Add(FGameplayTag Bot)
 	{
 		if (uint16_t* search = SeenT->Find(Bot); search != nullptr)
 		{
-			uint16_t Numerology = *search;
-			return Tags->Add(Numerology);
+			uint16_t InternalCompressedTagCode = *search;
+			return Tags->Add(InternalCompressedTagCode);
 		}
 	}
 	return false;

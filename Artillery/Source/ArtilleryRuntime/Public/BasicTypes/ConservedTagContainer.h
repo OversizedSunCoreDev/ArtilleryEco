@@ -11,9 +11,15 @@
 #include "Engine/DataTable.h"
 #include "Containers/CircularBuffer.h"
 
+struct FConservedTagContainer;
+struct FTagStateRepresentation;
+typedef TSharedPtr<FTagStateRepresentation> FTagsPtr;
+using FConservedTags = TSharedPtr<FConservedTagContainer>;
 THIRD_PARTY_INCLUDES_START
 PRAGMA_PUSH_PLATFORM_DEFAULT_PACKING
-#include "libcuckoo/cuckoohash_map.hh"
+
+#include "seq/concurrent_map.hpp"
+typedef seq::concurrent_map<uint32_t, FTagsPtr> Entities;
 PRAGMA_POP_PLATFORM_DEFAULT_PACKING
 THIRD_PARTY_INCLUDES_END
 
@@ -45,7 +51,7 @@ typedef TWeakPtr<UnderlyingTagReverse> Flimsy;
 //Tag rollback is easier than it looks.
 //We actually just save either the final or starting representation for every entity on a per tick basis.
 //During the StackUp sequence, or another fixed point in the tick, we save ALL state reps
-//in fact, ideally, we save the whole ATA, though it may be better
+//in fact, ideally, we save the whole ATA. that might be much faster.
 struct FTagStateRepresentation
 {
 	uint16_t Tags[FAST_TAG_MAX_C];
@@ -57,19 +63,12 @@ struct FTagStateRepresentation
 	}
 	
 	//This allows a held conserved tag container to be used directly
-	bool Find(uint16 Numerology);
-	bool Remove(uint16 Numerology);
-	bool Add(uint16 Numerology);
+	bool Find(uint16 InternalCompressedTagCode);
+	bool Remove(uint16 InternalCompressedTagCode);
+	bool Add(uint16 InternalCompressedTagCode);
 };
 
-typedef TSharedPtr<FTagStateRepresentation> FTagsPtr;
-using FConservedTags = TSharedPtr<FConservedTagContainer> ;
-THIRD_PARTY_INCLUDES_START
-PRAGMA_PUSH_PLATFORM_DEFAULT_PACKING
-typedef libcuckoo::cuckoohash_map<uint32_t, FTagsPtr> Entities;
-typedef libcuckoo::cuckoohash_map<uint32_t, FS_GameplayTagPtr> SlowEntities;
-PRAGMA_POP_PLATFORM_DEFAULT_PACKING
-THIRD_PARTY_INCLUDES_END
+
 
 //the fetching tag container hides the existence of the AtomicTagArray from UE as a whole as best we can.
 USTRUCT(BlueprintType)
@@ -83,7 +82,7 @@ struct ARTILLERYRUNTIME_API FConservedTagContainer
 	FConservedTagContainer() = default;
 	virtual ~FConservedTagContainer() = default;
 	friend class AtomicTagArray;
-	constexpr static uint8 RollbackFrames = 10;
+	constexpr static uint8 RollbackFrames = 8;
 
 	virtual FTagLayer GetFrameByNumber(uint64_t FrameNumber);
 	virtual bool Find(FGameplayTag Bot);

@@ -79,6 +79,7 @@ inline UBarrageAutoCap::UBarrageAutoCap(const FObjectInitializer& ObjectInitiali
 	Super::SetCollisionEnabled(ECollisionEnabled::Type::NoCollision);
 	Super::SetEnableGravity(false);
 	Super::SetSimulatePhysics(false);
+	
 }
 
 //KEY REGISTER, initializer, and failover.
@@ -122,12 +123,14 @@ inline bool UBarrageAutoCap::RegistrationImplementation()
 				auto offset = FVector(OffsetCenterToMatchBoundedShapeX, OffsetCenterToMatchBoundedShapeY,
 											  OffsetCenterToMatchBoundedShapeZ);
 				UBarrageDispatch* Physics = GetWorld()->GetSubsystem<UBarrageDispatch>();
+				auto Rot = GetOwner()->GetActorRotation().Quaternion();
 				FBCapParams params = FBarrageBounder::GenerateCapsuleBounds(
 					GetOwner()->GetActorLocation(),
 					Radius,
 					Height,
 					MyMassClass.Category,
-					FVector3f(offset)
+					FVector3f(offset),
+						FQuat4f(Rot)
 				);
 				MyBarrageBody = Physics->CreatePrimitive(params, MyParentObjectKey, static_cast<uint16>(Layer), false,
 				                                         false, isMovable);
@@ -148,6 +151,7 @@ inline bool UBarrageAutoCap::RegistrationImplementation()
 	if (IsReady)
 	{
 		PrimaryComponentTick.SetTickFunctionEnable(false);
+		 UE_LOG(LogTemp, Display, TEXT("Cap registered."));
 		return true;
 	}
 	return false;

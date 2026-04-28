@@ -12,13 +12,13 @@ public class SkeletonKey : ModuleRules
 		PublicIncludePaths.AddRange(
 			new string[] {
 				Path.Combine(PluginDirectory,"Source/SkeletonKey"),
-				Path.Combine(PluginDirectory,"Source/SkeletonKey/LibCuckoo"),
+				Path.Combine(PluginDirectory,"Source/SkeletonKey/LibSeq"),
 			}
 		);
 
 		PrivateIncludePaths.AddRange(
 			new string[] {
-				Path.Combine(PluginDirectory,"Source/SkeletonKey/LibCuckoo"),
+				Path.Combine(PluginDirectory,"Source/SkeletonKey/LibSeq"),
 				// ... add other private include paths required here ...
 			}
 			);

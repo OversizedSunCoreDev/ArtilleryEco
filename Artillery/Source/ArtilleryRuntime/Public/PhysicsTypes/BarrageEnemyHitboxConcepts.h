@@ -65,7 +65,7 @@ struct FTickHitbox : public FTickECSOnly
 					FVector(ParentPosition), // so many unnecessary copies, god, sorry.
 					PhysicsObject
 				);
-				FBarragePrimitive::ApplyRotation(FQuat4d(TempRot), PhysicsObject);
+				FBarragePrimitive::ApplyRotation(TempRot, PhysicsObject);
 			}
 		}
 	}
@@ -265,7 +265,8 @@ public:
 
 	FVector MyRelativePosition = FVector::ZeroVector;
 	FSkeletonKey MyKey = FSkeletonKey::Invalid();
-
+	
+	FVector Offset;
 
 	// Sets default values for this component's properties
 	UBarrageSimpleEnemyHitbox(const FObjectInitializer& ObjectInitializer);
@@ -356,8 +357,8 @@ inline bool UBarrageSimpleEnemyHitbox::RegistrationImplementation()
 			FMath::Max(extents.X, .1),
 			FMath::Max(extents.Y, 0.1),
 			FMath::Max(extents.Z, 0.1),
-			FVector3d(OffsetCenterToMatchBoundedShapeX, OffsetCenterToMatchBoundedShapeY,
-			          OffsetCenterToMatchBoundedShapeZ), FMassByCategory::MostEnemies);
+			MyRelativePosition,
+			FMassByCategory::MostEnemies);
 		MyBarrageBody = Physics->CreatePrimitive(params, GetMyKey(), Layers::EJoltPhysicsLayer::ENEMYHITBOX,
 		                                         AmIASensor,
 		                                         true, true);
@@ -371,10 +372,10 @@ inline bool UBarrageSimpleEnemyHitbox::RegistrationImplementation()
 	if (IKeyedConstruct::IsReady)
 	{
 		PrimaryComponentTick.SetTickFunctionEnable(false);
-		FTickHitbox temp = FTickHitbox(GetMyKey(), MyParentObjectKey, {0, 0, 0});
 		//This starts a ticklite that lives as long as the key of the collider.
 		//these colliders can actually have different lifespans compared to the parent entity
-		this->ADispatch->RequestAddTicklite(MakeShareable(new StartHitboxMovement(temp)), Early);
+		StructureFullTL(HBTl, StartHitboxMovement, FTickHitbox, GetMyKey(), MyParentObjectKey, {0, 0, 0});
+		this->ADispatch->RequestAddTicklite(HBTl, Early);
 		ADispatch->AddTagToEntity(GetMyKey(), FGameplayTag::RequestGameplayTag("Enemy"));
 		return true;
 	}
@@ -474,8 +475,21 @@ inline void UBarrageDependentEnemyHitbox::AttemptRegister()
 			{
 				AActor* Actor = GetOwner();
 				SetTransform(Actor->GetActorTransform());
-				auto child = GetChildComponent(0);
-				auto MeshPtr = StaticMeshRef ? StaticMeshRef : Cast<UStaticMeshComponent, USceneComponent>(child);
+
+
+				//Note: Getting child component in editor will return the new BarrageDebugComponent instead of an expected scene component
+				//auto child = GetChildComponent(0);
+				
+				//Gather all of the child components until criteria met.
+				TArray<USceneComponent*> ChildComponents;
+				GetChildrenComponents(true, ChildComponents);
+				UStaticMeshComponent* MeshPtr = nullptr;
+				for (auto& c : ChildComponents)
+				{
+					MeshPtr = StaticMeshRef ? StaticMeshRef : Cast<UStaticMeshComponent, USceneComponent>(c);					
+					if (MeshPtr) { break; }
+				}
+				
 				if (MeshPtr)
 				{
 					StaticMeshRef = MeshPtr;
@@ -516,9 +530,8 @@ inline bool UBarrageDependentEnemyHitbox::RegistrationImplementation()
 
 	if (IKeyedConstruct::IsReady)
 	{
-		FTickHitbox TickLaunchable = FTickHitbox(GetMyKey(), MyParentObjectKey, MyRelativePosition);
-		//it has not grown on me.
-		this->ADispatch->RequestAddTicklite(MakeShareable(new StartHitboxMovement(TickLaunchable)), Early);
+		StructureFullTL(TickLaunchable, StartHitboxMovement,FTickHitbox, GetMyKey(), MyParentObjectKey, MyRelativePosition);
+		this->ADispatch->RequestAddTicklite( TickLaunchable, Early);
 		ADispatch->AddTagToEntity(GetMyKey(), FGameplayTag::RequestGameplayTag("Enemy"));
 		return true;
 	}
@@ -631,6 +644,7 @@ inline void UChaosTrackingEnemyHitbox::TickComponent(float DeltaTime, ELevelTick
 		if (CastUp)
 		{
 			FTransform AbsToChaos = CastUp->GetSocketTransform(GetAttachSocketName());
+			AbsToChaos.AddToTranslation(MyRelativePosition);
 			StaticMeshRef->SetWorldTransform(AbsToChaos);
 			FBarragePrimitive::SetPosition(AbsToChaos.GetLocation(), MyBarrageBody);
 			FBarragePrimitive::ApplyRotation(AbsToChaos.GetRotation(), MyBarrageBody);
@@ -682,27 +696,176 @@ public:
 	TSharedPtr<FAttributeMap> MyAttributes;
 	UPROPERTY(EditAnywhere, Category=Stats)
 	float InitializeArmorHPTo = 100.0;
+
+	// If true damage received by this part is not passed to the parent entity.
+	// Effectively makes the part invulnerable cover for the entity.
+	UPROPERTY(EditAnywhere, Category = "Shield Behavior")
+	bool bAbsorbDamage = false;
+
+	// Offset from Actor Forward/Up when in blocking state
+	UPROPERTY(EditAnywhere, Category = "Shield Behavior")
+	FVector BlockingOffset = FVector(100.f, 0.f, 0.f);
+
+	UPROPERTY(EditAnywhere, Category = "Shield Behavior")
+	FTransform InitialRelativeTransform;
+
+	// Rotation offset when blocking
+	UPROPERTY(EditAnywhere, Category = "Shield Behavior")
+	FRotator BlockingRotationOffset = FRotator::ZeroRotator;
+
+	UPROPERTY(EditAnywhere, Category = "Shield Behavior")
+	float ShieldDeploySpeed = 10.0f;
+
+	bool bIsBlocking = false;
+
+	void SetBlockingState(bool bNewBlockingState)
+	{
+		bIsBlocking = bNewBlockingState;
+	}
+
+	virtual void BeginPlay() override;
 	virtual bool RegistrationImplementation() override;
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 };
 
 
 inline bool UChaosTrackingArmorPiece::RegistrationImplementation()
-{
-	bool init = RegistrationHelper();
-	if (init)
+{	
+	AActor* Actor = GetOwner();
+	if (StaticMeshRef && Actor)
 	{
-		TMap<AttribKey, double> MyUniqueAttributes = TMap<AttribKey, double>();
-		if (ADispatch)
+		// Use current component transform for initial setup
+		FTransform AbsToChaos = StaticMeshRef->GetComponentTransform();
+		SetTransform(AbsToChaos);
+		
+		Transform.Location = Actor->GetActorLocation();
+
+		// Note: Hitbox set from static mesh. Likely needs box but shield testing is a unique shape and limited debug info so gathering mesh data temporarily.
+		UBarrageDispatch* Physics = GetWorld()->GetSubsystem<UBarrageDispatch>();
+		if (Physics)
 		{
-			// TODO: load more stats and dynamically rather than fixed demo values
-			MyUniqueAttributes.Add(HEALTH, InitializeArmorHPTo);
-			MyUniqueAttributes.Add(MAXHEALTH, InitializeArmorHPTo);
-			MyUniqueAttributes.Add(PROPOSED_DAMAGE, 0.0);
-			MyAttributes = MakeShareable(new FAttributeMap(GetMyKey(), ADispatch, MyUniqueAttributes));
-			FPassDamage::CreatePassthrough(GetMyKey(), MyParentObjectKey);
-			ADispatch->REGISTER_ENTITY_FINAL_TICK_RESOLVER(GetMyKey());
-			return true;
+			// Create the Jolt Body
+			MyBarrageBody = Physics->LoadEnemyHitboxFromStaticMesh(
+				Transform,
+				StaticMeshRef,
+				GetMyKey(),
+				AmIASensor,
+				ForceActualMesh,
+				FVector::ZeroVector
+			);
 		}
 	}
+
+	if (MyBarrageBody)
+	{
+		IKeyedConstruct::IsReady = true;
+		// Tag it as an enemy so queries find it
+		if (ADispatch)
+		{
+			ADispatch->AddTagToEntity(GetMyKey(), FGameplayTag::RequestGameplayTag("Enemy"));
+		}
+	}
+
+	if (IKeyedConstruct::IsReady)
+	{
+		TMap<AttribKey, double> MyUniqueAttributes = TMap<AttribKey, double>();
+
+		MyUniqueAttributes.Add(HEALTH, InitializeArmorHPTo);
+		MyUniqueAttributes.Add(MAXHEALTH, InitializeArmorHPTo);
+		MyUniqueAttributes.Add(PROPOSED_DAMAGE, 0.0);
+
+		MyAttributes = MakeShareable(new FAttributeMap(GetMyKey(), ADispatch, MyUniqueAttributes));
+
+		// If bAbsorbDamage is false, damage flows to the parent.
+		// If true damage stops here (shield takes damage, parent does not).
+		if (!bAbsorbDamage)
+		{
+			FPassDamage::CreatePassthrough(GetMyKey(), MyParentObjectKey);
+		}
+		else
+		{
+			// If we absorb damage forward the event tag so the AI knows it was hit even if it took no HP damage
+			FForwardDamageEvent::CreateForwarder(GetMyKey(), MyParentObjectKey);
+		}
+
+		// Register resolver to handle health reduction on the shield itself
+		ADispatch->REGISTER_ENTITY_FINAL_TICK_RESOLVER(GetMyKey());
+
+		return true;
+	}
+
 	return false;
+}
+
+inline void UChaosTrackingArmorPiece::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	if (!IsReady) AttemptRegister();
+
+	if (StaticMeshRef && GetOwner())
+	{
+		FVector DesiredLocation;
+		FQuat DesiredRotation;
+
+		if (bIsBlocking)
+		{
+			// Blocking behavior move to fixed offset in front of owner
+			FVector OwnerLocation = GetOwner()->GetActorLocation();
+			FQuat OwnerRotation = GetOwner()->GetActorRotation().Quaternion();
+
+			// Calculate offset in world space based on owner rotation
+			FVector WorldOffset = OwnerRotation.RotateVector(BlockingOffset);
+
+			DesiredLocation = OwnerLocation + WorldOffset;			
+			DesiredRotation = OwnerRotation * BlockingRotationOffset.Quaternion() * InitialRelativeTransform.GetRotation();
+
+		}
+		else
+		{
+			USceneComponent* ParentComponent = this->GetAttachParent();
+			USkeletalMeshComponent* CastUp = Cast<USkeletalMeshComponent>(ParentComponent);
+
+			FTransform ParentWorldTransform;
+
+			if (CastUp && CastUp->DoesSocketExist(GetAttachSocketName()))
+			{
+				ParentWorldTransform = CastUp->GetSocketTransform(GetAttachSocketName());
+			}
+			else if (ParentComponent)
+			{
+				ParentWorldTransform = ParentComponent->GetComponentTransform();
+			}
+			else
+			{
+				ParentWorldTransform = GetOwner()->GetActorTransform();
+			}
+
+			// Compose the saved relative transform onto the current parent world transform
+			FTransform DesiredWorldTransform = InitialRelativeTransform * ParentWorldTransform;
+
+			DesiredLocation = DesiredWorldTransform.GetLocation();
+			DesiredRotation = DesiredWorldTransform.GetRotation();
+		}
+
+		// Interpolate visual mesh
+		FVector CurrentLoc = StaticMeshRef->GetComponentLocation();
+		FQuat CurrentRot = StaticMeshRef->GetComponentQuat();
+
+		FVector NewLoc = FMath::VInterpTo(CurrentLoc, DesiredLocation, DeltaTime, ShieldDeploySpeed);
+		FQuat NewRot = FMath::QInterpTo(CurrentRot, DesiredRotation, DeltaTime, ShieldDeploySpeed);
+
+		StaticMeshRef->SetWorldLocationAndRotation(NewLoc, NewRot);
+
+		// Sync Physics Body
+		if (MyBarrageBody)
+		{
+			FBarragePrimitive::SetPosition(NewLoc, MyBarrageBody);
+			FBarragePrimitive::ApplyRotation(NewRot, MyBarrageBody);
+		}
+	}
+}
+
+inline void UChaosTrackingArmorPiece::BeginPlay()
+{
+	Super::BeginPlay();
+	InitialRelativeTransform = GetRelativeTransform();
 }

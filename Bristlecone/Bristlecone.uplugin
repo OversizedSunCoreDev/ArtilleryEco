@@ -1,6 +1,6 @@
 {
 	"FileVersion": 3,
-	"Version": 1,
+	"Version": 3,
 	"VersionName": "1.0",
 	"FriendlyName": "Bristlecone",
 	"Description": "BCN implementation",
@@ -11,12 +11,17 @@
 	"MarketplaceURL": "",
 	"SupportURL": "",
 	"CanContainContent": true,
-	"IsBetaVersion": false,
+	"IsBetaVersion": true,
 	"IsExperimentalVersion": false,
 	"Installed": false,
 	"Modules": [
 		{
 			"Name": "Bristlecone",
+			"Type": "Runtime",
+			"LoadingPhase": "PostEngineInit"
+		},
+		{
+			"Name": "Longboy",
 			"Type": "Runtime",
 			"LoadingPhase": "PostEngineInit"
 		}
@@ -28,6 +33,14 @@
 		},
 		{
 			"Name": "SkeletonKey",
+			"Enabled": true
+		},
+		{
+			"Name": "Locomo",
+			"Enabled": true
+		},
+		{
+			"Name": "MsQuic",
 			"Enabled": true
 		}
 	]

@@ -12,11 +12,7 @@
 #include "Engine/DataTable.h"
 #include "Containers/CircularBuffer.h"
 #include "ConservedTagContainer.h"
-THIRD_PARTY_INCLUDES_START
-PRAGMA_PUSH_PLATFORM_DEFAULT_PACKING
-#include "libcuckoo/cuckoohash_map.hh"
-PRAGMA_POP_PLATFORM_DEFAULT_PACKING
-THIRD_PARTY_INCLUDES_END
+
 
 
 
@@ -24,8 +20,6 @@ typedef TSharedPtr<FTagStateRepresentation> FTagsPtr;
 using FConservedTags = TSharedPtr<FConservedTagContainer> ;
 THIRD_PARTY_INCLUDES_START
 PRAGMA_PUSH_PLATFORM_DEFAULT_PACKING
-typedef libcuckoo::cuckoohash_map<uint32_t, FTagsPtr> Entities;
-typedef libcuckoo::cuckoohash_map<uint32_t, FS_GameplayTagPtr> SlowEntities;
 PRAGMA_POP_PLATFORM_DEFAULT_PACKING
 THIRD_PARTY_INCLUDES_END
 

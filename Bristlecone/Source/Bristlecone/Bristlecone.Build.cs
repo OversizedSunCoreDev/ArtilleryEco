@@ -27,8 +27,10 @@ public class Bristlecone : ModuleRules
         PrivateIncludePaths.Add(src_path + "Sockets\\Private\\");
         PublicAdditionalLibraries.Add("qwave.lib"); // this will need to be fixed. god.
 
+        PrivateIncludePaths.Add(Path.Combine(PluginDirectory, "Source\\Longboy\\Public"));
 
-        PublicDependencyModuleNames.AddRange(new string[] {
+
+		PublicDependencyModuleNames.AddRange(new string[] {
             "Core",
             "CoreUObject",
             "Engine",
@@ -37,26 +39,19 @@ public class Bristlecone : ModuleRules
             "InputCore",
             "Networking",
             "Sockets",
-            "Cabling", "SkeletonKey"
+            "Cabling",
+            "SkeletonKey",
+            "LocomoCore", 
+            "Longboy"
         });
 
         PrivateDependencyModuleNames.AddRange(
             new string[]
             {
-                "Core",
-                "CoreUObject",
-                "ApplicationCore",
-                "Engine",
-                "Slate",
                 "SlateCore",
-                "Engine",
-                "InputCore",
-                "Networking",
-                "Sockets",
                 "DeveloperSettings",
                 "NetCommon",
-                "Cabling"
-            });
+			});
 
 
         DynamicallyLoadedModuleNames.AddRange(
@@ -65,5 +60,6 @@ public class Bristlecone : ModuleRules
 				// ... add any modules that your module loads dynamically here ...
 			}
             );
-    }
+
+	}
 }

@@ -31,8 +31,8 @@ public:
 	virtual bool Init() override;
 	bool SendNew(bool sent,uint64_t priorReading, uint64_t currentRead);
 	bool SendIfWindowEdge(bool sent, int seqNumber, uint64_t currentRead, uint32_t sendHertzFactor);
-	static uint64_t FromKeyboardState(uint32_t keyCount, GameInputKeyState (&states)[16]);
-	uint64_t KeyboardState(IGameInputReading* reading, GameInputKeyState (&states)[16]);
+	static uint64_t FromKeyboardAndMouseState(uint32_t keyCount, GameInputKeyState (&states)[16], const GameInputMouseButtons& mouseButtons, float MouseX, float MouseY);
+
 	uint64_t FromGamePadState(GameInputGamepadState state);
 	uint64_t GamepadState(IGameInputReading* reading);
 	virtual uint32 Run() override;

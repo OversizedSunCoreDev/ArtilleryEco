@@ -10,6 +10,7 @@ UE_DEFINE_GAMEPLAY_TAG_COMMENT(TAG_Orders_Move_Possible, "Orders.Move.Possible",
 UE_DEFINE_GAMEPLAY_TAG_COMMENT(TAG_Orders_Move_Available, "Orders.Move.Available", "Tag denoting this entity can receive a move order.")
 UE_DEFINE_GAMEPLAY_TAG_COMMENT(TAG_Orders_Move_Needed, "Orders.Move.Needed", "Tag denoting this entity needs a move order. Often means the unit is stuck or arrived.")
 UE_DEFINE_GAMEPLAY_TAG_COMMENT(TAG_Orders_Move_Break, "Orders.Move.Break", "Tag denoting this entity is stopping a move order. Often means the unit is stuck or arrived.")
+
 UE_DEFINE_GAMEPLAY_TAG_COMMENT(TAG_Orders_Target_Available, "Orders.Target.Available", "Tag denoting this entity is ready to be provided a target.")
 UE_DEFINE_GAMEPLAY_TAG_COMMENT(TAG_Orders_Target_Break, "Orders.Target.Break", "Tag set to indicate that an entity should break off from its current target.")
 UE_DEFINE_GAMEPLAY_TAG_COMMENT(TAG_Orders_Target_Needed, "Orders.Target.Needed", "Tag denoting this entity's target is no longer valid.")

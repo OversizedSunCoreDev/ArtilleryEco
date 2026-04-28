@@ -24,13 +24,14 @@
 			"Name": "BarrageEditor",
 			"Type": "Editor",
 			"LoadingPhase": "PostEngineInit"
+		},
+		{
+			"Name": "JoltPhysics",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
 		}
 	],
 	"Plugins": [
-		{
-			"Name": "CMakeTarget",
-			"Enabled": true
-		},
 		{
 			"Name": "SkeletonKey",
 			"Enabled": true

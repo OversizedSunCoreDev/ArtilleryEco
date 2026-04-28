@@ -1432,6 +1432,7 @@ void QuadTree::CastAABox(const AABoxCast &inBox, CastShapeBodyCollector &ioColle
 
 void QuadTree::FindCollidingPairs(const BodyVector &inBodies, const BodyID *inActiveBodies, int inNumActiveBodies, float inSpeculativeContactDistance, BodyPairCollector &ioPairCollector, const ObjectLayerPairFilter &inObjectLayerPairFilter) const
 {
+
 	// Note that we don't lock the tree at this point. We know that the tree is not going to be swapped or deleted while finding collision pairs due to the way the jobs are scheduled in the PhysicsSystem::Update.
 	// We double check this at the end of the function.
 	const RootNode &root_node = GetCurrentRoot();
@@ -1444,7 +1445,7 @@ void QuadTree::FindCollidingPairs(const BodyVector &inBodies, const BodyID *inAc
 	Array<NodeID, STLLocalAllocator<NodeID, cStackSize>> node_stack_array;
 	node_stack_array.resize(cStackSize);
 	NodeID *node_stack = node_stack_array.data();
-
+	// 10952ns
 	// Loop over all active bodies
 	for (int b1 = 0; b1 < inNumActiveBodies; ++b1)
 	{
@@ -1455,7 +1456,6 @@ void QuadTree::FindCollidingPairs(const BodyVector &inBodies, const BodyID *inAc
 	#ifdef JPH_TRACK_SIMULATION_STATS
 		uint64 start_tick = GetProcessorTickCount();
 	#endif
-
 		// Expand the bounding box by the speculative contact distance
 		AABox bounds1 = body1.GetWorldSpaceBounds();
 		bounds1.ExpandBy(Vec3::sReplicate(inSpeculativeContactDistance));
@@ -1463,12 +1463,22 @@ void QuadTree::FindCollidingPairs(const BodyVector &inBodies, const BodyID *inAc
 		// Test each body with the tree
 		node_stack[0] = root_node.GetNodeID();
 		int top = 0;
+		NodeID child_node_id;
+
+		//Average time for function id.QuadTreeCore is nanoseconds = 199 at roughly one call per 319.805
+		//Average time for function id.QuadTreeCoreLoopLeaf is nanoseconds = 58 at roughly one call per 334.641
+		//Average time for function id.QuadTreeCoreLoopNode is nanoseconds = 102 at roughly one call per 18890.4
+		//Average time for function id.QuadTreeCoreLoopClose is nanoseconds = 33 at roughly one call per 323.539
+		bool gogogo = false;
 		do
 		{
+			//200
 			// Check if node is a body
-			NodeID child_node_id = node_stack[top];
+			 child_node_id = node_stack[top];
+
 			if (child_node_id.IsBody())
 			{
+				//54
 				// Don't collide with self
 				BodyID b2_id = child_node_id.GetBodyID();
 				if (b1_id != b2_id)
@@ -1483,11 +1493,18 @@ void QuadTree::FindCollidingPairs(const BodyVector &inBodies, const BodyID *inAc
 						ioPairCollector.AddHit({ b1_id, b2_id });
 					}
 				}
+
 			}
 			else if (child_node_id.IsValid())
 			{
-				// Process normal node
+
+				//70ns
+				// Process normal
 				const Node &node = mAllocator->Get(child_node_id.GetNodeIndex());
+				_mm_prefetch ((char*)(&node.mChildNodeID), _MM_HINT_T0);
+				_mm_prefetch((char*)(&node.mBoundsMinX), _MM_HINT_T0);
+				_mm_prefetch((char*)(&node.mBoundsMaxX), _MM_HINT_T0);
+
 				JPH_ASSERT(IsAligned(&node, JPH_CACHE_LINE_SIZE));
 
 				// Get bounds of 4 children
@@ -1497,8 +1514,8 @@ void QuadTree::FindCollidingPairs(const BodyVector &inBodies, const BodyID *inAc
 				Vec4 bounds_maxx = Vec4::sLoadFloat4Aligned((const Float4 *)&node.mBoundsMaxX);
 				Vec4 bounds_maxy = Vec4::sLoadFloat4Aligned((const Float4 *)&node.mBoundsMaxY);
 				Vec4 bounds_maxz = Vec4::sLoadFloat4Aligned((const Float4 *)&node.mBoundsMaxZ);
-
 				// Test overlap
+				//more than half the runtime is already spent by this point.
 				UVec4 overlap = AABox4VsBox(bounds1, bounds_minx, bounds_miny, bounds_minz, bounds_maxx, bounds_maxy, bounds_maxz);
 				int num_results = overlap.CountTrues();
 				if (num_results > 0)
@@ -1523,6 +1540,7 @@ void QuadTree::FindCollidingPairs(const BodyVector &inBodies, const BodyID *inAc
 				}
 			}
 			--top;
+			//30ns?!
 		}
 		while (top >= 0);
 
