@@ -42,6 +42,8 @@ JPH::BodyID FBCharacter::Create(JPH::CharacterVsCharacterCollision* CVCColliderS
 
 void FBCharacter::StepCharacter()
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(FBCharacter::StepCharacter)
+	
 	// Determine new basic velocity
 	Vec3 MyVelo = mCharacter->GetLinearVelocity();
 	Vec3 current_vertical_velocity = Vec3(0, MyVelo.GetY(), 0);
@@ -80,14 +82,26 @@ void FBCharacter::StepCharacter()
 	mLocomotionUpdate = Vec3::sZero();
 	new_velocity += mForcesUpdate * mThrottleModel.GetW();
 	mForcesUpdate = Vec3::sZero();
+
 	
+
 	RVec3 start_pos = GetPosition();
 	//allow single frame exccession
 	//TODO: factor this into a stupid constant.
 	float SpeedLimit = min(new_velocity.Length(), (mMaxSpeed * 1.20f));
 	Vec3 clamped = (new_velocity.Normalized() * SpeedLimit);
 	
-	mCharacter->SetLinearVelocity(clamped);
+	//jump, lunge, and dash are NOT classical forces and do not factor into inertia!!!
+	//if you need that, use the OTHER FORCES in conjunction with them, or set their friction coefficients.
+	
+	float JumpLimit = std::clamp(mJumpUpdate.Length()-mJumpLinearFriction, 0.0f, (mMaxJump));
+	float DashLimit = std::clamp( mDashUpdate.Length()-mDashLinearFriction, 0.0f, (mMaxDash));
+	float LungeLimit = std::clamp(mJumpUpdate.Length()-mLungeLinearFriction, 0.0f, (mMaxLunge));
+	mJumpUpdate = (mJumpUpdate.NormalizedOr({0,0,0}) * JumpLimit);
+	mDashUpdate = (mDashUpdate.NormalizedOr({0,0,0})* DashLimit);
+	mLungeUpdate = (mLungeUpdate.NormalizedOr({0,0,0}) * LungeLimit);
+	Vec3 clampedAndSummed = clamped + (mJumpUpdate + mLungeUpdate + mDashUpdate);
+	mCharacter->SetLinearVelocity(clampedAndSummed);
 	// Update the character position. splitting this into two half-length updates allows you to get VERY
 	// fine grained control by moving them around with respect to the clamp and update.
     {
@@ -105,9 +119,11 @@ void FBCharacter::StepCharacter()
 	// Update character velocity for carry over.
 	SpeedLimit = min(new_velocity.Length(), (mMaxSpeed));
 	clamped = (new_velocity.Normalized() * SpeedLimit);
-	
 	mCharacter->SetLinearVelocity(clamped);
 	mEffectiveVelocity = Vec3(GetPosition() - start_pos) / mDeltaTime;
+	mDashUpdate = mDashUpdate.IsNearZero() ? JPH::Vec3::sZero() : mDashUpdate *  (1 - mDashFriction);
+	mJumpUpdate = mJumpUpdate.IsNearZero() ? JPH::Vec3::sZero() : mJumpUpdate *  (1 - mJumpFriction);
+	mLungeUpdate = mLungeUpdate.IsNearZero() ? JPH::Vec3::sZero() : mLungeUpdate *  (1 - mLungeFriction);
 }
 
 void FBCharacter::IngestUpdate(FBPhysicsInput& input)
@@ -121,6 +137,12 @@ void FBCharacter::IngestUpdate(FBPhysicsInput& input)
 		// TODO: IDK this is a kludge for now since we removed the 100.0 divide by in CoordinateUtils::ToBarrageForce
 		mForcesUpdate += input.State.GetXYZ() / 100.0;
 		break;
+	case PhysicsInputType::DashForce:
+		mDashUpdate  += input.State.GetXYZ() / 100.0;
+	case PhysicsInputType::JumpForce:
+		mJumpUpdate  += input.State.GetXYZ() / 100.0;
+	case PhysicsInputType::LungeForce:
+		mLungeUpdate  += input.State.GetXYZ() / 100.0; 
 	case PhysicsInputType::SelfMovement:
 		mLocomotionUpdate += input.State.GetXYZ()/ 100.0;
 		break;
@@ -129,7 +151,7 @@ void FBCharacter::IngestUpdate(FBPhysicsInput& input)
 		mThrottleModel = input.State;
 		break;
 	case PhysicsInputType::SetCharacterGravity:
-		mGravity = input.State.GetXYZ()/ 100.0;
+		mGravity = input.State.GetXYZ() / 100.0;
 		break;
 	case PhysicsInputType::SetPosition:
 		SetPosition(input.State.GetXYZ());	

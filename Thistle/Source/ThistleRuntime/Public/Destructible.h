@@ -10,6 +10,7 @@
 #include "UEnemyMachine.h"
 #include "UEventLogSystem.h"
 #include "PhysicsTypes/BarrageAutoBox.h"
+#include "PhysicsTypes/BarrageAutoCap.h"
 
 #include "Destructible.generated.h"
 
@@ -24,6 +25,8 @@ public:
 	void OnDeath();
 	void OnDeath_Implementation()
 	{
+		//this likely doesn't help dash heal
+		ArtilleryStateMachine->MyDispatch->AddTagToEntity(GetMyKey(), TAG_Entity_IsDead_True);
 		FinishDeath();
 	}
 	UFUNCTION(BlueprintCallable,  Category = "Thistle")
@@ -36,8 +39,8 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Thistle", meta = (AllowPrivateAccess = "true"))	
 	bool AffectedByGravity = true;	
 	
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Thistle", meta = (AllowPrivateAccess = "true"))
-	UBarrageAutoBox* BarragePhysicsAgent;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Thistle", meta = (AllowPrivateAccess = "true"))
+	UBarrageColliderBase* BarragePhysicsAgent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Thistle", meta = (AllowPrivateAccess = "true"))	
 	UKeyCarry* LKeyCarry;
@@ -61,7 +64,7 @@ public:
 
 	ADestructible(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 	{
-		BarragePhysicsAgent = CreateDefaultSubobject<UBarrageAutoBox>(TEXT("Barrage Physics Agent"));
+		BarragePhysicsAgent = CreateDefaultSubobject<UBarrageColliderBase>(TEXT("Barrage Physics Agent"));
 		SetRootComponent(BarragePhysicsAgent);
 		ArtilleryStateMachine = CreateDefaultSubobject<UEnemyMachine>(TEXT("Artillery Enemy Machine"));
 		LKeyCarry = CreateDefaultSubobject<UKeyCarry>(TEXT("ActorKeyComponent"));
@@ -101,7 +104,6 @@ public:
 			Mesh->SetSimulatePhysics(false);
 			Mesh->bAlwaysCreatePhysicsState = false;
 			Mesh->PrimaryComponentTick.TickGroup = TG_PrePhysics;
-			Mesh->SetupAttachment(BarragePhysicsAgent);
 			Mesh->SetGenerateOverlapEvents(false);
 			Mesh->SetCanEverAffectNavigation(false);
 		}
@@ -110,7 +112,7 @@ public:
 	virtual void PostInitializeComponents() override
 	{
 		Super::PostInitializeComponents();
-		if (!IsDefaultSubobject())
+		if (!IsDefaultSubobject() && LKeyCarry)
 		{
 			LKeyCarry->AttemptRegister();
 		}
@@ -157,12 +159,30 @@ public:
 		}
 		return false;
 	}
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = Attributes, meta=(BlueprintThreadSafe))
+	virtual FVector GetBarragePhysicsVelocity()
+	{
+		return FVector(FBarragePrimitive::GetVelocity(BarragePhysicsAgent->MyBarrageBody));
+	}
+
 protected:
-	UFUNCTION(BlueprintCallable, Category = Attributes)
+	UFUNCTION(BlueprintCallable, Category = Attributes, meta=(BlueprintThreadSafe))
 	virtual float GetHealth()
 	{
-		return ArtilleryStateMachine->MyDispatch->GetAttrib(GetMyKey(), HEALTH)->GetCurrentValue();
+		if (ArtilleryStateMachine->MyDispatch)
+		{		
+			auto HealthAttr = ArtilleryStateMachine->MyDispatch->GetAttrib(GetMyKey(), HEALTH);
+			if (HealthAttr)
+			{
+				return HealthAttr->GetCurrentValue();
+			}
+			return 0.f;
+		}
+		return 0.f;
 	}
+
+
 
 	FSkeletonKey MyKey;
 };

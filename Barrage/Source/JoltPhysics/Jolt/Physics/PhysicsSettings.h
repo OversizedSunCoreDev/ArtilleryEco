@@ -7,13 +7,13 @@
 JPH_NAMESPACE_BEGIN
 
 /// If objects are closer than this distance, they are considered to be colliding (used for GJK) (unit: meter)
-constexpr float cDefaultCollisionTolerance = 1.0e-4f;
+constexpr float cDefaultCollisionTolerance = 1.0e-6f;
 
 /// A factor that determines the accuracy of the penetration depth calculation. If the change of the squared distance is less than tolerance * current_penetration_depth^2 the algorithm will terminate. (unit: dimensionless)
 constexpr float cDefaultPenetrationTolerance = 1.0e-4f; ///< Stop when there's less than 1% change
 
 /// How much padding to add around objects
-constexpr float cDefaultConvexRadius = 0.05f;
+constexpr float cDefaultConvexRadius = 0.03f;
 
 /// Used by (Tapered)CapsuleShape to determine when supporting face is an edge rather than a point (unit: meter)
 static constexpr float cCapsuleProjectionSlop = 0.02f;
@@ -22,7 +22,7 @@ static constexpr float cCapsuleProjectionSlop = 0.02f;
 constexpr int cMaxPhysicsJobs = 4096;
 
 /// Maximum amount of barriers to allow
-constexpr int cMaxPhysicsBarriers = 16;
+constexpr int cMaxPhysicsBarriers = 64;
 
 struct PhysicsSettings
 {
@@ -47,7 +47,7 @@ struct PhysicsSettings
 	float		mSpeculativeContactDistance = 0.02f;
 
 	/// How much bodies are allowed to sink into each other (unit: meters)
-	float		mPenetrationSlop = 0.020f;
+	float		mPenetrationSlop = 0.050f;
 
 	/// Fraction of its inner radius a body must move per step to enable casting for the LinearCast motion quality
 	float		mLinearCastThreshold = 0.75f;
@@ -68,10 +68,10 @@ struct PhysicsSettings
 	float		mBodyPairCacheCosMaxDeltaRotationDiv2 = 0.9998476951f; ///< cos(2 degrees / 2)
 
 	/// Maximum angle between normals that allows manifolds between different sub shapes of the same body pair to be combined
-	float		mContactNormalCosMaxDeltaRotation = 0.996194698091f; ///< cos(5 degree)
+	float		mContactNormalCosMaxDeltaRotation = 0.9961946980f; ///< cos(5 degree)
 
 	/// Maximum allowed distance between old and new contact point to preserve contact forces for warm start (units: meter^2)
-	float		mContactPointPreserveLambdaMaxDistSq = Square(0.03f); ///< 3 cm
+	float		mContactPointPreserveLambdaMaxDistSq = Square(0.04f); ///< 3 cm
 
 	/// Number of solver velocity iterations to run
 	/// Note that this needs to be >= 2 in order for friction to work (friction is applied using the non-penetration impulse from the previous iteration)
@@ -83,7 +83,7 @@ struct PhysicsSettings
 	/// Minimal velocity needed before a collision can be elastic. If the relative velocity between colliding objects
 	/// in the direction of the contact normal is lower than this, the restitution will be zero regardless of the configured
 	/// value. This lets an object settle sooner. Must be a positive number. (unit: m)
-	float		mMinVelocityForRestitution = 0.3f;
+	float		mMinVelocityForRestitution = 0.6f;
 
 	/// Time before object is allowed to go to sleep (unit: seconds)
 	float		mTimeBeforeSleep = 0.5f;

@@ -6,8 +6,11 @@
 #include "FBarrageKey.h"
 #include "FBPhysicsInputTypes.h"
 #include "IsolatedJoltIncludes.h"
+#include "seq/concurrent_map.hpp"
 
-//don't use this, it's just here for speedy access from the barrage primitive destructor until we refactor.
+//Activate this to turn on the debug draw capability.
+#define BARRAGE_DEBUG_ENABLED 0
+
 
 //A Barrage shapelet accepts forces and transformations as though it were not managed by an evil secret machine
 //and this allows us to pretty much Do The Right Thing. I've chosen to actually hide the specific kind of shape as an
@@ -17,35 +20,37 @@
 class BARRAGE_API FBarragePrimitive
 {
 	friend class UBarrageDispatch;
-	
+
 public:
 	enum FBGroundState
 	{
-		OnGround,						///< Character is on the ground and can move freely.
-		OnSteepGround,					///< Character is on a slope that is too steep and can't climb up any further. The caller should start applying downward velocity if sliding from the slope is desired.
-		NotSupported,					///< Character is touching an object, but is not supported by it and should fall. The GetGroundXXX functions will return information about the touched object.
-		InAir,							///< Character is in the air and is not touching anything.
-		NotFound,						///< There's no character
+		OnGround, ///< Character is on the ground and can move freely.
+		OnSteepGround,
+		///< Character is on a slope that is too steep and can't climb up any further. The caller should start applying downward velocity if sliding from the slope is desired.
+		NotSupported,
+		///< Character is touching an object, but is not supported by it and should fall. The GetGroundXXX functions will return information about the touched object.
+		InAir, ///< Character is in the air and is not touching anything.
+		NotFound, ///< There's no character
 	};
 
 	static FBGroundState FromJoltGroundState(JPH::CharacterBase::EGroundState JoltGroundState)
 	{
 		switch (JoltGroundState)
 		{
-			case JPH::CharacterBase::EGroundState::OnGround:
-				return FBGroundState::OnGround;
-			case JPH::CharacterBase::EGroundState::OnSteepGround:
-				return FBGroundState::OnSteepGround;
-			case JPH::CharacterBase::EGroundState::NotSupported:
-				return FBGroundState::NotSupported;
-			case JPH::CharacterBase::EGroundState::InAir:
-				return FBGroundState::InAir;
+		case JPH::CharacterBase::EGroundState::OnGround:
+			return FBGroundState::OnGround;
+		case JPH::CharacterBase::EGroundState::OnSteepGround:
+			return FBGroundState::OnSteepGround;
+		case JPH::CharacterBase::EGroundState::NotSupported:
+			return FBGroundState::NotSupported;
+		case JPH::CharacterBase::EGroundState::InAir:
+			return FBGroundState::InAir;
 		}
 		return FBGroundState::NotFound;
 	}
-	
+
 	//you cannot safely reorder these or it will change the pack width.
-	FBarrageKey KeyIntoBarrage; 
+	FBarrageKey KeyIntoBarrage;
 	//This breaks our type dependency by using the underlying hashkey instead of the artillery type.
 	//this is pretty risky, but it's basically necessary to avoid a dependency on artillery until we factor our types
 	//into a type plugin, which is a wild but not unexpected thing to do.
@@ -69,8 +74,9 @@ public:
 		tombstone = 0;
 		Me = Uninitialized;
 	}
-	
-	~FBarragePrimitive();//Note the use of shared pointers. Due to tombstoning, FBlets must always be used by reference.
+
+	~FBarragePrimitive();
+	//Note the use of shared pointers. Due to tombstoning, FBlets must always be used by reference.
 	//this is actually why they're called FBLets, as they're rented (or let) shapes that are also thus both shapelets and shape-lets.
 
 	typedef FBarragePrimitive FBShapelet;
@@ -106,7 +112,8 @@ public:
 	//This should be called from the gamethread, in the PULL model. it doesn't lock, but it will fail if the lock is held on that body
 	//because we should _never_ block the game thread. unfortunately, this means I can't provide the code to actually use
 	//this as part of jolt very easily at first, but I'll try to defactor whatever I built into a sample implementation for Barrage.
-	static bool TryUpdateTransformFromJolt(FBLet Target, uint64 Time);
+	//This is unsafe to call except during the exact place it is currently called because it avoids the lifecycle management.
+	template<typename OwnerType, typename QueueType> static void TryUpdateTransformFromJolt(const FBarragePrimitive* Target, JPH::BodyID PassIn, TSharedPtr<OwnerType>& GameSimHoldOpen, TSharedPtr<QueueType>& HoldOpen,  uint64 Time);
 	static FVector3f GetCentroidPossiblyStale(FBLet Target);
 	static FVector3f GetPosition(FBLet Target);
 	static FVector3f GetVelocity(FBLet Target);
@@ -114,7 +121,7 @@ public:
 	//in almost all cases, we recommend that you use the vector attributes, as rotation rarely actually provides
 	//the information about facing, aim point, and similar that you might want it to. this is especially true for
 	//characters which we almost never actually rotate.
-	static FQuat4f OptimisticGetAbsoluteRotation(FBLet Target);
+	static FQuat OptimisticGetAbsoluteRotation(FBLet Target);
 	//tombstoned primitives are treated as null even by live references, because while the primitive is valid
 	//and operations against it can be performed safely, no new operations should be allowed to start.
 	//the tombstone period is effectively a grace period due to the fact that we have quite a lot of different
@@ -145,18 +152,43 @@ public:
 	static FVector3f GetCharacterGroundNormal(FBLet Target);
 
 	static void SetCharacterGravity(FVector3d InVector, FBLet Target);
-	
+
 protected:
 	static inline UBarrageDispatch* GlobalBarrage = nullptr;
 };
 
+
+
 typedef FBarragePrimitive FBShapelet;
 typedef TSharedPtr<FBShapelet, ESPMode::ThreadSafe> FBLet;
 
+//we could use this to save a shared ptr construction in the lifecycle update inner loop
+//it's safe for us to pull a raw there because only during the resolution of that loop is there
+//a chance for the pointed thango to be deallocated. This would be a marked and possibly annoying
+//arch change but it would get us a concretized type for this AND remove an atomic, potentially
+//improving memory _considerably_. at the cost of manually incrementing and decrementing the shared ptr referencer
+//otoh: this does make what happens in tombs FAR more legible. grasping hand: not any less stupid though.
+//otgoh: We could do away with tombs by using a tombstone stamp, which would significantly ease memory pressure.
+//TODO: move this to the correct memory packing, christ!!!!!!
+//or I could just be a big boy and use libcuckoo's find function I think.
+/*
+
+ * *Searches the table for @p key, and invokes @p fn on the value. @p fn is
+* not allowed to modify the contents of the value if found.
+*
+*otherwise we use something like this:
+typedef SharedPointerInternals::FSharedReferencer<ESPMode::ThreadSafe> PrecursorDefRef;
+struct PossibleRecordType
+{
+	FBShapelet TheRealDeal;
+	PrecursorDefRef* NeverDoThis;
+};
+*/
 THIRD_PARTY_INCLUDES_START
 PRAGMA_PUSH_PLATFORM_DEFAULT_PACKING
-typedef libcuckoo::cuckoohash_map<FBarrageKey, FBLet> KeyToFBLet;
+typedef seq::concurrent_map<FBarrageKey, FBLet> KeyToFBLet;
 JPH_SUPPRESS_WARNINGS
 
 PRAGMA_POP_PLATFORM_DEFAULT_PACKING
 THIRD_PARTY_INCLUDES_END
+

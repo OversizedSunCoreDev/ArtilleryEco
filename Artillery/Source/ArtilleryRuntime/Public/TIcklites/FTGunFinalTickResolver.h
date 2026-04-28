@@ -39,7 +39,13 @@ public:
 	void TICKLITE_Apply()
 	{
 		// handle gun cooldown (fire rate)
-		AttrPtr GunCooldownRemaining = ADispatch->GetAttrib(EntityKey,  COOLDOWN_REMAINING);
+		AttrMapPtr AttribMap = ADispatch->GetAttribMap(EntityKey);
+		if (!AttribMap)
+		{
+			return;
+		}
+		
+		AttrPtr GunCooldownRemaining = AttribMap->FindRef(COOLDOWN_REMAINING);
 
 		// Reduce cd remaining by one tick, flooring at 0.
 		if (GunCooldownRemaining.IsValid())
@@ -51,10 +57,10 @@ public:
 		}
 
 		// handle reload
-		AttrPtr CurrentAmmo = ADispatch->GetAttrib(EntityKey,  AMMO);
-		AttrPtr MaxAmmo = ADispatch->GetAttrib(EntityKey,  MAX_AMMO);
-		AttrPtr ReloadTime = ADispatch->GetAttrib(EntityKey,  RELOAD);
-		AttrPtr ReloadRemaining = ADispatch->GetAttrib(EntityKey,  RELOAD_REMAINING);
+		AttrPtr CurrentAmmo = AttribMap->FindRef(AMMO);
+		AttrPtr MaxAmmo = AttribMap->FindRef(MAX_AMMO);
+		AttrPtr ReloadTime = AttribMap->FindRef(RELOAD);
+		AttrPtr ReloadRemaining = AttribMap->FindRef(RELOAD_REMAINING);
 		if (CurrentAmmo && MaxAmmo && ReloadTime && ReloadRemaining)
 		{
 			float CurrentAmmoValue = CurrentAmmo->GetCurrentValue();
@@ -67,7 +73,7 @@ public:
 				if (ReloadRemainingValue > -1.f)
 				{
 					// Tick reload timer if its greater than -1, stopping at -1
-					ReloadRemaining->SetCurrentValue(ReloadRemainingValue - 1);
+					ReloadRemaining->SetCurrentValue(ReloadRemainingValue - 1.f);
 				}
 
 				if (ReloadRemainingValue == 0)
@@ -84,6 +90,7 @@ public:
 			}
 		}
 	}
+	
 	void TICKLITE_CoreReset()
 	{
 	}

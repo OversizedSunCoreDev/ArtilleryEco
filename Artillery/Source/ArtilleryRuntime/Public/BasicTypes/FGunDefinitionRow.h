@@ -1,9 +1,8 @@
 ﻿#pragma once
 
-#include "CoreMinimal.h"
-#include "CoreTypes.h"
-#include "Engine/DataTable.h"
 
+#include "Engine/DataTable.h"
+#include "FMasks.h"
 #include "FGunDefinitionRow.generated.h"
 
 USTRUCT(BlueprintType)
@@ -16,9 +15,9 @@ struct FGunDefinitionRow : public FTableRowBase
 	
 	//these could BOTH be true. enjoy that, I guess. it's not implemented though.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=GunDefinition)
-	bool IsCPP;
+	bool IsCPP = false;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=GunDefinition)
-	bool IsBP;
+	bool IsBP = false;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=GunDefinition)
 	FString LoadableCPP;
@@ -51,18 +50,18 @@ struct FGunDefinitionRow : public FTableRowBase
 	FString FailureCosmeticAbility;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=GunDefinition)
-	int32 BaseDamage;
+	int32 BaseDamage = 0;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=GunDefinition)
-	int32 BaseRange;
+	int32 BaseRange = 0;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=GunDefinition)
-	int32 BaseRateOfFire;
+	int32 BaseRateOfFire = 0;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=GunDefinition)
-	int32 BaseRecoil;
+	int32 BaseRecoil = 0;
 	
 	//Unsure at this point in implementation if this value will always be respected.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=GunDefinition)
-	E_ArtilleryIntents IntendedRegistrationPattern;
+	E_ArtilleryIntents IntendedRegistrationPattern = E_ArtilleryIntents::MenuIndex;
 };

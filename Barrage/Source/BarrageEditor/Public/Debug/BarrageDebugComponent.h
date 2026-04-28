@@ -16,14 +16,14 @@ class BARRAGEEDITOR_API UBarrageDebugComponent : public UDebugDrawComponent
 	GENERATED_BODY()
 
 protected:
-#if UE_ENABLE_DEBUG_DRAWING
+#if UE_ENABLE_DEBUG_DRAWING && BARRAGE_DEBUG_ENABLED
 	virtual FDebugRenderSceneProxy* CreateDebugSceneProxy() override;
 #endif
 
 	FBLet TargetBodyToVisualize;
 
 	UPROPERTY(EditAnywhere, Category = "Debug")
-	bool bDrawOnlyIfSelected;
+	bool bDrawOnlyIfSelected = true;
 
 public:
 	UBarrageDebugComponent();

@@ -7,9 +7,9 @@
 #include "Components/InstancedStaticMeshComponent.h"
 THIRD_PARTY_INCLUDES_START
 PRAGMA_PUSH_PLATFORM_DEFAULT_PACKING
-#include "libcuckoo/cuckoohash_map.hh"
-typedef libcuckoo::cuckoohash_map<int32, FSkeletonKey> LibCIntFSK;
-typedef libcuckoo::cuckoohash_map<FSkeletonKey, int32> LibCFSKInt;
+#include "LibSeq/seq/concurrent_map.hpp"
+typedef seq::concurrent_map<int32, FSkeletonKey> LibCIntFSK;
+typedef seq::concurrent_map<FSkeletonKey, int32> LibCFSKInt;
 PRAGMA_POP_PLATFORM_DEFAULT_PACKING
 THIRD_PARTY_INCLUDES_END
 #include "SwarmKine.generated.h"
@@ -46,7 +46,9 @@ public:
 	{
 	 	int32 m;
 		FTransform ref;
-		if(KeyToMesh->find(Target, m) && GetInstanceTransform(GetInstanceIndexForId(FPrimitiveInstanceId(m)), ref, true))
+		//bool FoundBodyID = (bool)BarrageToJoltMapping->visit(Key, [&result](auto& a) { result = a.second; });
+		if(KeyToMesh->visit(Target, [&m](auto& a) { m = a.second; })
+			&& GetInstanceTransform(GetInstanceIndexForId(FPrimitiveInstanceId(m)), ref, true))
 		{
 			return ref;
 		}
@@ -56,14 +58,17 @@ public:
 	virtual bool SetTransformOnInstance(FSkeletonKey Target, FTransform Update)
 	{
 	 	int32 m;
-		if(KeyToMesh->find(Target, m))
+		if (!Update.ContainsNaN())
 		{
-			TObjectPtr<USceneComponent> OptionalLinkedComponent = KeyToSceneComponent->FindRef(Target);
-			if (OptionalLinkedComponent && OptionalLinkedComponent.Get())
+			if(KeyToMesh->visit(Target, [&m](auto& a) { m = a.second; }))
 			{
-				OptionalLinkedComponent->SetWorldLocationAndRotationNoPhysics(Update.GetLocation(), Update.Rotator());
+				TObjectPtr<USceneComponent> OptionalLinkedComponent = KeyToSceneComponent->FindRef(Target);
+				if (OptionalLinkedComponent && OptionalLinkedComponent.Get())
+				{
+					OptionalLinkedComponent->SetWorldLocationAndRotationNoPhysics(Update.GetLocation(), Update.Rotator());
+				}
+				return UpdateInstanceTransform(GetInstanceIndexForId(FPrimitiveInstanceId(m)), Update, true, false, true);
 			}
-			return UpdateInstanceTransform(GetInstanceIndexForId(FPrimitiveInstanceId(m)), Update, true, false, true);
 		}
 		return false;
 	};
@@ -71,7 +76,8 @@ public:
 	virtual FSkeletonKey GetKeyOfInstance(FPrimitiveInstanceId Target)
 	{
 		FSkeletonKey m;
-		return MeshToKey->find(Target.Id, m) ? m : FSkeletonKey();
+		//KeyToMesh->visit(Target, [&m](auto& a) { m = a.second; })
+		return MeshToKey->visit(Target.Id, [&m](auto& a) { m = a.second; }) ? m : FSkeletonKey();
 	};
 
 	virtual void AddToMap(FPrimitiveInstanceId MeshId, FSkeletonKey Key)
@@ -98,7 +104,7 @@ public:
 		if (HoldOpen)
 		{
 			int32 m;
-			bool found = KeyToMesh->find(Target, m);
+			size_t found = KeyToMesh->visit(Target, [&m](auto& a) { m = a.second; });
 			if (found && MeshToKey->erase(m))
 			{
 				QueueRemoveInstanceById(m);

@@ -37,19 +37,19 @@ struct ARTILLERYRUNTIME_API FPlayerStates : public FConservedStateData
 		SetField(DetailedWallProxi, val);
 	}
 	
-	unsigned long long WallCling()
+	unsigned long long MomentumModifyForWallProx()
 	{
 		return GetField(DetailedWallClingState);
 	}
 	
-	void WallCling(char val)
+	void MomentumModifyForWallProx(char val)
 	{
 		SetField(DetailedWallClingState, val);
 	}
 	
 	constexpr static char WallClingSpeedLimiting	= 1; //0001
 	constexpr static char WallClingDelayFling		= 2; //0010
-	constexpr static char WallClingGravityChanged	= 4; //0100
+	constexpr static char WallHandlingChanged	= 4; //0100
 	constexpr static char WallClingUncertain		= 8; //1000
 	constexpr static char WallNone					= 0; //0000
 	constexpr static char WallNear					= 1; //0001

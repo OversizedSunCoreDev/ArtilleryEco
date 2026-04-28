@@ -8,7 +8,7 @@
 #include "Radar.generated.h"
 
 static constexpr uint8 TEXTURE_BUFFER_SIZE = 2;
-static constexpr uint32 TEXTURE_LENGTH = 2048;
+static constexpr uint32 TEXTURE_LENGTH = 1024;
 static constexpr float MINIMAP_CENTER = TEXTURE_LENGTH / 2;
 static const FColor BASE_COLOR = FColor::Black;
 static const FColor ENEMY_COLOR = FColor::Red;

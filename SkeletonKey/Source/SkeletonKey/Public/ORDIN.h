@@ -2,10 +2,10 @@
 
 #pragma once
 
-#include "CoreMinimal.h"
 #include "KeyedConcept.h"
 #include "SkeletonTypes.h"
 #include "Subsystems/WorldSubsystem.h"
+#include "Subsystems/EngineSubsystem.h"
 #include "ORDIN.generated.h"
 
 //The following is ordinate bast, scepter 11.
@@ -58,6 +58,8 @@ namespace ORDIN
 		ProjectileSystem = ParticleSystem + ORDIN::Step,
 		UIECSSystem = ProjectileSystem + ORDIN::Step,
 		EventLogSystem = UIECSSystem + ORDIN::Step,
+		
+		SkeletalAnimationSystem = EventLogSystem + ORDIN::Step,
 		LastSuperstructureKey = ArtilleryOnline + LastSubstrateKey
 	};
 }
@@ -95,7 +97,9 @@ public:
 };
 
 
-#define SET_INITIALIZATION_ORDER_BY_ORDINATEKEY_AND_WORLD GetWorld()->GetSubsystem<UOrdinatePillar>()->REGISTERLORD(OrdinateSeqKey, this, this);
+#define SET_INITIALIZATION_ORDER_BY_ORDINATEKEY_AND_WORLD Collection.InitializeDependency<UOrdinatePillar>()->REGISTERLORD(OrdinateSeqKey, this, this);
+
+
 //There are native ways to do this which might be better, but unfortunately, I can't be sure we'll
 //only need to order UE-ish stuff for declaring dependencies.
 //
@@ -151,15 +155,11 @@ public:
 		&G3,
 		&G3R,
 		&AllStarted};
-
-		bool burnt = false;
 	};
 	ORDIN_Blob Data;
-	//honestly, it's gonna get used everywhere. You break it, you buy it.
-	static inline UOrdinatePillar* SelfPtr = nullptr;
 
 	//this model supports TpM def of one dependency by saying constexpr SeqKey = ClassToDepend::SeqKey + UOrdinatePillar::Step
-	//A class MUST declare a SeqKey as a static int to use this system.
+	//A class MUST declare a SeqKey as a static const int to use this system.
 	//it must register DURING construction.
 	void REGISTERORDER(int RegisterAs, int group, IKeyedConstruct* YourThisPointer);
 	virtual void PostInitialize() override;
@@ -168,5 +168,3 @@ public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
 };
-
-static UOrdinatePillar::ORDIN_Blob ORDINATION_Fallback;

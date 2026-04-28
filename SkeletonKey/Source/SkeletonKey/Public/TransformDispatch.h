@@ -5,19 +5,59 @@
 #include "CoreMinimal.h"
 #include "Kines.h"
 #include "ORDIN.h"
+#include "QuaternionQuantizer.h"
 #include "SkeletonTypes.h"
 #include "SwarmKine.h"
+#include "seq/concurrent_map.hpp"
 #include "Subsystems/WorldSubsystem.h"
 
 THIRD_PARTY_INCLUDES_START
 PRAGMA_PUSH_PLATFORM_DEFAULT_PACKING
-#include "libcuckoo/cuckoohash_map.hh"
-typedef libcuckoo::cuckoohash_map<FSkeletonKey, TSharedPtr<Kine>> KineLookup;
+typedef seq::concurrent_map<FSkeletonKey, TSharedPtr<Kine>> KineLookup;
 PRAGMA_POP_PLATFORM_DEFAULT_PACKING
 THIRD_PARTY_INCLUDES_END
 
 #include "TransformDispatch.generated.h"
+//1p1c ring buffer that trades space for reduced atomics.
+class TransformUpdateRing : public
+ExportTemplateStream::FConservedStream<29491, 32768, TransformUpdate, TransformUpdate>
+{
+public:
+	virtual void Add(TransformUpdate shell, long SentAt) override
+	{
+		this->CurrentHistory[this->highestInput] = shell;
+		++(this->highestInput);
+	}
+	virtual void Add(TransformUpdate Copy) override
+	{
+		this->CurrentHistory[this->highestInput] = Copy;
+		++(this->highestInput);
+	}
 
+	void AddMove(const TransformUpdate& input)
+	{
+		this->CurrentHistory[this->highestInput] = input;
+		++(this->highestInput);
+	}
+
+	//there's gotta be a genuinely fast way to do this.
+	inline void AddMove(const FSkeletonKey& ObjectKey,
+	const uint64& sequence,
+	const FQuat4f& Rotation,// this alignment looks wrong. Like outright wrong.
+	const FVector3f& Position)
+	{
+		this->CurrentHistory[this->highestInput].sequence = sequence;
+		this->CurrentHistory[this->highestInput].Rotation = Rotation;
+		this->CurrentHistory[this->highestInput].ObjectKey = ObjectKey;
+		this->CurrentHistory[this->highestInput].Position = Position;
+		++(this->highestInput);
+	}
+	
+	
+	//encap for ease of use
+	uint64 ConsumerOnlyLastReadScratch = 0;
+};
+using TransformUpdatesForGameThread = TransformUpdateRing;
 /**
  * Transform dispatch is the core use case of the skeleton key system. It allows you to assign a key to an arbitrary
  * transform, effectively letting you create implicit objects and actors. This also lets you later use Artillery to bind
@@ -35,7 +75,11 @@ class SKELETONKEY_API UTransformDispatch : public UTickableWorldSubsystem, publi
 	UTransformDispatch();
 	virtual ~UTransformDispatch() override;
 
+
 public:
+
+	constexpr static double MagicTolerance = 0.57;
+	constexpr static double MysticTolerance = 0.065;
 	constexpr static int OrdinateSeqKey = ORDIN::FirstSeqKey;
 	//honestly, it's gonna get used everywhere. You break it, you buy it.
 	static inline UTransformDispatch* SelfPtr = nullptr;
@@ -69,8 +113,7 @@ public:
 	TOptional<FTransform3d> CopyOfTransformByObjectKey(FSkeletonKey Target);
 
 	//it's not clear if this can be made safe to call off gamethread. It's an unfortunate state of affairs to be sure.
-	template <class TransformQueuePTR>
-	bool ApplyTransformUpdates(TransformQueuePTR TransformUpdateQueue);
+	bool ApplyTransformUpdates(TSharedPtr<TransformUpdateRing> TransformUpdateQueue);
 
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 
@@ -85,8 +128,7 @@ public:
 	virtual void Tick(float DeltaTime) override;
 };
 
-template <class TransformQueuePTR>
-bool UTransformDispatch::ApplyTransformUpdates(TransformQueuePTR TransformUpdateQueue)
+inline bool UTransformDispatch::ApplyTransformUpdates(TSharedPtr<TransformUpdateRing> TransformUpdateQueue)
 {
 	if(GetWorld() && !GetWorld()->bPostTickComponentUpdate)
 	{
@@ -100,26 +142,42 @@ bool UTransformDispatch::ApplyTransformUpdates(TransformQueuePTR TransformUpdate
 		//3) add the parallel execute machinery in for "end of frame sync" or parallel execute.
 		//we likely actually want to use FPrimitiveSceneProxy and other proxies
 		
-		while(HoldOpen && !HoldOpen->IsEmpty() && !GetWorld()->bPostTickComponentUpdate)
+		GetWorld()->bPostTickComponentUpdate = 0;
+		while(HoldOpen && HoldOpen->ConsumerOnlyLastReadScratch < HoldOpen->highestInput && !GetWorld()->bPostTickComponentUpdate)
 		{
-			auto Update = HoldOpen->Peek();
-			if(Update && !GetWorld()->bPostTickComponentUpdate)
+			auto Update = HoldOpen->get(HoldOpen->ConsumerOnlyLastReadScratch);
+			
+			if(Update.has_value() && !GetWorld()->bPostTickComponentUpdate)
 			{
 				try
 				{
 					if(TSharedPtr<Kine> BindOriginal = this->GetKineByObjectKey(Update->ObjectKey) )
 					{
-						GetWorld()->bPostTickComponentUpdate = 0;
 						//kinescope would normally be passed in, but we've removed that idiom.
-						BindOriginal->SetLocationAndRotationWithScope( UE::Math::TVector<double>(Update->Position), UE::Math::TQuat<double>(Update->Rotation));
+						auto CurrentDisplayTransform = BindOriginal->CopyOfTransformLike();
+						if (CurrentDisplayTransform.IsSet())
+						{
+							FQuat4d Rr = FQuat4d(Update->Rotation.GetNormalized() );
+							//todo: jitter handling should probably prevent update EMISSION.
+							auto dotR = CurrentDisplayTransform.GetValue().GetRotation() | Rr;
+							FVector3d Loc = FVector3d(Update->Position);
+							if ((1-(dotR*dotR) >= MysticTolerance) || FVector::Dist(CurrentDisplayTransform->GetLocation(), Loc) >= MagicTolerance)
+							{
+								BindOriginal->SetLocationAndRotationWithScope(
+									Loc,
+									Rr);
+							}
+						}
 					}
-					HoldOpen->Dequeue();
+					
 				}
 				catch (...)
 				{
 					return false; //we'll be back! we'll be back!!!!
 				}
 			}
+		++HoldOpen->ConsumerOnlyLastReadScratch;
+
 		}
 		return true;
 	}

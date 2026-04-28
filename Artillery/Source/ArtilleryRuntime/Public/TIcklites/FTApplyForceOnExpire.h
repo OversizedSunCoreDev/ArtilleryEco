@@ -15,19 +15,22 @@ private:
 	FSkeletonKey Target;
 	FVector Bop;
 	int32 TicksRemaining;
+	//generally, please don't use this for something weird like rotation, guys.
+	PhysicsInputType ForceType;
 
 public:
-	FTDelayedForce() : TL_ThreadedImpl(), Bop()
+	FTDelayedForce() : TL_ThreadedImpl(), Bop(), ForceType()
 	{
 		TicksRemaining = 120;
 	}
 
 	//there's no nan check here right now.. that's not in the scope of this code. please don't hand nan forces around.
-	FTDelayedForce(FSkeletonKey TargetIn, FVector ForceToApply, int32 TickCountStart) : TL_ThreadedImpl()
+	FTDelayedForce(FSkeletonKey TargetIn, FVector ForceToApply, int32 TickCountStart, PhysicsInputType Type = PhysicsInputType::OtherForce) : TL_ThreadedImpl()
 	{
 		Target = TargetIn;
 		TicksRemaining = TickCountStart;
 		Bop = ForceToApply;
+		ForceType = Type;
 	}
 
 	void TICKLITE_StateReset()
@@ -53,7 +56,7 @@ public:
 		FBLet GameSimPhysicsObject = this->ADispatch->GetFBLetByObjectKey(Target, this->ADispatch->GetShadowNow());
 		if(GameSimPhysicsObject)
 		{
-			FBarragePrimitive::ApplyForce(Bop, GameSimPhysicsObject);
+			FBarragePrimitive::ApplyForce(Bop, GameSimPhysicsObject, ForceType);
 		}
 	}
 };

@@ -42,7 +42,11 @@ public:
 	virtual void PostInitProperties() override
 	{
 		Super::PostInitProperties();
-		UOrdinatePillar::SelfPtr->REGISTERORDER(static_cast<int>(PlayerKey::CABLE),0,this);
+		auto wrld = GetWorld();
+		if (wrld)
+		{
+			wrld->GetSubsystem<UOrdinatePillar>()->REGISTERORDER(static_cast<int>(PlayerKey::CABLE),0,this);
+		}
 	}
 
 	virtual void PostLoad() override

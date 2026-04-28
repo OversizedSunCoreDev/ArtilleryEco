@@ -43,7 +43,10 @@ public:
 	// Don't use this default constructor, this is a bad
 	UArtilleryGameplayTagContainer()
 	{
-		TagsToAddDuringInitialization = MakeShareable(new FGameplayTagContainer());
+		if (!HasAnyFlags(RF_ClassDefaultObject)) 
+		{
+			TagsToAddDuringInitialization = MakeShareable(new FGameplayTagContainer());
+		}
 	}
 
 	//reference only mode changes the container to act more like you might expect in a blueprint, by not taking ownership of the
@@ -54,17 +57,14 @@ public:
 	//system, either. I think we'll probably end up splitting this into separate ContainerOwner, ContainerRef, and ContainerDisplay
 	//classes. That seems the sanest.
 	//TODO: revisit NLT 6/8/25
-	UArtilleryGameplayTagContainer(FSkeletonKey ParentKeyIn, UArtilleryDispatch* MyDispatchIn, bool ReferenceOnly = false)
-	{
-		Initialize(ParentKeyIn, MyDispatchIn, ReferenceOnly);
-	}
-
 	void Initialize(FSkeletonKey ParentKeyIn, UArtilleryDispatch* MyDispatchIn, bool ReferenceOnly = false)
 	{
 		this->ParentKey = ParentKeyIn;
 		this->MyDispatch = MyDispatchIn;
-		auto reference = MyDispatch->GetOrRegisterConservedTags(ParentKeyIn);
-		ReferenceOnlyMode = ReferenceOnly;
+		bool Found = false;
+		auto reference = MyDispatch->GetOrRegisterConservedTags(ParentKeyIn, Found);
+		ReferenceOnlyMode = Found == false ?
+			false : ReferenceOnly;
 		MyTags = reference;
 		ReadyToUse = true;
 	}
@@ -73,7 +73,7 @@ public:
 	void AddTag(const FGameplayTag& TagToAdd)
 	{
 		// Only add if the tag doesn't already exist
-		if (!MyTags->Find(TagToAdd))
+		if (ensure(MyTags) && !MyTags->Find(TagToAdd))
 		{
 			MyDispatch->AddTagToEntity(ParentKey, TagToAdd);
 		}
@@ -83,7 +83,7 @@ public:
 	void RemoveTag(const FGameplayTag& TagToRemove)
 	{
 		// Only remove if the tag does already exist
-		if (MyTags->Find(TagToRemove))
+		if (ensure(MyTags) && MyTags->Find(TagToRemove))
 		{
 			MyDispatch->RemoveTagFromEntity(ParentKey, TagToRemove);
 		}

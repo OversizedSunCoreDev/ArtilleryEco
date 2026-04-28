@@ -23,7 +23,9 @@ UENUM(Blueprintable) enum class  E_ArtilleryIntents : uint8
 	RTriggerIndex = 13,
 	StickFlickSpecialIndex = 14,
 	
-	NoIntent = 15,
+	LStickClickIndex= 15,
+	RStickClickIndex= 16,
+	NoIntent = 17,
 };
 
 namespace Arty
@@ -63,6 +65,8 @@ namespace Arty
 		constexpr Intent LTrigger =		0b1000000000000;
 		constexpr Intent RTrigger =		0b10000000000000;
 		constexpr Intent StickFlick =	0b100000000000000;
+		constexpr Intent LStickClick =	0b1000000000000000;
+		constexpr Intent RStickClick =	0b10000000000000000;
 
 		constexpr uint8 MenuIndex = 0;
 		constexpr uint8 ViewIndex = 1;
@@ -79,6 +83,8 @@ namespace Arty
 		constexpr uint8 LTriggerIndex = 12;
 		constexpr uint8 RTriggerIndex = 13;
 		constexpr uint8 StickFlickSpecialIndex = 14;
-		//5 unused bits follow.
+		constexpr uint8 LStickClickIndex = 15;
+		constexpr uint8 RStickClickIndex = 16;
+		//3 unused bits follow.
 	}
 }

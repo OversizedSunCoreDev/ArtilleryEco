@@ -28,15 +28,6 @@ namespace TheCone {
 	constexpr uint32_t CablingSampleHertz = 512;
 	constexpr uint32_t BristleconeSendHertz = 90;
 
-	//this crashes in prod. it is intended ONLY for use during mock out of your session system.
-	//I do not know how yours will work, but I needed this during the build out of mine.
-	static uint64_t DummyGetBristleconeSessionID()
-	{
-		return 0xDEADBEEF;
-	}
-
-
-
 	static constexpr int CONTROLLER_STATE_PACKET_SIZE = sizeof(FControllerStatePacket);
 	static constexpr int DEFAULT_PORT = 40000;
 	static constexpr uint16 MAX_TARGET_COUNT = 1;

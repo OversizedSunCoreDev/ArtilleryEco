@@ -6,15 +6,15 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "AInstancedMeshManager.h"
 #include "FProjectileDefinitionRow.h"
-#include "Structures/ParallelFixedDeadliner.h"
+#include "Structures/ParallelFixedQueueTypes.h"
 //look, it's important that you wrap both your typedefs and your lib include in these, and that the lib include always be explicit.
 //lbc is a header only lib. this has some pretty stark implications. we probably need to move ALL type defs and ALL
 //includes into a Lbc module, isolate them, and compile them.
 THIRD_PARTY_INCLUDES_START
 PRAGMA_PUSH_PLATFORM_DEFAULT_PACKING
-#include "LibCuckoo/cuckoohash_map.hh"
-typedef libcuckoo::cuckoohash_map<FSkeletonKey, TWeakObjectPtr<AInstancedMeshManager>> KeyToItemCuckooMap;
-typedef libcuckoo::cuckoohash_map<FSkeletonKey, FGunKey> KeyToGunMap;
+#include "seq/concurrent_map.hpp"
+typedef seq::concurrent_map<FSkeletonKey, TWeakObjectPtr<AInstancedMeshManager>> KeyToItemCuckooMap;
+typedef seq::concurrent_map<FSkeletonKey, FGunKey> KeyToGunMap;
 PRAGMA_POP_PLATFORM_DEFAULT_PACKING
 THIRD_PARTY_INCLUDES_END
 #include "ArtilleryProjectileDispatch.generated.h"

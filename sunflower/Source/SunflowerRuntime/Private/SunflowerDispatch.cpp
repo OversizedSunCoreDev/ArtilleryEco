@@ -17,6 +17,8 @@ void USunflowerDispatch::Initialize(FSubsystemCollectionBase& Collection)
 
 void USunflowerDispatch::OnWorldBeginPlay(UWorld& InWorld)
 {
+	Super::OnWorldBeginPlay(InWorld);
+	
 	if ([[maybe_unused]] const UWorld* World = InWorld.GetWorld()) {
 		UE_LOG(LogTemp, Warning, TEXT("SunflowerDispatch:Subsystem: World beginning play"));
 	

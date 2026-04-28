@@ -3,15 +3,13 @@
 
 UExedreWidgetRenderTarget::UExedreWidgetRenderTarget(
 	const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer)
+	: Super(ObjectInitializer), DefaultTexture(nullptr)
 {
-
 	ImageBrush = FSlateBrush();
 	ImageBrush.SetResourceObject(DefaultTexture);
 
 	RenderingMaterial = nullptr;
 }
-
 
 void UExedreWidgetRenderTarget::SetRenderMaterial( UMaterialInterface* Material , FString Path)
 {

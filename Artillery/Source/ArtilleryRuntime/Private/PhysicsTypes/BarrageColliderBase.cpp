@@ -12,7 +12,7 @@ UBarrageColliderBase::UBarrageColliderBase(const FObjectInitializer& ObjectIniti
 {
 	// Set this component to be initialized when the game starts, and to be ticked every frame.  You can turn these features
 	// off to improve performance if you don't need them.
-	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.bCanEverTick = false;
 	bWantsInitializeComponent = true;
 	MyParentObjectKey = 0;
 	bAlwaysCreatePhysicsState = false;
@@ -27,7 +27,7 @@ UBarrageColliderBase::UBarrageColliderBase(const FObjectInitializer& ObjectIniti
 void UBarrageColliderBase::SetBarrageBody(FBLet NewBody)
 {
 	MyBarrageBody = NewBody;
-#if WITH_EDITORONLY_DATA
+#if WITH_EDITORONLY_DATA && BARRAGE_DEBUG_ENABLED
 	if (BarrageDebugComponent)
 	{
 		BarrageDebugComponent->SetTargetBody(MyBarrageBody);
@@ -65,10 +65,13 @@ void UBarrageColliderBase::AddReferencedObjects(UObject* InThis, FReferenceColle
 {
 	Super::AddReferencedObjects(InThis, Collector);
 	UBarrageColliderBase* ThisComp = CastChecked<UBarrageColliderBase>(InThis);
+#if BARRAGE_DEBUG_ENABLED
 	if (ThisComp->BarrageDebugComponent)
 	{
 		Collector.AddReferencedObject(ThisComp->BarrageDebugComponent);
 	}
+#endif
+	
 }
 
 void UBarrageColliderBase::OnComponentDestroyed(bool bDestroyingHierarchy)
@@ -118,7 +121,10 @@ void UBarrageColliderBase::OnRegister()
 			BarrageDebugComponent->CreationMethod = EComponentCreationMethod::Instance;
 			BarrageDebugComponent->RegisterComponentWithWorld(GetWorld());
 		}
+#if BARRAGE_DEBUG_ENABLED
 		UpdateDebugComponent();
+#endif
+		
 	}
 #endif
 }
@@ -126,9 +132,7 @@ void UBarrageColliderBase::OnRegister()
 void UBarrageColliderBase::TickComponent(float DeltaTime, ELevelTick TickType,
 	FActorComponentTickFunction* ThisTickFunction)
 {
-	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-	AttemptRegister(); // ...
-#if WITH_EDITORONLY_DATA
+#if WITH_EDITORONLY_DATA && BARRAGE_DEBUG_ENABLED
 	UpdateDebugComponent();
 #endif
 }

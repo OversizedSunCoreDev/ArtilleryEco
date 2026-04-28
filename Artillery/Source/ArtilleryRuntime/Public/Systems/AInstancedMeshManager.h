@@ -154,7 +154,7 @@ private:
 		FBarragePrimitive::ApplyRotation(MuzzleVelocity.ToOrientationQuat(), MyBarrageBody);
 		FBarragePrimitive::SetGravityFactor(0.f, MyBarrageBody);
 		
-		MyDispatch->REGISTER_PROJECTILE_FINAL_TICK_RESOLVER(100, ProjectileKey);
+		//MyDispatch->REGISTER_PROJECTILE_FINAL_TICK_RESOLVER(120, ProjectileKey);
 	}
 	
 	ActorKey MyKey;

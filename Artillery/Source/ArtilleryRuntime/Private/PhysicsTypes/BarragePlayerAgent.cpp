@@ -191,6 +191,21 @@ void UBarragePlayerAgent::AddOneTickOfForce_LocomotionOnly(FVector3d Force)
 	FBarragePrimitive::ApplyForce(Force, MyBarrageBody, PhysicsInputType::SelfMovement);
 }
 
+void UBarragePlayerAgent::AddOneTickOfForce_JumpOnly(FVector3d Force)
+{
+	FBarragePrimitive::ApplyForce(Force, MyBarrageBody, PhysicsInputType::JumpForce);
+}
+
+void UBarragePlayerAgent::AddOneTickOfForce_DashOnly(FVector3d Force)
+{
+	FBarragePrimitive::ApplyForce(Force, MyBarrageBody, PhysicsInputType::DashForce);
+}
+
+void UBarragePlayerAgent::AddOneTickOfForce_LungeOnly(FVector3d Force)
+{
+	FBarragePrimitive::ApplyForce(Force, MyBarrageBody, PhysicsInputType::LungeForce);
+}
+
 // negatives are ignored. I'm not dealing with that. As a result, -1 can be used to inherit
 //the current throttle setting for that value. Please use this very carefully, as it can fuck movement up entirely.
 //This is mostly used for instantly canceling momentum or reducing directional control during slides.

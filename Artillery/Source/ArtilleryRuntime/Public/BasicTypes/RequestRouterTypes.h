@@ -3,6 +3,7 @@
 #include "EAttributes.h"
 #include "ConservedTagContainer.h"
 #include "SkeletonTypes.h"
+#include "Ticklite.h"
 
 
 #include "RequestRouterTypes.generated.h"
@@ -24,6 +25,34 @@ enum ArtilleryRequestType
 	SpawnParticleSystemAtLocation,
 	// Meshes
 	SpawnInstancedStaticMesh,
+	//Ticklites
+	DeferredTickliteInstantiation,
+};
+
+USTRUCT()
+struct ARTILLERYRUNTIME_API FTickliteRequest
+{
+	GENERATED_BODY()
+public:
+	ArtilleryTime Stamp;
+
+	FTickliteRequest() = default;
+	TicklitePrototype* AllocatedTicklite;
+	Arty::TicklitePhase MyGroup;
+	FTickliteRequest(ArtilleryTime Stamp, ArtilleryRequestType Type, TicklitePrototype*  Queued, TicklitePhase DesiredGroup)
+		: Stamp(Stamp),
+		  AllocatedTicklite(Queued),
+		MyGroup(DesiredGroup),
+		Type(Type)
+	{
+	}
+
+	ArtilleryRequestType GetType()
+	{
+		return Type;
+	}
+protected:
+	ArtilleryRequestType Type;
 };
 
 USTRUCT()

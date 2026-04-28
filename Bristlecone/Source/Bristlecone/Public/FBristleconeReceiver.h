@@ -13,6 +13,7 @@ public:
 
 	void BindSink(TheCone::RecvQueue QueueCandidate);
 	void BindStatsSink(TheCone::TimestampQueue QueueCandidate);
+	void SetSessionData(uint64 InSessionId, uint64 InCipherKey);
 	virtual ~FBristleconeReceiver() override;
 
 	void SetLocalSocket(const TSharedPtr<FSocket, ESPMode::ThreadSafe>& new_socket);
@@ -37,4 +38,7 @@ private:
 	TheCone::CycleTracking MySeen;
 	TUniquePtr<ISocketSubsystem> socket_subsystem;
 	bool running;
+	uint64 SessionId;
+	uint64 CipherKey;
+	struct FLongboyCrypto* Crypto;
 };

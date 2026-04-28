@@ -44,9 +44,9 @@ public:
 	//a stick flick detection from. This is that.
 	//Tune as needed. we actually maintain a surprisingly finegrained degree of control here.
 	
-	constexpr static uint32_t ArtilleryMagicFlickBoundary = 665;
-	constexpr static int32_t ArtilleryMagicMinimumFlickDistanceRequired = 740;
-	constexpr static int32_t DefaultFlickTickWidth = 16;
+	constexpr static uint32_t ArtilleryMagicFlickBoundary = 662;
+	constexpr static int32_t ArtilleryMagicMinimumFlickDistanceRequired = 742;
+	constexpr static int32_t DefaultFlickTickWidth = 17;
 
 	template <typename BindTo>
 	bool static FlickDetect(int32_t curX, int32_t curY, uint64_t frameToRunBackFrom, uint64_t FinishIndex, BindTo Buffer)

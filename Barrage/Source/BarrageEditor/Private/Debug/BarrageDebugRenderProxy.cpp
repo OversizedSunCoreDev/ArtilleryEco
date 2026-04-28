@@ -36,8 +36,8 @@
 
 FBarrageDebugRenderProxy::FBarrageDebugRenderProxy(const UPrimitiveComponent* Component, TSharedPtr<JPH::PhysicsSystem> Simulation)
 	: FDebugRenderSceneProxy(Component)
-	, PhysicsSystem(Simulation)
 	, bDrawOnlyIfSelected(false)
+	, PhysicsSystem(Simulation.ToWeakPtr())
 {
 	bWillEverBeLit = false;
 	bIsAlwaysVisible = true;
@@ -114,14 +114,18 @@ void FBarrageDebugRenderProxy::AddInvalidShapePointStar(FTransform Transform)
 void FBarrageDebugRenderProxy::GatherBodyShapeCommands(const JPH::BodyID& BodyID)
 {
 	FTransform JoltLocalToWorld = FTransform::Identity; // we use the jolt body transform directly
-	JPH::BodyLockRead BodyReadLock(PhysicsSystem->GetBodyLockInterface(), BodyID);
-	if (BodyReadLock.Succeeded())
-	{
-		const JPH::Body& Body = BodyReadLock.GetBody();
-		FVector BodyPosition = FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(Body.GetPosition()));
-		FQuat BodyRotation = FBarragePrimitive::UpConvertFloatQuat(CoordinateUtils::FromJoltRotation(Body.GetRotation()));
-		JoltLocalToWorld = FTransform(BodyRotation, BodyPosition);
-		GatherScalarShapes(JoltLocalToWorld, Body.GetShape());
+	
+	if (TSharedPtr<JPH::PhysicsSystem> SharedPhysicsSystem = PhysicsSystem.Pin()) {
+		JPH::BodyLockRead BodyReadLock(SharedPhysicsSystem->GetBodyLockInterface(), BodyID);
+		if (BodyReadLock.Succeeded())
+		{
+			const JPH::Body& Body = BodyReadLock.GetBody();
+			FVector BodyPosition = FBarragePrimitive::UpConvertFloatVector(CoordinateUtils::FromJoltCoordinates(Body.GetPosition()));
+			FQuat BodyRotation = FBarragePrimitive::UpConvertFloatQuat(CoordinateUtils::FromJoltRotation(Body.GetRotation()));
+			JoltLocalToWorld = FTransform(BodyRotation, BodyPosition);
+			GatherScalarShapes(JoltLocalToWorld, Body.GetShape());
+		}
+		
 	}
 }
 

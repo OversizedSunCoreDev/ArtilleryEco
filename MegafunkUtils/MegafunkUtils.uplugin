@@ -1,0 +1,23 @@
+﻿{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "MegafunkUtils",
+	"Description": "Performance-oriented tools like fully parallel actor manipulation in a plugin that prefers to make things simple functions over new classes when reasonable",
+	"Category": "Other",
+	"CreatedBy": "Megafunk",
+	"CreatedByURL": "https://github.com/Megafunk",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"CanContainContent": true,
+	"IsBetaVersion": true,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "MegafunkUtils",
+			"Type": "Runtime",
+			"LoadingPhase": "Predefault"
+		}
+	]
+}

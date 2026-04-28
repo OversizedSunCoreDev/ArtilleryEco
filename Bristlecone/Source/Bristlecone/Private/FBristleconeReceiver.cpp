@@ -1,8 +1,8 @@
 ﻿#include "FBristleconeReceiver.h"
+#include "LongboyCrypto.h"
 
 
-
-FBristleconeReceiver::FBristleconeReceiver() : MySeen(0x0b1), running(false) {
+FBristleconeReceiver::FBristleconeReceiver() : MySeen(0x0b1), running(false), SessionId(0), CipherKey(0), Crypto(nullptr) {
 	UE_LOG(LogTemp, Display, TEXT("Bristlecone:Receiver: Constructing Bristlecone Receiver"));
 }
 
@@ -26,6 +26,20 @@ void FBristleconeReceiver::SetLocalSocket(const TSharedPtr<FSocket, ESPMode::Thr
 	receiver_socket = new_socket;
 }
 
+void FBristleconeReceiver::SetSessionData(uint64 InSessionId, uint64 InCipherKey) {
+	SessionId = InSessionId;
+	CipherKey = InCipherKey;
+	if (Crypto == nullptr)
+	{
+		Crypto = new FLongboyCrypto(CipherKey);
+	}
+	else
+	{
+		delete Crypto;
+		Crypto = new FLongboyCrypto(CipherKey);
+	}
+}
+
 bool FBristleconeReceiver::Init() {
 	UE_LOG(LogTemp, Display, TEXT("Bristlecone:Receiver: Initializing Bristlecone receiver thread"));
 	socket_subsystem.Reset(ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM));
@@ -46,9 +60,9 @@ uint32 FBristleconeReceiver::Run() {
 	//it's not actually needed, interestingly, but it does make life a ton more convenient and we want to stay word aligned.
 	//likely timestamp as (nanos >> K) & 0xFFFFFFFF or the lower 32 bits of the nanosecond timestamp, discarding the 
 	//first K binary digits to help remove jitter's effect.
-	uint32_t ThinHash = FTextLocalizationResource::HashString(localNID, TheCone::DummyGetBristleconeSessionID());
+	uint32_t ThinHash = FTextLocalizationResource::HashString(localNID, CipherKey);
 	MySeen = TheCone::CycleTracking(ThinHash);
-	const FTimespan Period(100000); //we wait 10ms at a stop. we don't have anything to do while we aren't waiting, but I don't trust it.
+	const FTimespan Period(120000); //we wait 12ms at a stop. we don't have anything to do while we aren't waiting, but I don't trust it.
 	while (running && receiver_socket) {
 		TheCone::Packet_tpl receiving_state;
 	
@@ -59,7 +73,24 @@ uint32 FBristleconeReceiver::Run() {
 			received_data.SetNumUninitialized(FMath::Min(socket_data_size, 65507u));
 			receiver_socket->RecvFrom(received_data.GetData(), received_data.Num(), bytes_read, *targetAddr);
 
+			const auto packet_size = sizeof(decltype(receiving_state));
+			if(bytes_read == packet_size)
+			{
+				continue;
+			}
+
+			Crypto->DecryptHeader(
+				reinterpret_cast<const uint32*>(received_data.GetData()),
+				reinterpret_cast<uint32*>(received_data.GetData())
+			);
+			Crypto->DecryptBody(
+				reinterpret_cast<const uint8*>(received_data.GetData()) + sizeof(uint32),
+				reinterpret_cast<uint8*>(received_data.GetData()) + sizeof(uint32),
+				bytes_read - sizeof(uint32)
+			);
+
 			memcpy(&receiving_state, received_data.GetData(), bytes_read);
+
 			//this & logging are VERY slow, like potentially reordering our perceived timings slow. We need to be careful as hell interacting
 			//with time and logging, since we're now operating in the lock-sensitive time regime. we'll need a solution.
 			const uint64_t cycle = receiving_state.GetCycleMeta();

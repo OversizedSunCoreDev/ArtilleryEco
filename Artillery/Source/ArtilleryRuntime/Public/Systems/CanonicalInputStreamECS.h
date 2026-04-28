@@ -4,9 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
-#include "Templates/SubclassOf.h"
-#include "UObject/UnrealType.h"
-#include "Engine/DataTable.h"
+
 #include "Containers/CircularBuffer.h"
 #include "BristleconeCommonTypes.h"
 #include "UBristleconeWorldSubsystem.h"
@@ -14,7 +12,7 @@
 #include <unordered_map>
 #include <ArtilleryShell.h>
 #include "ArtilleryCommonTypes.h"
-#include "FArtilleryNoGuaranteeReadOnly.h"
+#include "ConservedStream.hpp"
 #include "FActionPattern.h"
 #include "KeyedConcept.h"
 #include "TransformDispatch.h"
@@ -44,18 +42,17 @@ and uses that for the outcome (and presumably flags whoever disagreed for statis
 
 class UFireControlMachine;
 
+static const uint32_t InputConservationWindow = 8192;
+static const uint32_t AddressableInputConservationWindow = InputConservationWindow - (2 * TheCone::LongboySendHertz);
+using ExportTemplateStream::FConservedStream;
+template class FConservedStream<AddressableInputConservationWindow,
+InputConservationWindow,
+FArtilleryShell,
+INNNNCOMING>;
 UCLASS()
 class ARTILLERYRUNTIME_API UCanonicalInputStreamECS : public UTickableWorldSubsystem, public ISkeletonLord, public ICanReady
 {
 	GENERATED_BODY()
-	UCanonicalInputStreamECS(): UTickableWorldSubsystem(), MyNetworkDispatch(nullptr)
-	{
-		StreamKeyToStreamMapping = MakeShareable(new TMap<InputStreamKey, TSharedPtr<FConservedInputStream>>);
-		LocalActorToFireControlMapping = MakeShareable(new TMap<ActorKey, FireControlKey>());
-		StreamToActorMapping = MakeShareable(new TMap<InputStreamKey, ActorKey>);
-		ActorToStreamMapping = MakeShareable(new TMap<ActorKey, InputStreamKey>);
-		SessionPlayerToStreamMapping = MakeShareable(new TMap<PlayerKey, InputStreamKey>());
-	}
 
 public:
 	constexpr static int OrdinateSeqKey = UBristleconeWorldSubsystem::OrdinateSeqKey + ORDIN::Step;
@@ -87,8 +84,6 @@ public:
 	ActorKey ActorByStream(InputStreamKey Stream);
 	InputStreamKey StreamByActor(ActorKey Stream);
 	static inline UCanonicalInputStreamECS* SelfPtr = nullptr;
-	static const uint32_t InputConservationWindow = 8192;
-	static const uint32_t AddressableInputConservationWindow = InputConservationWindow - (2 * TheCone::LongboySendHertz);
 	InputStreamKey GetStreamForPlayer(PlayerKey);
 	bool registerPattern(IPM::CanonPattern ToBind, FActionPatternParams FCM_Owner_ActorParams);
 	bool removePattern(IPM::CanonPattern ToBind, FActionPatternParams FCM_Owner_ActorParams);
@@ -97,6 +92,9 @@ public:
 	//this is the most portable way to do a folding region in C++.
 #ifndef ARTILLERYECS_CLASSES_REGION_MARKER
 public:
+
+	
+	
 	class ARTILLERYRUNTIME_API FConservedInputPatternMatcher
 	{
 		InputStreamKey MyStream; //and may god have mercy on my soul.
@@ -205,86 +203,60 @@ public:
 		}
 	};
 
-	class ARTILLERYRUNTIME_API FConservedInputStream : public FArtilleryNoGuaranteeReadOnly
+	 
+
+	
+	class ARTILLERYRUNTIME_API FConservedInputStream
+		: public ExportTemplateStream::FConservedStream
+	<AddressableInputConservationWindow,
+	InputConservationWindow,
+	FArtilleryShell,
+	INNNNCOMING>
 	{
 	public:
-		static inline const int Invalid_Key = -1;
-		virtual ~FConservedInputStream() = default;
+		UCanonicalInputStreamECS* MyDispatch;
+		InputStreamKey MyKey;
 
-		FConservedInputStream(): MyKey(-1), ECSParent(nullptr)
+		virtual std::optional<FArtilleryShell> get(uint64_t input) override
 		{
-		} //broke the rule of five. still breaking it i guess but less badly.
+			return FConservedStream<7936, 8192, FArtilleryShell, unsigned long long>::
+				get(input);
+		}
 
-		explicit FConservedInputStream(UCanonicalInputStreamECS* LF_ECSParent, InputStreamKey ToBe)
+		virtual std::optional<FArtilleryShell> peek(uint64_t input) override
 		{
-			ECSParent = LF_ECSParent;
-			MyKey = ToBe;
-			MyPatternMatcher = MakeShareable(new UCanonicalInputStreamECS::FConservedInputPatternMatcher(ToBe, ECSParent));
+			return FConservedStream<7936, 8192, FArtilleryShell, unsigned long long>::
+				peek(input);
+		}
+
+		virtual ~FConservedInputStream() 
+		{
 		}
 
 		//Mom?
 		friend class FArtilleryBusyWorker;
 		//Dad?
 		friend class UCanonicalInputStreamECS;
-
-		TCircularBuffer<FArtilleryShell> CurrentHistory = TCircularBuffer<FArtilleryShell>(InputConservationWindow);
-		InputStreamKey MyKey;
-
-		//Correct usage procedure is to null check then store a copy.
-		//Failure to follow this procedure will lead to eventual misery.
-		//This has a side-effect of marking the record as played at least once.
-		std::optional<FArtilleryShell> get(uint64_t input)
-		{
-			// the highest input is a reserved write-slot.
-			//the lower bound here ensures that there's always minimum two seconds worth of memory separating the readers
-			//and the writers. How safe is this? It's not! But it's insanely fast. Enjoy, future jake!
-			//TODO: Refactor this to use an atomic int instead of this hubristic madness.
-			if (input >= highestInput || (highestInput - input) > AddressableInputConservationWindow)
-			{
-				return std::optional<FArtilleryShell>(std::nullopt);
-			}
-			CurrentHistory[input].RunAtLeastOnce = true;
-			//this is the only risky op in here from a threading perspective.
-			return std::optional<FArtilleryShell>(CurrentHistory[input]);
-		};
-
-		//THE ONLY DIFFERENCE WITH PEEK IS THAT IT DOES NOT SET RUNATLEASTONCE.
-		//Peek is public out of necessity, but generally, you should use get.
-		std::optional<FArtilleryShell> peek(uint64_t input) override
-		{
-			// the highest input is a reserved write-slot.
-			//the lower bound here ensures that there's always minimum two seconds worth of memory separating the readers
-			//and the writers. How safe is this? It's not! But it's insanely fast. Enjoy, future jake!
-			//TODO: Refactor this to use an atomic int instead of this hubristic madness.
-			if (input >= highestInput || (highestInput - input) > AddressableInputConservationWindow)
-			{
-				return std::optional<FArtilleryShell>(std::nullopt);
-			}
-			return std::optional<FArtilleryShell>(CurrentHistory[input]);
-		};
+		TSharedPtr<UCanonicalInputStreamECS::FConservedInputPatternMatcher> MyPatternMatcher;
 
 		ActorKey GetActorByInputStream()
 		{
-			return ECSParent->ActorByStream(MyKey); // this lets us avoid exposing the key.
+			return MyDispatch->ActorByStream(MyKey); // this lets us avoid exposing the key.
 		};
 		
-		uint64_t GetHighestGuaranteedInput()
+		explicit FConservedInputStream(UCanonicalInputStreamECS* LF_ECSParent, InputStreamKey ToBe)
 		{
-			return highestInput-1;
+			MyDispatch = LF_ECSParent;
+			MyKey = ToBe;
+			MyPatternMatcher = MakeShareable(new UCanonicalInputStreamECS::FConservedInputPatternMatcher(ToBe, MyDispatch));
 		}
-		
-		uint64_t highestInput = 0; // volatile is utterly useless for its intended purpose. 
-		UCanonicalInputStreamECS* ECSParent;
-		TSharedPtr<UCanonicalInputStreamECS::FConservedInputPatternMatcher> MyPatternMatcher;
-
-		//Add can only be used by the Artillery Worker Thread through the methods of the UCISArty.
-		void Add(INNNNCOMING shell, long SentAt)
+		virtual void Add(INNNNCOMING shell, long SentAt) override
 		{
 			CurrentHistory[highestInput].MyInputActions = shell;
-			CurrentHistory[highestInput].ReachedArtilleryAt = ECSParent->Now();
+			CurrentHistory[highestInput].ReachedArtilleryAt = MyDispatch->Now();
 			CurrentHistory[highestInput].SentAt = SentAt;
 			//this is gonna get weird after a couple refactors, but that's why we hide it here.
-
+		
 			// reading, adding one, and storing are all separate ops. a slice here is never dangerous but can be erroneous.
 			// because this is a volatile variable, it cannot be optimized away and most compilers will not reorder it.
 			// however, volatile is basically useless normally. it doesn't provoke a memory fence, and for a variety of reasons
@@ -297,12 +269,11 @@ public:
 			++highestInput;
 		};
 
-		//Overload for local add via feed from cabling. don't use this unless you are CERTAIN.
-		void Add(INNNNCOMING shell)
+		virtual void Add(INNNNCOMING shell) override
 		{
 			CurrentHistory[highestInput].MyInputActions = shell;
-			CurrentHistory[highestInput].ReachedArtilleryAt = ECSParent->Now();
-			CurrentHistory[highestInput].SentAt = ECSParent->Now();
+			CurrentHistory[highestInput].ReachedArtilleryAt = MyDispatch->Now();
+			CurrentHistory[highestInput].SentAt = MyDispatch->Now();
 			++highestInput;
 		}
 	};
@@ -321,7 +292,7 @@ public:
 	virtual void Tick(float DeltaTime) override;
 	virtual TStatId GetStatId() const override;
 	TSharedPtr<FConservedInputStream> getNewStreamConstruct( PlayerKey ByPlayerConcept);
-	TSharedPtr<TMap<PlayerKey, InputStreamKey>> SessionPlayerToStreamMapping;
+	TMap<PlayerKey, InputStreamKey> SessionPlayerToStreamMapping;
 
 	TSharedPtr<UCanonicalInputStreamECS::FConservedInputStream> GetStream(InputStreamKey StreamKey) const;
 	
@@ -342,11 +313,13 @@ public:
 	}
 	
 private:
-	TSharedPtr<TMap<InputStreamKey, TSharedPtr<FConservedInputStream>>> StreamKeyToStreamMapping;
-	TSharedPtr<TMap<ActorKey, FireControlKey>> LocalActorToFireControlMapping;
-	TSharedPtr<TMap<InputStreamKey, ActorKey>> StreamToActorMapping;
-	TSharedPtr<TMap<ActorKey, InputStreamKey>> ActorToStreamMapping;
-	UBristleconeWorldSubsystem* MyNetworkDispatch; // World Subsystems are the last to go, making this a fairly safe idiom. ish.
+	TMap<InputStreamKey, TSharedPtr<FConservedInputStream>> StreamKeyToStreamMapping;
+	TMap<ActorKey, FireControlKey> LocalActorToFireControlMapping;
+	TMap<InputStreamKey, ActorKey> StreamToActorMapping;
+	TMap<ActorKey, InputStreamKey> ActorToStreamMapping;
+	
+	UPROPERTY()
+	TObjectPtr<UBristleconeWorldSubsystem> MyNetworkDispatch; // World Subsystems are the last to go, making this a fairly safe idiom. ish.
 };
 
 typedef UCanonicalInputStreamECS UCISArty;

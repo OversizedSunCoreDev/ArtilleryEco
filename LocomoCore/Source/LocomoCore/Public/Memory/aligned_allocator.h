@@ -55,7 +55,7 @@ template <typename T, sse::Alignment alignment> class LaughablyDangerousAlignedA
 #if defined(_MSC_VER) && !defined(__clang__)
         
         return static_cast<value_type*>(_aligned_malloc( sizeof(T) * size, static_cast<size_t>(alignment)));
-#elif
+#else
         auto ret = posix_memalign((void**)&ptr, alignment, sizeof(T) * size);
     	return ptr;
 #endif
@@ -68,7 +68,7 @@ template <typename T, sse::Alignment alignment> class LaughablyDangerousAlignedA
 #if defined(_MSC_VER) && !defined(__clang__)
         
         _aligned_free(ptr);
-#elif
+#else
         free(ptr);
 #endif
         

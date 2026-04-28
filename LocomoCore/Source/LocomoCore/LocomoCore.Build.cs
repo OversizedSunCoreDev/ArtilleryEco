@@ -24,7 +24,7 @@ public class LocomoCore : ModuleRules
 
 		PrivateIncludePaths.AddRange(
 			new string[] {
-				// ... add other private include paths required here ...
+				Path.Combine(PluginDirectory,"Source/LocomoCore/Private"),
 			}
 			);
 
@@ -36,7 +36,9 @@ public class LocomoCore : ModuleRules
 				"CoreUObject",
 				"Engine",
 				"Slate",
-				"ApplicationCore", "SkeletonKey", "GameplayTags", "Eigen"
+				"ApplicationCore", 
+				"SkeletonKey", 
+				"GameplayTags", "Eigen"
 				// ... add other public dependencies that you statically link with here ...
 			}
 			);

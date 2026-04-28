@@ -26,9 +26,7 @@ bool UBarrageJoltVisualDebugWorldSubsystem::DoesSupportWorldType(EWorldType::Typ
 void UBarrageJoltVisualDebugWorldSubsystem::PostInitialize()
 {
 	Super::PostInitialize();
-
-	UE_CALL_ONCE(JPH::RegisterDefaultAllocator);
-
+	
 	// Create a dummy actor to attach the component to
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;

@@ -55,6 +55,7 @@ public:
 	double JoltX;
 	double JoltY;
 	double JoltZ;
+	FQuat4f Rotation;
 	FVector3f Offset;
 	FMassByCategory::BMassCategories MassClass;
 };
@@ -75,6 +76,7 @@ public:
 	double taper;
 	FVector3f Offset;
 	FMassByCategory::BMassCategories MassClass;
+	FQuat4f Rotation;
 };
 
 struct FBTransform

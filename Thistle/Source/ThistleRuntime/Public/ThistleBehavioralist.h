@@ -13,10 +13,11 @@
 #include "ThistleInject.h"
 #include "BehaviorTree/BehaviorTreeComponent.h"
 #include "Subsystems/WorldSubsystem.h"
+#include "LibSeq/seq/concurrent_map.hpp"
 #include "ThistleBehavioralist.generated.h"
 
 class UThistleStateTreeLease;
-
+typedef seq::concurrent_map<FSkeletonKey, UThistleStateTreeLease*> KeyToStateTree;
 DECLARE_DELEGATE_OneParam(AwakenTagQueryDecorator, TWeakObjectPtr<UBehaviorTreeComponent>)
 static constexpr int32 MAX_ENEMY_COUNT = 2000;
 /**
@@ -40,24 +41,27 @@ public:
 	friend class UThistleDispatch;
 	static constexpr uint8_t WIDE_CADENCE = 8;
 	
-	UThistleBehavioralist();
-	
+	struct Deadline
+	{
+		FSkeletonKey Target;
+		FGameplayTag TagForOperation;
+		bool AddOrRemove;
+	};
 	//pool behavior trees?
 	using ActorToTreeMapping = TMap<ActorKey, TObjectPtr<UBehaviorTreeComponent>>;
 	using AwakenToTreeMapping = TMap<AwakenTagQueryDecorator*, TObjectPtr<UBehaviorTreeComponent>>;
-	using Deadline = TTuple<FSkeletonKey, FNativeGameplayTag&, bool>;
 	using DeadlineArray = TArray<Deadline>;
 	//deadliners MUST be factored out into a class to allow for both sanity and correct rollback.
 	//specifically, we'll need to add a behavior where they don't _actually_ remove an array until the rollback window
 	//on reversing that array's effects expires. the good news is that just looks like [contains(now), remove(now-window+1)]
 	//same as our tombstoning system in fblets, really, just a little smaller because we're operating on things
 	//that don't HAVE lifecycles here.
-	using Deadliner = TSortedMap<int, DeadlineArray>;
+	using Deadliner = TMap<int32, DeadlineArray>;
 	
 	static inline UThistleBehavioralist* SelfPtr = nullptr;
 	
 protected:
-	int DeadlinerTime = 0;
+	int32 DeadlinerTime = 0;
 	
 public:
 	//in ticks! in _TICKS_
@@ -71,10 +75,10 @@ public:
 	constexpr static int OrdinateSeqKey = UBarrageDispatch::OrdinateSeqKey  + ORDIN::Step;
 	
 	virtual bool RegistrationImplementation() override;
-	void BounceTag(FSkeletonKey Key, FNativeGameplayTag& Tag, int BounceDuration) const;
-	void DelayedTag(FSkeletonKey Key, FNativeGameplayTag& Tag, int BounceTime);
-	void ExpireTag(FSkeletonKey Key, FNativeGameplayTag& Tag, int BounceTime);
-	void TimedTagsMaintenance(int CurrentTck);
+	void BounceTag(FSkeletonKey Key, FGameplayTag Tag, int32 BounceDuration) const;
+	void DelayedTag(FSkeletonKey Key, FGameplayTag Tag, int32 BounceTime);
+	void ExpireTag(FSkeletonKey Key, FGameplayTag Tag, int32 BounceTime);
+	void TimedTagsMaintenance(int32 CurrentTck);
 
 	//this could COMFORTABLY use the postinitializer. it was a simple and good case to demonstrate another
 	//approach though. I hope this remains only a curiosity and not a standard pattern.
@@ -121,17 +125,18 @@ public:
 	void RegisterTagQueryCapableDecorator(TObjectPtr<UBehaviorTreeComponent> UBehaviorTreeComponent, AwakenTagQueryDecorator* BindAwaken);
 	void DeregisterTagQueryCapableDecorator(AwakenTagQueryDecorator* BindAwaken);
 	UPROPERTY()
-	int Some = 3;
+	int32 Some = 3;
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
-	int TargetChaffEnemyCount = 300;
+	int32 TargetChaffEnemyCount = 300;
 	
 	UPROPERTY(BlueprintReadWrite, VisibleAnywhere)
-	UArtilleryGameplayTagContainer* BehavioralistTagState;
+	TObjectPtr<UArtilleryGameplayTagContainer> BehavioralistTagState;
+	
 	//ACCESS ONLY FROM GAME THREAD FOR NOW.
 	TMap<FSkeletonKey, bool> RecentlyProcessed;
 	UFUNCTION(BlueprintCallable)
-	int GetLiveEnemyCount();	
+	int32 GetLiveEnemyCount();	
 	UFUNCTION(BlueprintCallable)
 	TArray<AGenericSmartObject*> GetSomeRallyPoints(FVector Location, float Range);
 	UFUNCTION(BlueprintCallable)
@@ -149,14 +154,18 @@ public:
 
 	//TODO: GENERALIZE THIS TO NOT REQUIRE A SPECIFIC THISTLE INJECT. RIGHT NOW, WE KINDA GOTTA DO IT THIS WAY
 	//OR WE'LL HAVE DELEGATE SOUP THAT CANNOT BE DEBUGGED. TBH, these could prolly be ticklites but I haven't brain for that.
-	TSharedPtr<TMap<ActorKey, TObjectPtr<AThistleInject>>> ActorToThistleAIMapping;
-	TSharedPtr<TMap<FBarrageKey, TObjectPtr<AThistleInject>>> BarrageToThistleAIMapping;
-	TSharedPtr<TMap<FSkeletonKey, UThistleStateTreeLease*>> EntityToArtilleryBehavior;
+	TMap<ActorKey, TObjectPtr<AThistleInject>> ActorToThistleAIMapping;
+	TMap<FBarrageKey, TObjectPtr<AThistleInject>> BarrageToThistleAIMapping;
+	// This exists just to advertise we reference non-uproperty things
+	static void AddReferencedObjects(UObject* InThis, FReferenceCollector& Collector);
+	
+	KeyToStateTree EntityToArtilleryBehavior;
 	void RunAILocomotions() const;
 	void RunStateTrees(uint64_t CurrentTck) const;
 	bool IsPlayerInCombat() const;
-	UArtilleryDispatch* MyDispatch;    
 	ActorKeyArray CurrentEnemies;
+
+	void ProcessDamageEvents();
 
 	using RallyMap = TMap<FSkeletonKey, TObjectPtr<AGenericSmartObject>>;
 	UPROPERTY()
@@ -166,7 +175,12 @@ public:
 	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
 	TMap<FSkeletonKey, TObjectPtr<AActor>> ManagedPatrolZones;
 	ActorKeyArray DeadEnemies;
-	USmartObjectSubsystem* SmartObjectSubsystem;
+	
+	UPROPERTY()
+	TObjectPtr<USmartObjectSubsystem> SmartObjectSubsystem;
+	
+	UPROPERTY()
+	TObjectPtr<UArtilleryDispatch> MyDispatch;
 
 	void OnPhysicsCollision(const BarrageContactEvent& ContactEvent)
 	{

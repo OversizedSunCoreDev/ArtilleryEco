@@ -59,4 +59,33 @@ uint32 FMMM::FastHash6432(uint64 key)
 	return key;
 }
 
+//past here, these are drawn from hash inspector then borked.
+inline uint8_t lowerbias328(uint32_t x)
+{
+	x ^= x >> 16;
+	x *= 0xa812d533;
+	x ^= x >> 15;
+	x *= 0xb278e4ad;
+	x ^= x >> 23;
+	x *= 0xd533a813;
+	x %= 256;
+	return x;
+}
+
+inline uint16_t hash16_s6(uint16_t x)
+{
+	x += x << 7; x ^= x >> 8;
+	x += x << 3; x ^= x >> 2;
+	x += x << 4; x ^= x >> 8;
+	return x;
+}
+
+inline uint8_t hash16_s6M8(uint16_t x)
+{
+	x += x << 7; x ^= x >> 8;
+	x += x << 3; x ^= x >> 2;
+	x += x << 4; x ^= x >> 8;
+	return x % 255;
+}
+
 typedef FMMM MashFunctions;

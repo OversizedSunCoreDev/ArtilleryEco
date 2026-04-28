@@ -101,14 +101,17 @@ namespace Arty
 	
 	struct TicklitePrototype : TicklikeMemoryBlock
 	{
-		virtual void CalculateTickable() = 0;
-		virtual bool ShouldExpireTickable() = 0;
+		virtual void CalculateTickable() {};
+		virtual bool ShouldExpireTickable()
+		{
+			return true;
+		};
 		
 		//This trigger effects and this is borderline necessary for some semantics, like popping a poison tag off
 		//when an effect ends. where possible, we should prefer ArtilleryEvents for this, but it won't always be viable.
 		//use your best judgment.
-		virtual bool OnExpireTickable() = 0;
-		virtual void ApplyTickable() = 0;
+		virtual bool OnExpireTickable() {return true;};
+		virtual void ApplyTickable() {};
 		virtual void ReturnToPool() = 0;
 
 		virtual ~TicklitePrototype()
@@ -157,7 +160,7 @@ namespace Arty
 //TODO: ALWAYS customize this to the sample-rate you select for cabling. ALWAYS. Or your game will feel Real Bad.
 constexpr int ArtilleryInputSearchWindow = TheCone::BristleconeSendHertz;
 constexpr inline int ArtilleryHoldSweepBack = 5; // this is literally the sin within the beast. 
-constexpr inline int ArtilleryFlickSweepBack = 15; // And this is no better.
+constexpr inline int ArtilleryFlickSweepBack = 16; // And this is no better.
 
 using namespace Arty;
 struct FActionPatternParams

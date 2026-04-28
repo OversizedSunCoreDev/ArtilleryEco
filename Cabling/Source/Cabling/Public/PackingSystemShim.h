@@ -100,7 +100,7 @@ template <class T> class TagPack16 : Packable16
 {
 	virtual Bigby* PackImpl() override
 	{
-		return T.PackImpl();
+		return T::PackImpl();
 	}
 };
 
@@ -108,6 +108,6 @@ template <class T> class TagPack8 :Packable8
 {
 	virtual uint64_t* PackImpl() override
 	{
-		return T.PackImpl();
+		return T::PackImpl();
 	}
 };

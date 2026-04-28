@@ -13,6 +13,7 @@ void F_INeedA::Feed()
 	BusyWorkerAcc[ThreadAccTicker] = FeedMap(std::this_thread::get_id(), 4096);
 	GameThreadAcc[ThreadAccTicker] = GameFeedMap(std::this_thread::get_id(), 4096);
 	AIThreadAcc[ThreadAccTicker] = FeedMap(std::this_thread::get_id(), 4096);
+	TLThreadAcc[ThreadAccTicker] = TickliteFeedMap(std::this_thread::get_id(), 4096);
 	MyARTILLERYIndex = ThreadAccTicker;
 	++ThreadAccTicker;
 }
@@ -145,6 +146,17 @@ FGrantWith F_INeedA::ParticleSystemSpawnedAttached(FName ThingName, const FSkele
 		MyRequest.ActivateIfPossible = CreateSceneComponentOnKey;
 		GameThreadAcc[MyARTILLERYIndex].Queue->Enqueue(MyRequest);
 		return FGrantWith(Stamp).Set(FGrantWith::Eventual | FGrantWith::Within1Tick);
+	}
+	return FGrantWith(Stamp).Set(FGrantWith::Nullable);
+}
+
+FGrantWith F_INeedA::DeferredTickliteInstantiation(TicklitePrototype* constructed, ArtilleryTime Stamp, TicklitePhase Group)
+{
+	if (this)
+	{
+		FTickliteRequest MyRequest(Stamp, ArtilleryRequestType::DeferredTickliteInstantiation, constructed, Group);
+		TLThreadAcc[MyARTILLERYIndex].Queue->Enqueue(MyRequest);
+		return FGrantWith(Stamp).Set(FGrantWith::Nullable | FGrantWith::WideCadence);
 	}
 	return FGrantWith(Stamp).Set(FGrantWith::Nullable);
 }

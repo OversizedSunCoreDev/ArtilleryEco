@@ -3,11 +3,9 @@
 
 #include "SkeletonTypes.h"
 
-#include "CoreMinimal.h"
 #include "BarrageContactEvent.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "FBarrageKey.h"
-#include "Chaos/Particles.h"
 #include "CapsuleTypes.h"
 #include "FBarragePrimitive.h"
 #include "FBPhysicsInput.h"
@@ -22,6 +20,8 @@
 #define HERTZ_OF_BARRAGE 128.0f
 #endif
 
+class ALandscapeProxy;
+
 static constexpr uint32 MAX_FOUND_OBJECTS = 1024;
 
 class BARRAGE_API FBarrageBounder
@@ -33,12 +33,13 @@ class BARRAGE_API FBarrageBounder
 public:
 	static FBBoxParams GenerateBoxBounds(
 		const FVector3d& point,
-		double xDiam, double yDiam, double zDiam,
+		double xDiam, double yDiam, double zDiam, 
 		const FVector3d& OffsetCenterToMatchBoundedShape = FVector::Zero(),
-		FMassByCategory::BMassCategories MyMassClass = FMassByCategory::BMassCategories::MostEnemies);
+		FMassByCategory::BMassCategories MyMassClass = FMassByCategory::BMassCategories::MostEnemies, //if you know your rotation, you know your mass. right?
+		const FQuat4f& Rotation = FQuat4f::Identity);
 	static FBSphereParams GenerateSphereBounds(const FVector3d& point, double radius);
 	static FBCapParams GenerateCapsuleBounds(const UE::Geometry::FCapsule3d& Capsule);
-	static FBCapParams GenerateCapsuleBounds(FVector Center, float Radius, float Height, FMassByCategory::BMassCategories Mass, FVector3f Offsets);
+	static FBCapParams GenerateCapsuleBounds(FVector Center, float Radius, float Height, FMassByCategory::BMassCategories Mass, FVector3f Offsets, FQuat4f Rotation = FQuat4f::Identity);
 	static FBCharParams GenerateCharacterBounds(const FVector3d& point, double radius, double extent, double speed);
 };
 
@@ -47,7 +48,7 @@ struct BarrageContactEvent;
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnBarrageContactAdded, const BarrageContactEvent&);
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnBarrageContactPersisted, const BarrageContactEvent&);
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnBarrageContactRemoved, const BarrageContactEvent&);
-constexpr int ALLOWED_THREADS_FOR_BARRAGE_PHYSICS = 64;
+constexpr int32 ALLOWED_THREADS_FOR_BARRAGE_PHYSICS = 64;
 //if we could make a promise about when threads are allocated, we could probably get rid of this
 //since the accumulator is in the world subsystem and so gets cleared when the world spins down.
 //that would mean that we could add all the threads, then copy the state from the volatile array to a
@@ -70,6 +71,7 @@ class BARRAGE_API UBarrageDispatch : public UTickableWorldSubsystem, public ISke
 	friend class UArtilleryLibrary;
 
 public:
+
 	//minimize use of this outside of artillery blueprint library (UArtilleryLibrary)
 	static inline UBarrageDispatch* SelfPtr = nullptr;
 	constexpr static int OrdinateSeqKey = ORDIN::LastSubstrateKey;
@@ -100,13 +102,15 @@ public:
 	virtual void CastRay(FVector3d CastFrom, FVector3d Direction, const JPH::BroadPhaseLayerFilter& BroadPhaseFilter, const JPH::ObjectLayerFilter& ObjectFilter, const JPH::BodyFilter& BodiesFilter, TSharedPtr<FHitResult> OutHit);
 	
 	//and viola [sic] actually pretty elegant even without type polymorphism by using overloading polymorphism.
-	FBLet CreatePrimitive(FBBoxParams& Definition, FSkeletonKey Outkey, uint16 Layer, bool IsSensor = false, bool forceDynamic = false, bool isMovable = true);
-	FBLet CreatePrimitive(FBCapParams& Definition, FSkeletonKey Outkey, uint16 Layer, bool IsSensor = false, bool forceDynamic = false, bool isMovable = true);
+	//see EAllowedDOFs from Barrage\Source\JoltPhysics\Jolt\Physics\Body\AllowedDOFs.h
+	FBLet CreatePrimitive(FBBoxParams& Definition, FSkeletonKey Outkey, uint16 Layer, bool IsSensor = false, bool forceDynamic = false, bool isMovable = true, float AngularDamp = 0.2, JPH::EAllowedDOFs AllowedDOF = RelaxedBoxDOFs);
+	FBLet CreatePrimitive(FBCapParams& Definition, FSkeletonKey Outkey, uint16 Layer, bool IsSensor = false, bool forceDynamic = false, bool isMovable = true, float AngularDamp = 0.1, JPH::EAllowedDOFs AllowedDOF =  StandardCapAllowedDOFs);
 	FBLet CreatePrimitive(FBCharParams& Definition, FSkeletonKey Outkey, uint16 Layer);
 	FBLet CreatePrimitive(FBSphereParams& Definition, FSkeletonKey OutKey, uint16 Layer, bool IsSensor = false);
 	FBLet CreateProjectile(FBBoxParams& Definition, FSkeletonKey OutKey, uint16_t Layer);
 	FBLet LoadComplexStaticMesh(FBTransform& MeshTransform, const UStaticMeshComponent* StaticMeshComponent, FSkeletonKey OutKey, bool IsSensor = false);
 	FBLet LoadEnemyHitboxFromStaticMesh(FBTransform& MeshTransform, const UStaticMeshComponent* StaticMeshComponent, FSkeletonKey OutKey, bool IsSensor = false, bool UseRawMeshForCollision = false, FVector CenterOfMassTranslation = {0,0,0});
+	void CreateHeightfieldLandscapeMesh(TNotNull<const ALandscapeProxy*> LandscapeActor);
 	FBLet GetShapeRef(FBarrageKey Existing) const;
 	FBLet GetShapeRef(FSkeletonKey Existing) const;
 	void FinalizeReleasePrimitive(FBarrageKey BarrageKey);
@@ -116,7 +120,8 @@ public:
 	//instead of just reference counting and deleting - this is because cases arise where there MUST be an authoritative
 	//single source answer to the alive/dead question for a rigid body, but we still want all the advantages of ref counting
 	//and we want to be able to revert that decision for faster rollbacks or for pooling purposes.
-	constexpr static uint32 TombstoneInitialMinimum = 9 << 8;
+	//constexpr static uint32 TombstoneInitialMinimum = 9 << 8;
+	constexpr static uint32 TombstoneInitialMinimum = 30;
 
 	//don't const stuff that causes huge side effects.
 	uint32 SuggestTombstone(FBLet Target) 
@@ -192,13 +197,14 @@ private:
 	void CleanTombs()
 	{
 		//free tomb at offset - TombstoneInitialMinimum, fulfilling our promised minimum.
+		TSharedPtr<FWorldSimOwner> PinSim = JoltGameSim;
 		TSharedPtr<TArray<FBLet>>* HoldOpen = Tombs;
-		TSharedPtr<TArray<FBLet>> Mausoleum = HoldOpen[(TombOffset) % (TombstoneInitialMinimum + 1)]; //think this math is wrong.
+		TSharedPtr<TArray<FBLet>> CurrentTombstoneRecord = HoldOpen[(TombOffset) % (TombstoneInitialMinimum + 1)]; //think this math is wrong.
 		TSharedPtr<KeyToFBLet> HoldOpenBMap = JoltBodyLifecycleMapping;
 		TSharedPtr<KeyToKey> HoldOpenTMap = TranslationMapping;
-		if(Mausoleum && !Mausoleum->IsEmpty() && HoldOpenBMap && HoldOpenTMap)
+		if(CurrentTombstoneRecord && !CurrentTombstoneRecord->IsEmpty() && HoldOpenBMap && HoldOpenTMap)
 		{
-			for (auto Tombstone : *Mausoleum)
+			for (auto Tombstone : *CurrentTombstoneRecord)
 			{
 				if (Tombstone)
 				{
@@ -208,12 +214,12 @@ private:
 			}
 		}
 		
-		Mausoleum = HoldOpen[(TombOffset - TombstoneInitialMinimum) % (TombstoneInitialMinimum + 1)];
-		if (Mausoleum)
+		TSharedPtr<TArray<FBLet>> OldestTombstoneRecordLayer = HoldOpen[(TombOffset + 1) % (TombstoneInitialMinimum + 1)];
+		if (OldestTombstoneRecordLayer && OldestTombstoneRecordLayer.IsValid())
 		{
-			Mausoleum->Empty(); //roast 'em lmao.
+			OldestTombstoneRecordLayer->Empty(); //roast 'em lmao.
 		}
-		TombOffset = (TombOffset + 1) % (TombstoneInitialMinimum + 1);
+		TombOffset = (TombOffset + 1) % (TombstoneInitialMinimum + 1); // do we actually want this modulo?
 	}
 
 private:

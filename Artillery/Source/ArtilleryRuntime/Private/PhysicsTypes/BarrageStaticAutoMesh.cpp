@@ -1,5 +1,9 @@
 #include "PhysicsTypes/BarrageStaticAutoMesh.h"
 
+#include "FWorldSimOwner.h"
+#include "Landscape.h"
+#include "Conversion/BarrageUnrealSkeletonToJoltRagdollConversion.h"
+
 //CONSTRUCTORS
 //--------------------
 
@@ -58,6 +62,28 @@ bool UBarrageStaticAutoMesh::RegistrationImplementation()
 			if (MyBarrageBody)
 			{
 				IsReady = true;
+			}
+
+
+			if (USkeletalMeshComponent* SkeletalMeshComp = Actor->GetComponentByClass<USkeletalMeshComponent>()) {
+				auto SkeletalMesh = SkeletalMeshComp->GetSkeletalMeshAsset();
+				auto PhysicsAsset = SkeletalMeshComp->GetPhysicsAsset();
+				if (SkeletalMesh && PhysicsAsset) {
+					UBarrageDispatch* Physics = GetWorld()->GetSubsystem<UBarrageDispatch>();
+					if (ensure(Physics->JoltGameSim) && ensure(Physics->JoltGameSim->physics_system)) {
+						auto Ragdoll = Barrage::Conversion::ExampleCreateJoltRagdollFromUnrealSkeleton(
+							*Physics->JoltGameSim->physics_system,
+							SkeletalMeshComp,
+							SkeletalMesh->GetSkeleton(),
+							PhysicsAsset);
+					}
+				}
+			}
+			
+			if (ALandscapeProxy* Landscape = Cast<ALandscapeProxy>(Actor))
+			{
+				UBarrageDispatch* Physics = GetWorld()->GetSubsystem<UBarrageDispatch>();
+				Physics->CreateHeightfieldLandscapeMesh(Landscape);
 			}
 		}
 	}

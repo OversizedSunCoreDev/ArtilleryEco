@@ -149,7 +149,7 @@ void FBarrageDispatchTests::Define()
 
 			Describe("Key Generation", [this]()
 				{
-					It("Should generate a non-deterministic Barrage keys from Body IDs", [this]()
+					It("Should generate deterministic Barrage keys from Body IDs", [this]()
 						{
 							const uint32 RawBodyId = 123456;
 							JPH::BodyID BodyId(RawBodyId);

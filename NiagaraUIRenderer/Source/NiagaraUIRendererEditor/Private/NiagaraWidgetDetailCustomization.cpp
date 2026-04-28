@@ -176,7 +176,12 @@ void FNiagaraWidgetDetailCustomization::CheckWarnings()
 			}
 		}
 #else
+
+#if ENGINE_MINOR_VERSION >= 4
+		FVersionedNiagaraEmitter Emitter = EmitterInst->GetVersionedEmitter();
+#else
 		FVersionedNiagaraEmitter Emitter = EmitterInst->GetCachedEmitter();
+#endif
 		
 		if (Emitter.GetEmitterData()->SimTarget != ENiagaraSimTarget::CPUSim)
 		{
@@ -202,8 +207,9 @@ void FNiagaraWidgetDetailCustomization::CheckWarnings()
 
 				if (RendererMaterial)
 				{
-					UMaterialInterface* ActualMaterial = CachedNiagaraWidget->MaterialRemapList.Contains(RendererMaterial) && *CachedNiagaraWidget->MaterialRemapList.Find(RendererMaterial) != nullptr
-													   ? *CachedNiagaraWidget->MaterialRemapList.Find(RendererMaterial) : RendererMaterial;
+					const TObjectPtr<UMaterialInterface>* RemapMaterial = CachedNiagaraWidget->MaterialRemapList.Find(RendererMaterial);
+					const bool RemapMaterialValid = RemapMaterial && *RemapMaterial != nullptr;
+					UMaterialInterface* ActualMaterial = RemapMaterialValid ? RemapMaterial->Get() : RendererMaterial;
 
 					if (ActualMaterial && ActualMaterial->GetMaterial()->MaterialDomain != EMaterialDomain::MD_UI)
 					{
@@ -393,7 +399,12 @@ void FNiagaraWidgetDetailCustomization::OnAutoPopulatePressed()
 			{
 				TArray<UNiagaraRendererProperties*> Properties = Emitter->GetRenderers();
 #else
+
+#if ENGINE_MINOR_VERSION >= 4
+		if (FVersionedNiagaraEmitterData* EmitterData = EmitterInst->GetVersionedEmitter().GetEmitterData())
+#else
 		if (FVersionedNiagaraEmitterData* EmitterData = EmitterInst->GetCachedEmitterData())
+#endif
 		{
 			if (EmitterData->SimTarget == ENiagaraSimTarget::CPUSim)
 			{

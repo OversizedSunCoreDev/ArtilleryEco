@@ -17,6 +17,7 @@ struct FJThread{
 	virtual ~FJThread() = default;
 	std::shared_ptr<std::jthread> UnderlyingThread;
 	FRunnable* UnderylingRunnable;
+	FString ThreadName;
 	virtual FJThread* Create(
 	class FRunnable* InRunnable, 
 	const TCHAR* ThreadName);

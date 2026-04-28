@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
 	"Version": 1,
-	"VersionName": "1.0",
+	"VersionName": "1.1",
 	"FriendlyName": "Sunflower",
 	"Description": "UI System",
 	"Category": "Other",
@@ -26,8 +26,17 @@
 		"Name": "SkeletonKey",
 		"Enabled": true
 	},
+
 		{
 			"Name": "Artillery",
+			"Enabled": true
+		},
+		{
+			"Name": "Barrage",
+			"Enabled": true
+		},
+		{
+			"Name": "Locomo",
 			"Enabled": true
 		},
 		{
@@ -40,6 +49,14 @@
 		},
 		{
 			"Name": "MassGameplay",
+			"Enabled": true
+		},
+		{
+			"Name": "Niagara",
+			"Enabled": true
+		},
+		{
+			"Name": "NiagaraUIRenderer",
 			"Enabled": true
 		}
 	]

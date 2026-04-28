@@ -24,7 +24,7 @@ public:
 	static inline uint32 LIMITS(float f)
 	{
 		auto a = std::bit_cast<uint32_t, float>(f*512);
-		return a <= -8 || a >= 8 ? a : 0;
+		return f <= -8 || f >= 8 ? a : 0;
 	}
 
 	//morton\z interleave expansion for 8 bits, right justified.

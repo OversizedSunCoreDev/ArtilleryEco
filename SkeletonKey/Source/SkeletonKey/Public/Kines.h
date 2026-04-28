@@ -216,3 +216,24 @@ public:
 		}
 	}
 };
+
+
+//@todo fill this out (will be done very shortly once the queue to push up is in place)
+class SkeletalMeshKine : public Kine
+{
+public:
+	
+	virtual void SetBonePose(const TArray<FTransform>& ComponentSpaceTransforms, const TArray<FTransform>& BoneSpaceTransforms);
+	
+	virtual void SetTransformlike(FTransform Input) override;
+	virtual void SetLocation(FVector3d Location) override;
+	virtual void SetRotation(FQuat4d Rotation) override;
+	virtual void SetLocationAndRotation(FVector3d Loc, FQuat4d Rot) override;
+	virtual void SetLocationAndRotationWithScope(FVector3d Loc, FQuat4d Rot) override;
+
+protected:
+	virtual TOptional<FTransform> CopyOfTransformlike_Impl() override;
+
+public:
+	TWeakObjectPtr<USkeletalMeshComponent> SkeletalMeshComp;
+};

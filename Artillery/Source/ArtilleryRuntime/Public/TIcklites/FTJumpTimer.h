@@ -26,14 +26,17 @@ public:
 	{
 	}
 	
-	void TICKLITE_Apply() {
+	void TICKLITE_Apply()
+	{
 		auto ticksLeftPtr = ADispatch->GetAttrib(JumpTarget, Attr::TicksTilJumpAvailable);
 		if (!ticksLeftPtr)
 		{
 			return;
 		}
-
-		ticksLeftPtr->SetCurrentValue(ticksLeftPtr->GetCurrentValue() - 1);
+		if (ticksLeftPtr->GetCurrentValue() >= 1)
+		{
+			ticksLeftPtr->AddToCurrentValue(-1);
+		}
 	}
 
 	void TICKLITE_CoreReset() {
