@@ -11,7 +11,7 @@ Determinism, abilities, threaded input processing, and state management primitiv
 - Threaded input processing with support for strong timesync
 - Locomotion state machine binding
 - Initial integration with bristlecone for insanely fast networking
-- fixed data-rate multiplayer primitives, with multiplayer support coming in .4
+- fixed data-rate multiplayer primitives, with multiplayer support coming in .6
 - LIMITED integration with GAS, primarily focused on Cues. the goal is that time spent learning gas should not feel wasted and porting should be easy.
 - An abstract controls model that uses a three layer system of key bindings -> intents -> actions
 - And finally, a collection of industry tricks in locomo and skeletonkey useful to most games.
