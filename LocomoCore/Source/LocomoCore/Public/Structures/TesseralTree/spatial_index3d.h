@@ -50,6 +50,12 @@ public:
     void        insert(const AABB3& box, Id id);
     /// Removes one entry equal to (box, id). Returns true if one was removed.
     bool        remove(const AABB3& box, Id id);
+    /// Folds additions into the packed tree and purges removed ids in O(n)
+    /// via a linear sorted-merge, instead of dirtying + full rebuild. The
+    /// resulting tree is bit-identical to a full rebuild (same total order,
+    /// same packing), and the merge chains: repeated calls stay O(n) each.
+    void        merge_apply(const AABB3* addBoxes, const Id* addIds, std::size_t addN,
+                            const Id* removeIds, std::size_t removeN);
     void        clear();
     std::size_t size() const;
     bool        empty() const;
