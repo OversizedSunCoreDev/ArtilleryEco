@@ -1,4 +1,4 @@
-﻿#include "ArtilleryControlComponent.h"
+#include "ArtilleryControlComponent.h"
 #include "ArtilleryDispatch.h"
 #include "GameplayAbilitySpec.h"
 #include "GameplayAbilitySpecHandle.h"
@@ -16,16 +16,11 @@ void UArtilleryFireControl::FireGun(TSharedPtr<FArtilleryGun> Gun, bool InputAlr
 {
 	if (Gun->Prefire != nullptr)
 	{
-		FGameplayAbilitySpec BackboneFiring = BuildAbilitySpecFromClass(
-			(Gun->Prefire).GetClass(),
+		FArtilleryStates OutcomeStates = Fired;
+		Gun->PreFireGun(OutcomeStates,
 			0,
-			-1);
-		FGameplayAbilitySpecHandle FireHandle = BackboneFiring.Handle;
-		Gun->PreFireGun(
-			FireHandle,
-			AbilityActorInfo.Get(),
-			FGameplayAbilityActivationInfo(EGameplayAbilityActivationMode::Authority),
-			BufferInfo);
+			//TODO TODO TODO: FIX UP THE VERIFIED FRAME PASS THROUGH
+			InputAlreadyUsedOnce, InputAlreadyUsedOnce, BufferInfo);
 	}
 }
 

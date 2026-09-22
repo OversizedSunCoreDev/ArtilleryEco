@@ -24,7 +24,7 @@ public class BarrageTests : ModuleRules
 		PrivateIncludePaths.AddRange(
 			new string[]
 			{
-				Path.Combine(PluginDirectory,"Source/Barrage")
+				Path.Combine(PluginDirectory,"Source/BarrageTests")
 			}
 			);
 			
@@ -32,6 +32,14 @@ public class BarrageTests : ModuleRules
 		PublicDependencyModuleNames.AddRange(
 			new string[]
 			{
+				"Core",
+				"Engine",
+				"UnrealEd",
+				"CoreUObject",
+				"Chaos",
+				"SkeletonKey",
+				"Barrage",
+				"JoltPhysics"
 			}
 			);
 			

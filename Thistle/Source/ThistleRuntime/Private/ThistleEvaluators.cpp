@@ -1,5 +1,8 @@
 #include "ThistleEvaluators.h"
 #include "StateTreeExecutionContext.h"
+#include "PhysicsFilters/FastBroadphaseLayerFilter.h"
+#include "PhysicsFilters/FastObjectLayerFilters.h"
+#include "PhysicsTypes/BarragePlayerAgent.h"
 
 static const FastExcludeBroadphaseLayerFilter BroadPhaseFilter(ExclusionFilters);
 static const FastExcludeObjectLayerFilter ObjectLayerFilter(ExclusionFilters);
@@ -13,14 +16,14 @@ void FThistleGetPlayerKey::Tick(FStateTreeExecutionContext& Context, const float
 {
 	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
 	//TODO: be great to have a version that doesn't go boom.
-	InstanceData.OutputKey = UArtilleryLibrary::GetLocalPlayerKey_LOW_SAFETY(UArtilleryDispatch::Get(Context.GetWorld()));
+	InstanceData.OutputKey = UArtilleryLibrary::GetLocalPlayerKey_LOW_SAFETY(UCanonicalInputStreamECS::Get(Context.GetWorld()));
 }
 
 void FThistleKeyToRelationship::Tick(FStateTreeExecutionContext& Context, const float DeltaTime) const
 {
 	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
 	bool found = false;
-	InstanceData.OutputKey = UArtilleryLibrary::implK2_GetIdentity(UArtilleryDispatch::Get(Context.GetWorld()), InstanceData.InputKey, InstanceData.Relationship,found);
+	InstanceData.OutputKey = UArtilleryLibrary::GetIdentity(UArtilleryDispatch::Get(Context.GetWorld()), InstanceData.InputKey, InstanceData.Relationship,found);
 	InstanceData.Found = found;
 }
 
@@ -29,7 +32,7 @@ void FThistleSphereCast::Tick(FStateTreeExecutionContext& Context, const float D
 	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
 	auto Barrage = Context.GetWorld()->GetSubsystem<UBarrageDispatch>();
 	auto Artillery = Context.GetWorld()->GetSubsystem<UArtilleryDispatch>();
-	if ((UArtilleryLibrary::GetTotalsTickCount(Context.GetWorld()) % InstanceData.TicksBetweenCastRefresh) == 0 &&
+	if ((UArtilleryLibrary::GetTotalsTickCount(Artillery) % InstanceData.TicksBetweenCastRefresh) == 0 &&
 	Barrage)
 	{
 	bool Shucked = false;

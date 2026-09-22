@@ -6,6 +6,7 @@ class UBristleconeWorldSubsystem;
 class UBarrageDispatch;
 class UCanonicalInputStreamECS;
 
+//todo: assess if we still need this at this level of complexity.
 class FInputRollback
 {
 public:

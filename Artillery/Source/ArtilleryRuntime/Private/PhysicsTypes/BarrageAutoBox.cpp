@@ -84,6 +84,7 @@ bool UBarrageAutoBox::RegistrationImplementation()
 					//DETERMINISM RISK: loss of precision. this should use intentional quant or comparable.
 					MyMassClass.Category, Rotation);
 
+
 				MyBarrageBody = Physics->CreatePrimitive(params, MyParentObjectKey, static_cast<uint16>(Layer), false, false, isMovable);
 				if (MyBarrageBody)
 				{
@@ -122,13 +123,15 @@ FPrimitiveSceneProxy* UBarrageAutoBox::CreateSceneProxy()
 			static size_t UniquePointer;
 			return reinterpret_cast<size_t>(&UniquePointer);
 		}
-
+		//TODO: BarragePosition is no longer needed as input but don't want to break & resolve dependencies right now
 		FBarrageBoxSceneProxy(const UBarrageAutoBox* InComponent, FVector3f&& BarragePosition)
 			: FPrimitiveSceneProxy(InComponent)
 			, bDrawOnlyIfSelected(false)
 			, bHasBarrageBody(InComponent->GetBarrageBody().IsValid())
 			, BoxExtents(InComponent->DiameterXYZ)
-			, BarragePosition(MoveTemp(BarragePosition))
+			, BarragePosition(FVector3f(InComponent->OffsetCenterToMatchBoundedShapeX,
+				InComponent->OffsetCenterToMatchBoundedShapeY,
+				InComponent->OffsetCenterToMatchBoundedShapeZ))
 		{
 			bWillEverBeLit = false;
 
@@ -192,13 +195,17 @@ FPrimitiveSceneProxy* UBarrageAutoBox::CreateSceneProxy()
 
 					const FLinearColor DrawColor = GetViewSelectionColor(UEBoxColor, *View, IsSelected(), IsHovered(), false, IsIndividuallySelected());
 
-					FPrimitiveDrawInterface* PDI = Collector.GetPDI(ViewIndex);
-					DrawOrientedWireBox(PDI, LocalToWorld.GetOrigin(), LocalToWorld.GetScaledAxis(EAxis::X), LocalToWorld.GetScaledAxis(EAxis::Y), LocalToWorld.GetScaledAxis(EAxis::Z), BoxExtents * 0.5f, DrawColor, SDPG_World, UELineThickness);
+					FPrimitiveDrawInterface* PDI = Collector.GetPDI(ViewIndex);					
 
-					if (bHasBarrageBody)
+					if (!BarragePosition.Equals(FVector3f::ZeroVector))
 					{
 						// Draw a ghost boxy thing at the position of the barrage body, it is assumed to be in world space already
-						DrawOrientedWireBox(PDI, FBarragePrimitive::UpConvertFloatVector(BarragePosition), LocalToWorld.GetScaledAxis(EAxis::X), LocalToWorld.GetScaledAxis(EAxis::Y), LocalToWorld.GetScaledAxis(EAxis::Z), BoxExtents * 0.5f, BarrageColor, SDPG_World, BarrageLineThickness);
+						DrawOrientedWireBox(PDI, LocalToWorld.GetOrigin() + FBarragePrimitive::UpConvertFloatVector(BarragePosition), LocalToWorld.GetUnitAxis(EAxis::X), LocalToWorld.GetUnitAxis(EAxis::Y), LocalToWorld.GetUnitAxis(EAxis::Z), BoxExtents * 0.5f, BarrageColor, SDPG_World, BarrageLineThickness);
+					}
+					else
+					{
+						//Does not account for CoM
+						DrawOrientedWireBox(PDI, LocalToWorld.GetOrigin(), LocalToWorld.GetUnitAxis(EAxis::X), LocalToWorld.GetUnitAxis(EAxis::Y), LocalToWorld.GetUnitAxis(EAxis::Z), BoxExtents * 0.5f, DrawColor, SDPG_World, UELineThickness);
 					}
 				}
 			}

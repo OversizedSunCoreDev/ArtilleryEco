@@ -1,6 +1,8 @@
 #include "ThistleStateTreeConditions.h"
 
 #include "ArtilleryBPLibs.h"
+#include "ArtilleryDispatch.h"
+#include "FWorldSimOwner.h"
 #include "StateTreeExecutionContext.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(ThistleStateTreeConditions)
@@ -31,21 +33,20 @@ bool FArtilleryAttributeValueCondition::Test(float Value, float Target) const
 bool FArtilleryAttributeValueCondition::TestCondition(FStateTreeExecutionContext& Context) const
 {
 	const FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
-	bool Found = false;
-	float Value = UArtilleryLibrary::implK2_GetAttrib(UArtilleryDispatch::Get(Context.GetWorld()), InstanceData.KeyOf, InstanceData.AttributeName, Found);
+	float Value;
+	bool Found = UArtilleryLibrary::GetAttribute(UArtilleryDispatch::Get(Context.GetWorld()), InstanceData.KeyOf, InstanceData.AttributeName, Value);
 	return Found && Test(Value, TestValue);
 }
 
 bool FArtilleryAttributeCompareCondition::TestCondition(FStateTreeExecutionContext& Context) const
 {
 	const FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
-	bool Found = false;
-	bool TargetFound = false;
-	float Value = UArtilleryLibrary::implK2_GetAttrib(UArtilleryDispatch::Get(Context.GetWorld()), InstanceData.KeyOf, InstanceData.AttributeName, Found);
-	float TestAttrib = UArtilleryLibrary::implK2_GetAttrib(UArtilleryDispatch::Get(Context.GetWorld()), InstanceData.KeyOf, InstanceData.AttributeName, Found);
-	if (Found)
+	
+	float Value;
+	if (UArtilleryLibrary::GetAttribute(UArtilleryDispatch::Get(Context.GetWorld()), InstanceData.KeyOf, InstanceData.AttributeName, Value))
 	{
-		if (TargetFound)
+		float TestAttrib;
+		if (UArtilleryLibrary::GetAttribute(UArtilleryDispatch::Get(Context.GetWorld()), TestKey, InstanceData.AttributeName, TestAttrib))
 		{
 			return Test(Value, TestAttrib);
 		}
@@ -54,6 +55,7 @@ bool FArtilleryAttributeCompareCondition::TestCondition(FStateTreeExecutionConte
 			return Test(Value, TestValue);
 		}
 	}
+
 	return false;
 }
 
@@ -61,19 +63,19 @@ bool FArtilleryAttributeCompareCondition::TestCondition(FStateTreeExecutionConte
 bool FArtilleryCompareRelatedCondition::TestCondition(FStateTreeExecutionContext& Context) const
 {
 	const FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
-	bool SourceKey_AttributeFound = false;
 	bool RelatedKey_AttributeFound = false;
 	bool RelatedKey_FoundAtAll = false;
 
 	auto ArtilleryDispatch = UArtilleryDispatch::Get(Context.GetWorld());
 
-	auto Identity = UArtilleryLibrary::K2_GetIdentity(ArtilleryDispatch, InstanceData.KeyOf, Relationship, RelatedKey_FoundAtAll);
+	auto Identity = UArtilleryLibrary::GetIdentity(ArtilleryDispatch, InstanceData.KeyOf, Relationship, RelatedKey_FoundAtAll);
 	if (RelatedKey_AttributeFound)
 	{
-		auto TestAttribValue = UArtilleryLibrary::implK2_GetAttrib(ArtilleryDispatch, Identity, InstanceData.AttributeName, RelatedKey_AttributeFound);
-		if (RelatedKey_AttributeFound)
+		float TestAttribValue;
+		if (UArtilleryLibrary::GetAttribute(ArtilleryDispatch, Identity, InstanceData.AttributeName, TestAttribValue))
 		{
-			auto SourceValue = UArtilleryLibrary::implK2_GetAttrib(ArtilleryDispatch, InstanceData.KeyOf, InstanceData.AttributeName, SourceKey_AttributeFound);
+			float SourceValue;
+			bool SourceKey_AttributeFound = UArtilleryLibrary::GetAttribute(ArtilleryDispatch, InstanceData.KeyOf, InstanceData.AttributeName, SourceValue);
 			if (bCompareWithTargetKeyAttribute && SourceKey_AttributeFound)
 			{
 				return Test(TestAttribValue, SourceValue);

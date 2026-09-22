@@ -96,7 +96,7 @@ class ARTILLERYRUNTIME_API UArtilleryDispatch : public UTickableWorldSubsystem, 
 	GENERATED_BODY()
 
 	friend class FArtilleryBusyWorker;
-	friend class FArtilleryGame;
+	friend class FArtilleryGameSim;
 	friend class FArtilleryTicklitesWorker<UArtilleryDispatch>;
 	friend class UCanonicalInputStreamECS;
 	friend class UArtilleryLibrary;
@@ -146,29 +146,18 @@ public:
 	TObjectPtr<UTransformDispatch> TransformDispatch;
 	UPROPERTY()
 	TObjectPtr<UBarrageDispatch> BarrageDispatch;
-	UInventoryDispatch* Inventory;
-
-
+	UPROPERTY()
+	TObjectPtr<UInventoryDispatch> Inventory;
+	UPROPERTY()
+	TObjectPtr<UCanonicalInputStreamECS> InputStreamECS;
+	
+	
 	using MachineLet = IArtilleryControllite*;
 	using Machlet = MachineLet;
 #if WITH_EDITOR
 	TSharedPtr<ArtilleryDebugger> ArtilleryDebugger;
 #endif
-	UArtilleryDispatch()
-	{
-		GameplayTagContainerToDataMapping = MakeShareable(new AtomicTagArray());
-		RequestorQueue_Abilities_TripleBuffer = MakeShareable(new BufferedEvents());
-		RequestorQueue_Locomos = MakeShareable(new BufferedMoveEvents());
-		GunToFiringFunctionMapping = MakeShareable(new TMap<FGunKey, FArtilleryFireGunFromDispatch>());
-		AttributeSetToDataMapping = MakeShareable(new AttrCuckoo());
-		IdentSetToDataMapping = MakeShareable(new IdentCuckoo());
-		KeyToControlliteMapping = MakeShareable(new TMap<FSkeletonKey, Machlet>());
-		VectorSetToDataMapping = MakeShareable(new TMap<FSkeletonKey, Attr3MapPtr>());
-		GunByKey = MakeShareable(new TMap<FSkeletonKey, TSharedPtr<FArtilleryGun>>());
-#if WITH_EDITOR
-		ArtilleryDebugger = MakeShared<class ArtilleryDebugger>();
-#endif
-	};
+	UArtilleryDispatch();;
 	
 	// dependencies expressed: ALL(transform pillar, cabling, bristlecone, input pillar, barrage) -> this.
 	constexpr static int OrdinateSeqKey = ORDIN::ArtilleryOnline;
@@ -227,7 +216,9 @@ public:
 	// Intended to be called from the unreal game thread. 
 	// Currently called on world end play but in some cases it might need to be even earlier so it's useful to expose
 	void FinishAndCleanupThreadsAndTicklites();
-
+	
+	TSharedPtr<const AttrCuckoo> GetAttributeSetToDataMapping() { return AttributeSetToDataMapping; }
+	TSharedPtr<const TMap<FSkeletonKey, Attr3MapPtr>> GetVectorSetToDataMapping() { return VectorSetToDataMapping; }
 protected:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
@@ -262,7 +253,9 @@ protected:
 public:
 	virtual void PostInitialize() override;
 	void RunEnemySim(uint64_t CurrentTick) const;
-	
+
+
+	TSharedPtr<const TMap<FSkeletonKey, TSharedPtr<FArtilleryGun>>> GetGunByKeyMap() const { return GunByKey; };
 protected:
 	//todo: convert conserved attribute to use a timestamp for versioning to create a true temporal shadowstack.
 	AttrMapPtr GetAttribSetShadowByObjectKey(const FSkeletonKey& Target, ArtilleryTime Now) const;
@@ -278,14 +271,14 @@ protected:
 	virtual void Tick(float DeltaTime) override;
 	virtual TStatId GetStatId() const override;
 	//you don't wanna look at this.
-	FGunKey GetGun(const FString& GunDefinitionID, const FSkeletonKey& ProbableOwner) const;
+	FGunKey GetGun(const FName& GunDefinitionID, const FSkeletonKey& ProbableOwner) const;
 	
 	//fully specifying the type is necessary to prevent spurious warnings in some cases.
 	TSharedPtr<TCircularQueue<std::pair<FGunKey, ArtilleryTime>>> ActionsToOrder;
 	//These two are the backbone of the Artillery gun lifecycle.
 	TSharedPtr< TMap<FSkeletonKey, TSharedPtr<FArtilleryGun>>> GunByKey;
 	TMap<FSkeletonKey, PlayerKey> SkeletonToPlayerKeyMapping;
-	TMultiMap<FString, TSharedPtr<FArtilleryGun>> PooledGuns;
+	TMultiMap<FName, TSharedPtr<FArtilleryGun>> PooledGuns;
 	
 	/**
 	 * Will hold the configuration for the gun definitions
@@ -506,5 +499,6 @@ public:
 	FSharedEventRef StartTicklitesSim;
 	FSharedEventRef StartTicklitesApply;
 	FSharedEventRef StartRunAhead;
+	FSharedEventRef PostRunFrameProcessingLoop;
 	bool bProcessInputs=false;
 };

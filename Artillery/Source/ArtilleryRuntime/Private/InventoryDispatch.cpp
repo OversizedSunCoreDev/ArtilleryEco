@@ -1,13 +1,80 @@
 #include "InventoryDispatch.h"
-
+#include "SGraphPin.h"
+#include "EdGraph/EdGraphPin.h"
 
 #include "ArtilleryBPLibs.h"
+#include "EdGraphSchema_K2.h"
+#include "AssetRegistry/AssetRegistryModule.h"
+#include "Kismet/GameplayStatics.h"
+#include "PhysicsTypes/InventoryTriggerProxy.h"
+#include "Sound/SoundBase.h"
 
 class UThistleDispatch;
 
 bool UInventoryDispatch::RegistrationImplementation()
 {
+	LoadSoundsHelper(SFXDefinitionKeyToSound,
+	                 FNameToSoundKey,
+	                 SoundNamesForPulldown,
+	                 Sounds);
+	
 	return true;
+}
+
+
+bool UInventoryDispatch::IDM_TrySFX(FSkeletonKey OwnerOrSource, 
+	/*should always be a FSKSoundFXDefinitionKey but I left it as fskeleton cause that's our norm. does mean it'll be easy if we wanna generalize a bit.*/
+	FSkeletonKey EffectDefinition,
+	FEventParameterPackage EffectParameters,
+	bool UseParametersForHash)
+{
+	auto Ticket = GetSoundEffectTicket(OwnerOrSource, EffectDefinition, EffectParameters, UseParametersForHash);
+	return FireSoundEffect(Ticket);
+}
+
+
+FSKEffectTicket UInventoryDispatch::GetSoundEffectTicket(FSkeletonKey OwnerOrSource, 
+	/*should always be a FSKSoundFXDefinitionKey but I left it as fskeleton cause that's our norm. does mean it'll be easy if we wanna generalize a bit.*/
+	FSkeletonKey EffectDefinition,
+	FEventParameterPackage EffectParameters,
+	bool UseParametersForHash)
+{
+	auto input = UseParametersForHash ? HashCombineFast(OwnerOrSource, EffectParameters.Hash()) : OwnerOrSource;
+	FSKEffectTicket ret = FSKEffectTicket(EffectDefinition, HashCombineFast(input, ArtilleryDispatch->GetShadowNow()));			
+	if (FiredEffectSet.contains(ret))
+	{
+		return FSKEffectTicket();
+	}
+	else
+	{
+		EventParamsToFire.insert_or_assign(ret, EffectParameters);
+		return ret;
+	}
+}
+
+bool UInventoryDispatch::FireSoundEffect(FSKEffectTicket Nyooooom)
+{
+	bool a = false;
+	if (EventParamsToFire.contains(Nyooooom) && !FiredEffectSet.contains(Nyooooom))
+	{
+		auto Key = FSKSoundFXDefinitionKey(Nyooooom.GetSK().GetShiftedMeta());
+		auto send = SFXDefinitionKeyToSound.Find(Key);
+		FEventParameterPackage A;
+		if (send)
+		{
+			UGameplayStatics::PlaySoundAtLocation(GetWorld(), *send /* lookup loaded asset here. What solution do you like, @megafunk? */, A.Loc);
+		}
+		a = FiredEffectSet.insert(Nyooooom);
+	}
+	return a;
+}
+
+bool UInventoryDispatch::FetchQuest(FSkeletonKey MustHaveValidMetaField, FInventoryQuest& OutParam)
+{
+		
+	return 
+		MetaFieldToQuest.visit((MustHaveValidMetaField.Obj & SFIX_MaskForMetaBits) >> 32, [&](auto& a) { OutParam = a.second; })
+		!= 0;
 }
 
 void UInventoryDispatch::Initialize(FSubsystemCollectionBase& Collection)
@@ -22,13 +89,36 @@ void UInventoryDispatch::Initialize(FSubsystemCollectionBase& Collection)
 	SET_INITIALIZATION_ORDER_BY_ORDINATEKEY_AND_WORLD
 }
 
+void UInventoryDispatch::LoadSoundsHelper(TMap<FSKSoundFXDefinitionKey, 
+                                               USoundBase*>& SFXDefinitionKeyToSound, 
+                                          TMap<FSKSoundFXDefinitionKey, FSKSoundFXDefinitionKey>& FNameToSoundKey,
+                                          TArray<FName>& SoundNamesForPulldown,
+                                          TArray<FAssetData>& Sounds
+)
+{
+	auto* Reg = IAssetRegistry::Get();
+	//TODO: this needs to be async and should use softpaths for the output. but here we are.
+	Reg->GetAssetsByPath("/Game/Content/Sound/Live/", Sounds, true,false);
+	for (auto K : Sounds)
+	{
+		FSKSoundFXDefinitionKey A = FSKSoundFXDefinitionKey(K.GetPrimaryAssetId());
+		auto Path =  K.GetSoftObjectPath();
+		USoundBase* LoadedSound = Cast<USoundBase>(Path.TryLoad());
+		SFXDefinitionKeyToSound.Add(A, LoadedSound);
+		FNameToSoundKey.Add(LoadedSound->GetFName(), A);
+		SoundNamesForPulldown.Add(LoadedSound->GetFName());
+	}
+}
+
 void UInventoryDispatch::OnWorldBeginPlay(UWorld& InWorld)
 {
 	Super::OnWorldBeginPlay(InWorld);
 	
 	if ([[maybe_unused]] const UWorld* World = InWorld.GetWorld()) {
-		UE_LOG(LogTemp, Warning, TEXT("ThistleDispatch:Subsystem: World beginning play"));
+		UE_LOG(LogTemp, Warning, TEXT("Inventory:Subsystem: World beginning play"));
 	}
+	
+	
 }
 
 void UInventoryDispatch::Deinitialize()
@@ -48,18 +138,19 @@ TPair<FSKSocketKey, FSkeletonKey> UInventoryDispatch::PlugToSocket(FSkeletonKey 
 	return {};
 }
 
-
-FInventorySetKey UInventoryDispatch::GiveShiny(FSkeletonKey A, FSKItemArchetypeKey B)
+//this will make a set if a set does not already exist and associate it with Key A.
+// an item instance of KeyB will then be made.
+FInventorySetKey UInventoryDispatch::GiveNewInstanceToSet(FSkeletonKey A, FSKItemDefinitionKey B)
 {
 	return {};
 }
 
-FSKItemKey UInventoryDispatch::InstanceItem(FSkeletonKey OptionalOwner, FSKItemArchetypeKey A)
+FSKItemKey UInventoryDispatch::InstanceItem(FSkeletonKey OptionalOwner, FSKItemDefinitionKey A)
 {
 	return {};
 }
 
-FInventorySetKey UInventoryDispatch::GiveSpecificShiny(FSkeletonKey A, FSKItemKey B)
+FInventorySetKey UInventoryDispatch::GiveSpecificInstance(FSkeletonKey A, FSKItemKey B)
 {
 	return {};
 }
@@ -255,6 +346,17 @@ void UInventoryDispatch::ArtilleryTick(uint64_t TicksSoFar)
 	}
 }
 
+void UInventoryDispatch::FireCue(FSKCueTicket Nyooooom)
+{
+	if (CueParamsToFire.contains(Nyooooom) && !FiredCueSet.contains(Nyooooom))
+	{
+		uint32 effect = Nyooooom.GetSK().GetShiftedMeta() ;
+		auto send = CueDefinitionKeyToAssetName.Find(effect);
+		FEventParameterPackage A;
+		//gabbledegook goes here.
+		bool a = FiredCueSet.insert(Nyooooom);
+	}
+}
 
 
 void UInventoryDispatch::Tick(float DeltaTime)
@@ -264,6 +366,19 @@ void UInventoryDispatch::Tick(float DeltaTime)
 TStatId UInventoryDispatch::GetStatId() const
 {
 	RETURN_QUICK_DECLARE_CYCLE_STAT(UInventoryDispatch, STATGROUP_Tickables);
+}
+
+uint64 UInventoryDispatch::GetSubtypedPrefix(SKELLY type, uint32 Notched28BitKey)
+{
+	uint64 ret = (type >> 28) | ((Notched28BitKey & SKELLY::SFIX_NotchKeyForMetaUse) << 4);
+	return ret;
+}
+
+uint64 UInventoryDispatch::BuildKnownKey(SKELLY type, uint32 Notched28BitKey, SpecialPlugKeySlices KnownSlice)
+{
+	uint64 ret = GetSubtypedPrefix(type, Notched28BitKey);
+	ret = (ret << 28) | KnownSlice;
+	return ret;
 }
 
 
@@ -405,4 +520,9 @@ TArray<FInventorySetKey> UInventoryDispatch::GetKeysFromResultSet(FInventoryResu
 		Ret.Add(FInventorySetKey::FromSK(FSkeletonKey(key)));
 	}
 	return Ret;
+}
+
+FSkeletonKey UInventoryDispatch::CreateQueuedTriggerOnVerifiedFrame(FTransform LocationnAndDimensions)
+{
+	return FSkeletonKey(); // but mashha, it is cold outside.
 }

@@ -4,7 +4,9 @@
 #include <timeapi.h>
 #include "LowLogTimeAndRate.h"
 #include "ArtilleryBPLibs.h"
-#include "ArtilleryGame.h"
+#include "ArtilleryGameSim.h"
+#include "ArtilleryGunBlueprint.h"
+#include "ArtilleryRuntimeModule.h"
 #include "BarrageDispatch.h"
 #include "SkeletonTypes.h"
 #include "TransformDispatch.h"
@@ -26,6 +28,7 @@ bool FArtilleryBusyWorker::Init()
 	UE_LOG(LogTemp, Display, TEXT("Artillery:BusyWorker: Initializing Artillery thread"));
 	
 
+	bInitialized = true;
 	// NB: running is monotonic now (true at construction). Do NOT set it true here -- see header.
 	return true;
 }
@@ -35,7 +38,7 @@ void FArtilleryBusyWorker::RunStandardFrameSim(bool& missedPrior, uint64_t& curr
                                                bool& RemoteInput)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(FArtilleryBusyWorker::RunStandardFrameSim)
-	Game->RunEventsRequiringVerifiedFrames(currentIndexCabling-1, true);//run the events from the previous verified frame.
+	Game->RunEventsRequiringVerifiedTicks(currentIndexCabling-1, true);//run the events from the previous verified frame.
 	
 	//this is an odd thing to do, I know, but we have some book-keeping we want to reserve for each code path.
 	//once this settles a little, I'll refactor, but I'm going to end up reworking this next weekend.
@@ -163,7 +166,7 @@ void FArtilleryBusyWorker::RunStandardFrameSim(bool& missedPrior, uint64_t& curr
 //The order that threads get queues is random, so if you just go down the line, that won't produce a deterministic execution order.
 //Even if you fix that, you still need to order the requests as a gestalt, and now you have a problem where you don't know the
 //correct\true order to run things with the same timestamp in. This is fixable but it's gonna need to wait.
-void FArtilleryBusyWorker::ProcessRequestRouterBusyWorkerThread()
+void FArtilleryBusyWorker::ProcessRequestRouterBusyWorkerThread(UArtilleryDispatch* MyDispatch)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(FArtilleryBusyWorker::ProcessRequestRouterBusyWorkerThread)
 	
@@ -180,6 +183,73 @@ void FArtilleryBusyWorker::ProcessRequestRouterBusyWorkerThread()
 					//PINPOINT: YABUSYTHREADBOYRUNNETHREQUESTSHERE
 					switch (Request.GetType())
 					{
+					case ArtilleryRequestType::FireAGun:
+					// Guns fired from the artillery thread is brand new, this mapping mighg not mean as much now
+					{
+						TSharedPtr<FArtilleryGun> GunHoldOpen = MyDispatch->GunByKey->FindRef(Request.Gun);
+						TDelegate<void(TSharedPtr<FArtilleryGun>, bool, EventBufferInfo)>* FireFunction =
+							MyDispatch->GunToFiringFunctionMapping->Find(Request.Gun);
+
+						if (FireFunction != nullptr && GunHoldOpen)
+						{
+							EventBufferInfo def = EventBufferInfo::Default();
+							def.Action = ArtIPMKey::InternallyStateless;
+							UArtilleryDispatch::TotalFirings += FireFunction->ExecuteIfBound(GunHoldOpen, false, def);
+						}
+						else
+						{
+							// TODO - we are absolutely going to want to turn this and things like it into a periodic
+							//		  log call to avoid clogging log files
+							UE_LOG(
+								LogArtillery,
+								Error,
+								TEXT(
+									"FArtilleryBusyWorker::ProcessRequestRouterBusyWorkerThread: Error processing FireGun request with gun key [id: %llu, name: %s]"
+								),
+								Request.Gun.GunInstanceID.Obj,
+								*Request.Gun.GunDefinitionID.ToString());
+						}
+					}
+					break;
+						
+					case ArtilleryRequestType::GetAnUnboundGun:
+					{
+						IdMapPtr WordsOfPower = MyDispatch->GetRelationships(Request.SourceOrSelf);
+						FGunKey Gun = MyDispatch->GetGun(Request.Gun.GunDefinitionID, ActorKey(Request.SourceOrSelf));
+						FGunInstanceKey BANG = Gun.GunInstanceID;
+						if (WordsOfPower)
+						{
+							TSharedPtr<FConservedAttributeKey> MaterialComponent = WordsOfPower.Get()->FindOrAdd(
+								Request.Relationship);
+							if (MaterialComponent)
+							{
+								MaterialComponent.Get()->SetCurrentValue(BANG);
+							}
+							else
+							{
+								TSharedPtr<FConservedAttributeKey> PowerWordGun = MakeShareable(
+									new FConservedAttributeKey);
+								PowerWordGun->SetBaseValue(BANG);
+								PowerWordGun->SetCurrentValue(BANG);
+								WordsOfPower.Get()->Add(Request.Relationship, PowerWordGun);
+							}
+						}
+						else
+						{
+							TSharedPtr<TMap<Ident, IdentPtr>> RelationshipMap = MakeShareable(new IdentityMap());
+
+							//TODO: swap this to loading values from a data table, and REMOVE this fallback.
+							//If we want defaults, those defaults should ALSO live in a data table, that way when a defaulting bug screws us
+							//maybe we can fix it without going through a full cert using a data only update.
+							TSharedPtr<FConservedAttributeKey> PowerWordGun = MakeShareable(
+								new FConservedAttributeKey);
+							RelationshipMap->Add(Request.Relationship, PowerWordGun);
+							PowerWordGun->SetBaseValue(BANG);
+							PowerWordGun->SetCurrentValue(BANG);
+							MyDispatch->RegisterOrAddRelationships(Request.SourceOrSelf, RelationshipMap);
+						}
+					}
+					break;
 					case ArtilleryRequestType::TagReferenceModel:
 						{
 							if (TagRollbackManagement.Find(Request.SourceOrSelf) == nullptr)
@@ -214,6 +284,26 @@ void FArtilleryBusyWorker::ProcessRequestRouterBusyWorkerThread()
 							}
 						}
 						break;
+					case ArtilleryRequestType::CreateTriggerOnVerifiedTick:
+						{
+							if (ContingentPhysicsLinkage 
+								&& Game
+								&& SeqNumber <= Game->GetLastVerifiedSequence()) //more than one frame might become verified at once in some scenarios.
+							{
+								auto inv = MyDispatch->GetWorld()->GetSubsystem<UInventoryDispatch>();
+								FTransform LocationnAndDimensions;
+								LocationnAndDimensions.SetIdentityZeroScale();
+								LocationnAndDimensions.SetLocation(Request.ThingVector);
+								LocationnAndDimensions.SetRotation(Request.ThingRotator.Quaternion());
+								LocationnAndDimensions.SetScale3D(Request.ThingVector2);
+								inv->CreateQueuedTriggerOnVerifiedFrame(LocationnAndDimensions);
+							}
+							else
+							{
+								//no-op. the request gets repeated over and over, since we know we CANNOT presim it.
+							}
+						}
+						break;
 					default:
 						UE_LOG(
 							LogTemp,
@@ -230,8 +320,8 @@ void FArtilleryBusyWorker::ProcessRequestRouterBusyWorkerThread()
 void FArtilleryBusyWorker::RunFrameProcessingLoop(bool missedPrior, uint64_t currentIndexCabling, bool burstDropDetected, bool sent, uint32_t LastIncrementWindow, uint32_t lsbTime, const uint32_t SendHertzFactor, const uint32_t Period, const std::chrono::microseconds HalfStep, UArtilleryDispatch* ArtilleryDispatch)
 {
 	timeBeginPeriod(1);
-	Game = MakeShared<FArtilleryGame>(); //create the game now that we're processing da frame
-	while (running)
+	Game = MakeShared<FArtilleryGameSim>(); //create the game now that we're processing da frame
+	while (bRunning)
 	{
 		if (!sent &&
 			!bPaused &&
@@ -252,13 +342,18 @@ void FArtilleryBusyWorker::RunFrameProcessingLoop(bool missedPrior, uint64_t cur
 			PacketElement current = 0;
 			bool RemoteInput = false;
 			RunStandardFrameSim(missedPrior, currentIndexCabling, burstDropDetected, current, RemoteInput);
+			
+			//@todo should be in the frame sim itself I think, but this is the fastest way to see if it works easily
+			ArtilleryDispatch->RunGuns();  // ALL THIS WORK. FOR THIS?! (Okay, that's really cool)
+
+			
 			/*
 			* Note: We also have Iris performing intermittent state stomps to recover from more serious desyncs.
 			* Ultimately, rollback can never solve everything. The windows just get too wide.
 			*/
 			sent = true;
 			TickliteNow = ContingentInputECSLinkage->Now(); // this updates ONCE PER CYCLE. ONCE. THIS IS INTENDED.
-			ProcessRequestRouterBusyWorkerThread();
+			ProcessRequestRouterBusyWorkerThread(ArtilleryDispatch);
 			//tag container save-off currently happens before player and player-like locomotion.
 			//this SHOULD be the right place, by my limited reasoning, but I could be wrong.
 			// for (auto TagSet : TagRollbackManagement) // do not change to ref.
@@ -302,6 +397,20 @@ void FArtilleryBusyWorker::RunFrameProcessingLoop(bool missedPrior, uint64_t cur
 				}
 			}
 
+			
+			// Manage stuff added from QueueFunctionFromAnyThreadAndWait
+			PostRunFrameProcessingLoop->Trigger();
+			
+			{
+				FScopeLock Lock(&EventsFromOtherThreadEndCriticalSection);
+				
+				for (FEvent* Event : EventsFromOtherThread_RequiresCriticalSection)
+				{
+					Event->Wait();
+				}
+				
+				EventsFromOtherThread_RequiresCriticalSection.Reset();
+			}
 		}
 
 		//unlike cabling, we do our time keeping HERE. It may be worth switching cabling to also follow this.
@@ -365,6 +474,9 @@ uint32 FArtilleryBusyWorker::Run()
 	//we only use it for GrantFeed, but it's important that we start abiding by separation of concerns
 	//where we can, so we're trying to hide the barrage dependency here in a sense. We can't fully, but.
 	UArtilleryDispatch* ArtilleryDispatch = ContingentInputECSLinkage->GetWorld()->GetSubsystem<UArtilleryDispatch>();
+	
+	// This sets up a thread-local ptr to this dispatch, which is useful mostly for BP libraries currently
+	FArtilleryDispatchThreadScope DispatchScope(ArtilleryDispatch);
 	ArtilleryDispatch->ThreadSetup();
 	
 	//Run loop is in here.
@@ -389,7 +501,29 @@ void FArtilleryBusyWorker::Stop()
 	Cleanup();
 }
 
+bool FArtilleryBusyWorker::QueueFunctionFromAnyThreadAndWait(TFunction<void()> Callback, float SecondsToWait)
+{
+	FEvent* NewEventForArtilleryThread = FPlatformProcess::GetSynchEventFromPool(true);
+	{
+		FScopeLock Lock(&EventsFromOtherThreadEndCriticalSection);
+		EventsFromOtherThread_RequiresCriticalSection.Add(NewEventForArtilleryThread);
+	}
+	
+	bool bWaitComplete = false;
+	// This will return false if it could not wait, which is good... we don't want this to deadlock I think
+	if (PostRunFrameProcessingLoop->Wait(FTimespan::FromSeconds(SecondsToWait)))
+	{
+		bWaitComplete = true;
+		Callback();
+	}
+	
+	// Now let artillery continue
+	NewEventForArtilleryThread->Trigger();
+	
+	return bWaitComplete;
+}
+
 void FArtilleryBusyWorker::Cleanup()
 {
-	running = false;
+	bRunning = false;
 }

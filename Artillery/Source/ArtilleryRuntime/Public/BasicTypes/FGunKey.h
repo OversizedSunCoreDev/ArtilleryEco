@@ -4,13 +4,7 @@
 
 #include "skeletonize.h"
 #include "SkeletonTypes.h"
-#include "CoreMinimal.h"
 #include "CoreTypes.h"
-#include "Templates/SubclassOf.h"
-#include "UObject/UnrealType.h"
-#include "Engine/DataTable.h"
-
-#include "Containers/CircularBuffer.h"
 #include "FGunKey.generated.h"
 
 USTRUCT(BlueprintType)
@@ -18,9 +12,11 @@ struct ARTILLERYRUNTIME_API FGunKey
 {
 	GENERATED_BODY()
 public:
-	UPROPERTY(BlueprintReadOnly)
-	FString GunDefinitionID; //this will need to be human searchable
+	UPROPERTY(BlueprintReadOnly, EditAnywhere, meta = (GetOptions = "ArtilleryRuntime.ArtilleryDeveloperSettings.GetGunNamesForEditorSelection"))
+	FName GunDefinitionID; //this will need to be human searchable
 	//FUN STORY: BLUEPRINT CAN'T USE UINT64.
+	
+	UPROPERTY(Transient, VisibleInstanceOnly)
 	FGunInstanceKey GunInstanceID;
 	
 	// ReSharper disable once CppRedundantMemberInitializer
@@ -31,15 +27,15 @@ public:
 
 	// ReSharper disable once CppRedundantMemberInitializer
 	// THIS DOES NOT DO THE SAME THING AS INSTANCE 0
-	FGunKey(const FString& Name) : GunDefinitionID(Name), GunInstanceID()
+	FGunKey(const FName& Name) : GunDefinitionID(Name), GunInstanceID()
 	{
 	}
 	
-	explicit FGunKey(const FString& Name, FGunInstanceKey id) : GunDefinitionID(Name), GunInstanceID(id)
+	explicit FGunKey(const FName& Name, FGunInstanceKey id) : GunDefinitionID(Name), GunInstanceID(id)
 	{
 	}
 	
-	FGunKey(const FString& Name, uint32_t id) : GunDefinitionID(Name), GunInstanceID(id)
+	FGunKey(const FName& Name, uint32_t id) : GunDefinitionID(Name), GunInstanceID(id)
 	{
 	}
 	

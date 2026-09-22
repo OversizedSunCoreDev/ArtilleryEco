@@ -146,7 +146,7 @@ void AThistleInject::FireAttack()
 	{
 		bool wedoneyet = false;
 		FGunInstanceKey AInstance = FGunInstanceKey(
-			UArtilleryLibrary::K2_GetIdentity(ArtilleryDispatch, MyKey, FARelatedBy::EquippedMainGun, wedoneyet));
+			UArtilleryLibrary::GetIdentity(ArtilleryDispatch, MyKey, FARelatedBy::EquippedMainGun, wedoneyet));
 		if (wedoneyet && AInstance.Obj != 0)
 		{
 			Attack = FGunKey(GunDefinitionID, AInstance);
@@ -163,9 +163,8 @@ bool AThistleInject::RotateMainGun(FRotator RotateTowards, ERelativeTransformSpa
 {
 	if (MyMainGun)
 	{
-		bool find = false;
-		Attr3Ptr aim = UArtilleryLibrary::implK2_GetAttr3Ptr(UArtilleryDispatch::Get(GetWorld()), GetMyKey(), Attr3::AimVector, find);
-		if (find)
+		Attr3Ptr aim = UArtilleryLibrary::GetAttr3Ptr(UArtilleryDispatch::Get(GetWorld()), GetMyKey(), Attr3::AimVector);
+		if (aim)
 		{
 			aim->SetCurrentValue(RotateTowards.Vector());
 		}
@@ -269,7 +268,7 @@ void AThistleInject::HandleIdleState()
 			{
 				auto TargetKey = Target->Get()->CurrentValue;
 				bool hasLoc = false;
-				auto loc = UArtilleryLibrary::implK2_GetLocation(UArtilleryDispatch::Get(GetWorld()),TargetKey, hasLoc);
+				auto loc = UArtilleryLibrary::GetLocation(UArtilleryDispatch::Get(GetWorld()),TargetKey, hasLoc);
 				if (hasLoc && !loc.ContainsNaN())
 				{
 					
@@ -533,9 +532,8 @@ void AThistleInject::UpdatePathAfterDisplacement()
 
 void AThistleInject::AimRotateMeshComponent(float DeltaTime)
 {
-	bool find = false;
-	const Attr3Ptr aim = UArtilleryLibrary::implK2_GetAttr3Ptr(UArtilleryDispatch::Get(GetWorld()),GetMyKey(), Attr3::AimVector, find);
-	if (find && MyMainGun != nullptr)
+	const Attr3Ptr aim = UArtilleryLibrary::GetAttr3Ptr(UArtilleryDispatch::Get(GetWorld()),GetMyKey(), Attr3::AimVector);
+	if (aim && MyMainGun != nullptr)
 	{
 		const FVector TargetWorldDirection = aim->CurrentValue;
 
@@ -598,10 +596,8 @@ void AThistleInject::CheckCanBlock()
 void AThistleInject::TriggerShieldBlock()
 {
 	// Find Damage Source
-	bool bFoundSource = false;
-	Attr3Ptr SourceAttr = UArtilleryLibrary::implK2_GetAttr3Ptr(UArtilleryDispatch::Get(GetWorld()),MyKey, E_VectorAttrib::TargetLocation, bFoundSource);
-
-	if (bFoundSource && !SourceAttr->CurrentValue.IsZero())
+	Attr3Ptr SourceAttr = UArtilleryLibrary::GetAttr3Ptr(UArtilleryDispatch::Get(GetWorld()),MyKey, E_VectorAttrib::TargetLocation);
+	if (SourceAttr && !SourceAttr->CurrentValue.IsZero())
 	{
 		LastDamageSourceLoc = SourceAttr->CurrentValue;
 		bHasValidDamageSource = true;

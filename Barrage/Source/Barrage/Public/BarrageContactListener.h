@@ -19,12 +19,16 @@ public:
 
 	virtual void OnContactPersisted(const JPH::Body& inBody1, const JPH::Body& inBody2, const JPH::ContactManifold& inManifold,
 	                                JPH::ContactSettings& ioSettings) override;
-	virtual void OnContactAdded(const JPH::CharacterVirtual* inCharacter, const JPH::BodyID& inBodyID2,
-		const JPH::SubShapeID& inSubShapeID2, JPH::RVec3Arg inContactPosition, JPH::Vec3Arg inContactNormal,
-		JPH::CharacterContactSettings& ioSettings) override;
-	virtual void OnCharacterContactAdded(const JPH::CharacterVirtual* inCharacter,
-		const JPH::CharacterVirtual* inOtherCharacter, const JPH::SubShapeID& inSubShapeID2,
-		JPH::RVec3Arg inContactPosition, JPH::Vec3Arg inContactNormal,
-		JPH::CharacterContactSettings& ioSettings) override;
+
+	
+	//despite the odd name, a character contact is an encapsulation of a character's contact with any rigid body, not an encapsulation of contact with a character.
+	virtual void OnContactAdded(const JPH::CharacterVirtual* inCharacter, const JPH::CharacterContact &inContact, JPH::CharacterContactSettings &ioSettings) override;
+	//virtual void			OnContactAdded(	const CharacterVirtual *inCharacter,
+	//										const CharacterContact &inContact, 
+	//										CharacterContactSettings &ioSettings) 
+	//										{ /* Default do nothing */ }
+	virtual void OnCharacterContactAdded(const JPH::CharacterVirtual *inCharacter,
+											const JPH::CharacterContact &inContact,
+											JPH::CharacterContactSettings &ioSettings) override;
 	virtual void OnContactRemoved(const JPH::SubShapeIDPair& inSubShapePair) override;
 };

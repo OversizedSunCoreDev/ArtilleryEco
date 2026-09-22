@@ -333,11 +333,11 @@ public:
 	//very easy to read for people who are probably already drowning in new types.
 	//finally, it allows FBShapeParams to be a POD and so we can reason about it really easily.
 	
-	FBarrageKey CreatePrimitive(FBBoxParams& ToCreate, uint16 Layer, bool IsSensor = false, bool forceDynamic = false, bool isMovable = true, float AngularDamp = 0.1, JPH::EAllowedDOFs AllowedDOF = StandardBoxAllowedDOFs);
-	FBarrageKey CreatePrimitive(FBCapParams& ToCreate, uint16 Layer, bool IsSensor, bool forceDynamic, bool isMovable, float AngularDamp = 0.1, JPH::EAllowedDOFs AllowedDOF = StandardCapAllowedDOFs);
+	FBarrageKey CreatePrimitive(FBBoxParams& ToCreate, uint16 Layer, bool IsSensor = false, bool forceDynamic = false, bool isMovable = true, float AngularDamp = 0.1, JPH::EAllowedDOFs AllowedDOF = StandardBoxAllowedDOFs, const FBarrageCollisionGroupSettings& CollisionGroupSettings = {});
+	FBarrageKey CreatePrimitive(FBCapParams& ToCreate, uint16 Layer, bool IsSensor, bool forceDynamic, bool isMovable, float AngularDamp = 0.1, JPH::EAllowedDOFs AllowedDOF = StandardCapAllowedDOFs, const FBarrageCollisionGroupSettings& CollisionGroupSettings = {});
 	FBarrageKey CreatePrimitive(FBCharParams& ToCreate, uint16 Layer);
-	FBarrageKey CreatePrimitive(FBSphereParams& ToCreate, uint16 Layer, bool IsSensor = false);
-	FBarrageKey CreatePrimitive(FBCapParams& ToCreate, uint16 Layer, bool IsSensor = false, FMassByCategory::BMassCategories MassClass = FMassByCategory::BMassCategories::MostEnemies);
+	FBarrageKey CreatePrimitive(FBSphereParams& ToCreate, uint16 Layer, bool IsSensor = false, const FBarrageCollisionGroupSettings& CollisionGroupSettings = {});
+	FBarrageKey CreatePrimitive(FBCapParams& ToCreate, uint16 Layer, bool IsSensor = false, FMassByCategory::BMassCategories MassClass = FMassByCategory::BMassCategories::MostEnemies, const FBarrageCollisionGroupSettings& CollisionGroupSettings = {});
 	using BodyIDVector = JPH::Array<JPH::BodyID>;
 	void GetBodiesList(BodyIDVector &outBodyIDs);
 	//Under normal circumstances, you will _not_ want to set the layer and movement to anything else.
@@ -355,7 +355,7 @@ public:
 	
 	
 	
-	// void CreateHeightfieldLandscapeMesh(TNotNull<const ALandscapeProxy*> NotNull);
+	void CreateHeightfieldLandscapeMesh(const ALandscapeProxy* InLandscapeActor);
 
 
 	//This'll be trouble.
@@ -392,7 +392,8 @@ public:
 	FBarrageKey GenerateBarrageKeyFromBodyId(const uint32 RawIndexAndSequenceNumberInput) const;
 	~FWorldSimOwner();
 	bool UpdateCharacter(FBPhysicsInput& Update);
-	bool UpdateCharacters(TSharedPtr<TArray<FBPhysicsInput>> Array);
+	bool UpdateCharacters(TSharedPtr<TArray<FBPhysicsInput>> Array);			
+
 	
 private:
 	//don't. not unless you understand deeply. that includes me. yes, I know, future jake, you think you're smart.
@@ -400,4 +401,24 @@ private:
 	void
 	AddInternalQueuing(JPH::BodyID ToQueue, uint64 ordinant);
 	
+	/*
+	* GroupID, SubGroupID, and GroupFilterTable settings for disabling collisions within a collision layer.
+	* For similar bodies such as in a chain relationship use a shared GroupFilterTable with the same GroupID and different SubGroup IDs and call DisableCollision on pair.
+	* Ex: 
+	* GroupFilter->DisableCollision(0, 1); // Bodies in subgroup 0 and subgroup 1 will not collide. 
+	*/
+	void ConfigureBodyCollisionGroup(
+		JPH::Body& Body,
+		const FBarrageCollisionGroupSettings& Settings)
+	{
+		const JPH::CollisionGroup::GroupID GroupID =
+			Settings.GroupID == JPH::CollisionGroup::cInvalidGroup
+			? Body.GetID().GetIndexAndSequenceNumber()
+			: Settings.GroupID;
+
+		Body.SetCollisionGroup(JPH::CollisionGroup(
+			Settings.GroupFilter,
+			GroupID,
+			Settings.SubGroupID));
+	}
 };

@@ -51,7 +51,7 @@ FRollbackArtilleryWorker::~FRollbackArtilleryWorker()
 bool FRollbackArtilleryWorker::Init()
 {
 	UE_LOG(LogTemp, Display, TEXT("Artillery:BusyWorker: Initializing Artillery thread"));
-	Game = MakeShared<FArtilleryGame>();
+	Game = MakeShared<FArtilleryGameSim>();
 
 	return ContingentPhysicsLinkage && ContingentPhysicsLinkage->GetWorld() && ContingentPhysicsLinkage->GetWorld()->IsGameWorld();
 }

@@ -29,44 +29,37 @@
 //Buttons, please read:
 //1 bit per button
 //in LOWEST TO HIGHEST order
-// Menu (SWAP) - possibly virtual
-// View (SWAP) - possibly virtual
+// Menu 
+// View
+////2
 // A,
 // B,
 // X,
 // Y,
+////6
 // DPadUp,
 // DPadDown,
 // DPadLeft,
 // DPadRight,
+////10
 // LeftShoulder,
 // RightShoulder,
 // LeftTrigger,
 // RightTrigger,
-// Followed by six virtual buttons
+////14
+// Followed by six virtual buttons, the last four of which are swap bits.
 // StickFlick
-// Left Stick Click
 // Right Stick Click
 // Control mode (SWAP)
 // Mouse mode (SWAP)
-// SWAPPING BIT
+// SWAP
+// SWAP
 //
-// Used as needed.
 
 //SWAPS MAY BE USED TO REINTERPRET SOME OR ALL OTHER BUTTONS AND STICK DATA.
-//RIGHT NOW THIS FEATURE IS UNUSED BUT IT WILL BE NECESSARY.
-//SWAPS GUARANTEE THAT THEY WILL BE SET OR UNSET ACROSS TWO TICK AND REMAIN IN A STATE FOR AT LEAST TWO FRAMES
-//WHEN SETTING A SWAP, SWAPPING MUST BE SET.
-//ONCE THE SWAP ITSELF IS SET, THE SWAPPING BIT MUST BE UNSET ON THE NEXT INPUT
+//SWAPS GUARANTEE THAT THEY WILL BE SET OR UNSET ACROSS TWO TICKS AND REMAIN IN A STATE FOR AT LEAST TWO FRAMES
+//THIS IS NOT IMPLEMENTED YET.
 
-
-//This chain actually probably needs to be one tick longer, but I'm anxious about responsivity. right now, it's most useful in reconstructing\preconstructing swap deactivation.
-//It's definitely possible we can save the swapping bit, especially if we use a on\off\on of the actual swap as a sort of... "flagging pattern." Because we window, I'm honestly not sure
-//if this is useful, but I wanted to reserve the bits now so that we don't use them up, need this, and then go stare into the sun as we cry while insisting it's raining.
-
-// 1: SWAPPING bit set. 2: set SWAP. SWAPPING still set. 3: SWAPPING unset, SWAP state maintained. 4: SWAP state maintained. 
-//If you wanted, you could set and unset like so:
-// 1: SWAPPING bit set. 2: set SWAP. SWAPPING still set. 3: SWAPPING unset, SWAP state maintained. 4: SWAP state maintained, SWAPPING set. 5: SWAP unset, SWAPPING set. 6: SWAPPING unset.
 //SWAPS are used specifically for extremely important control state transitions that cannot be missed. this pattern allows correct reconstruction of entirely missed inputs in most cases,
 // at least sufficiently to ensure that players are in the right fundamental mode of play. 
 

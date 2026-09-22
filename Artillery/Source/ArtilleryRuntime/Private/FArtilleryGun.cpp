@@ -27,24 +27,25 @@ FArtilleryGun::~FArtilleryGun()
 	MyAttributes.Reset();
 }
 
-void FArtilleryGun::PreFireGun(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
-                               const FGameplayAbilityActivationInfo ActivationInfo, const EventBufferInfo FireAction,
-                               const FGameplayEventData* TriggerEventData, bool RerunDueToReconcile, int DallyFramesToOmit, bool VerifiedFrame)
+void FArtilleryGun::PreFireGun(
+		FArtilleryStates OutcomeStates,
+		int DallyFramesToOmit,
+		bool RerunDueToReconcile,
+		bool VerifiedFrame, const EventBufferInfo FireAction) 
 {
 	// Delegate type:
 	// DECLARE_DELEGATE_FiveParams FArtilleryAbilityStateAlert
-	Prefire->GunBinder.BindRaw(this, &FArtilleryGun::FireGun, RerunDueToReconcile, TriggerEventData, Handle);
-	Fire->GunBinder.BindRaw(this, &FArtilleryGun::PostFireGun, RerunDueToReconcile, TriggerEventData, Handle);
-	Prefire->CallActivateAbility(FGameplayAbilitySpecHandle(), ActorInfo, ActivationInfo, nullptr, TriggerEventData);
+	Prefire->K2_ActivateViaArtillery(MyGunKey);
 	if (!RerunDueToReconcile)
 	{
-		PrefireCosmetic->CallActivateAbility(Handle, ActorInfo, ActivationInfo, nullptr, TriggerEventData);
+		PrefireCosmetic->K2_ActivateViaArtillery(MyGunKey);
 	}
 }
 
-void FArtilleryGun::FireGun(FArtilleryStates OutcomeStates, int DallyFramesToOmit,
-                            const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo,
-                            bool RerunDueToReconcile, const FGameplayEventData* TriggerEventData, FGameplayAbilitySpecHandle Handle)
+void FArtilleryGun::FireGun(
+		FArtilleryStates OutcomeStates,
+		int DallyFramesToOmit,
+		bool RerunDueToReconcile)
 {
 	if(!ReadyToFire)
 	{
@@ -53,52 +54,47 @@ void FArtilleryGun::FireGun(FArtilleryStates OutcomeStates, int DallyFramesToOmi
 		
 	if (OutcomeStates == FArtilleryStates::Fired)
 	{
-		Fire->CallActivateAbility(FGameplayAbilitySpecHandle(), ActorInfo, ActivationInfo, nullptr,
-		                          TriggerEventData);
+		Fire->K2_ActivateViaArtillery(MyGunKey);
 		//TODO: BUILD CORRECT HANDLE HANDLING. HANDLES ARE OUR TICKET OUT OF THIS JOINT.
 		if (!RerunDueToReconcile)
 		{
 			//TODO: BUILD CORRECT HANDLE HANDLING. HANDLES ARE OUR TICKET OUT OF THIS JOINT.
-			FireCosmetic->CallActivateAbility(FGameplayAbilitySpecHandle(), ActorInfo, ActivationInfo, nullptr,
-			                                  TriggerEventData);
+			FireCosmetic->K2_ActivateViaArtillery(MyGunKey);
 		}
 	}
 	else if (!RerunDueToReconcile)
 	{
 		//TODO: BUILD CORRECT HANDLE HANDLING. HANDLES ARE OUR TICKET OUT OF THIS JOINT.
-		FailedFireCosmetic->CallActivateAbility(FGameplayAbilitySpecHandle(), ActorInfo, ActivationInfo,
-		                                        nullptr, TriggerEventData);
+		FailedFireCosmetic->K2_ActivateViaArtillery(MyGunKey);
 	}
 }
 
-void FArtilleryGun::PostFireGun(FArtilleryStates OutcomeStates, int DallyFramesToOmit,
-                                const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo,
-                                bool RerunDueToReconcile, const FGameplayEventData* TriggerEventData, FGameplayAbilitySpecHandle Handle)
+void FArtilleryGun::PostFireGun(
+		FArtilleryStates OutcomeStates,
+		int DallyFramesToOmit,
+		bool RerunDueToReconcile)
 {
 	if (OutcomeStates == FArtilleryStates::Fired)
 	{
-		PostFire->CallActivateAbility(FGameplayAbilitySpecHandle(), ActorInfo, ActivationInfo, nullptr,
-		                              TriggerEventData);
+		PostFire->K2_ActivateViaArtillery(MyGunKey);
 		//TODO: BUILD CORRECT HANDLE HANDLING. HANDLES ARE OUR TICKET OUT OF THIS JOINT.
 		if (!RerunDueToReconcile)
 		{
 			//TODO: BUILD CORRECT HANDLE HANDLING. HANDLES ARE OUR TICKET OUT OF THIS JOINT.
-			PostFireCosmetic->CallActivateAbility(FGameplayAbilitySpecHandle(), ActorInfo, ActivationInfo, nullptr,
-			                                      TriggerEventData);
+			PostFireCosmetic->K2_ActivateViaArtillery(MyGunKey);
 		}
 	}
 	else if (!RerunDueToReconcile)
 	{
 		//TODO: BUILD CORRECT HANDLE HANDLING. HANDLES ARE OUR TICKET OUT OF THIS JOINT.
-		FailedFireCosmetic->CallActivateAbility(FGameplayAbilitySpecHandle(), ActorInfo, ActivationInfo,
-		                                        nullptr, TriggerEventData);
+		FailedFireCosmetic->K2_ActivateViaArtillery(MyGunKey);
 	}
 }
 
 bool FArtilleryGun::Initialize(const FGunKey& KeyFromDispatch, const bool MyCodeWillSetGunKey,
-                               UArtilleryPerActorAbilityMinimum* PF, UArtilleryPerActorAbilityMinimum* PFC, UArtilleryPerActorAbilityMinimum* F,
-                               UArtilleryPerActorAbilityMinimum* FC, UArtilleryPerActorAbilityMinimum* PtF, UArtilleryPerActorAbilityMinimum* PtFc,
-                               UArtilleryPerActorAbilityMinimum* FFC)
+                               UAGunBitBP* PF, UAGunBitBP* PFC, UAGunBitBP* F,
+                               UAGunBitBP* FC, UAGunBitBP* PtF, UAGunBitBP* PtFc,
+                               UAGunBitBP* FFC)
 {
 	MyGunKey = KeyFromDispatch;
 	MyTransformDispatch = MyDispatch->GetWorld()->GetSubsystem<UTransformDispatch>();
@@ -134,20 +130,20 @@ bool FArtilleryGun::Initialize(const FGunKey& KeyFromDispatch, const bool MyCode
 	//we'd like to do it earlier, but there's actually not a great moment to do this.
 	if(Prefire == nullptr)
 	{
-		Prefire = PF ? PF : NewObject<UArtilleryPerActorAbilityMinimum>();
+		Prefire = PF ? PF : NewObject<UAGunBitBP>();
 		Prefire->AddToRoot();
-		Fire = F ? F :	NewObject<UArtilleryPerActorAbilityMinimum>();
+		Fire = F ? F :	NewObject<UAGunBitBP>();
 		Fire->AddToRoot();
-		PostFire = PtF ? PtF : NewObject<UArtilleryPerActorAbilityMinimum>();
+		PostFire = PtF ? PtF : NewObject<UAGunBitBP>();
 		PostFire->AddToRoot();
 			
-		PrefireCosmetic  = PFC ? PFC : NewObject<UArtilleryPerActorAbilityMinimum>();
+		PrefireCosmetic  = PFC ? PFC : NewObject<UAGunBitBP>();
 		PrefireCosmetic->AddToRoot();
-		FireCosmetic = FC ? FC : NewObject<UArtilleryPerActorAbilityMinimum>();
+		FireCosmetic = FC ? FC : NewObject<UAGunBitBP>();
 		FireCosmetic->AddToRoot();
-		PostFireCosmetic = PtFc ? PtFc : NewObject<UArtilleryPerActorAbilityMinimum>();
+		PostFireCosmetic = PtFc ? PtFc : NewObject<UAGunBitBP>();
 		PostFireCosmetic->AddToRoot();
-		FailedFireCosmetic = FFC ? FFC : NewObject<UArtilleryPerActorAbilityMinimum>();
+		FailedFireCosmetic = FFC ? FFC : NewObject<UAGunBitBP>();
 		FailedFireCosmetic->AddToRoot();
 	}
 		

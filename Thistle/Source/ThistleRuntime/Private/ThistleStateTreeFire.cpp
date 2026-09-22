@@ -8,7 +8,7 @@ EStateTreeRunStatus FFireTurret::Tick(FStateTreeExecutionContext& Context, const
 	{
 		const FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
 		bool found = true;
-		UArtilleryLibrary::implK2_GetLocation(ArtilleryDispatch, InstanceData.KeyOf, found); // used as an existence check, sue me.
+		UArtilleryLibrary::GetLocation(ArtilleryDispatch, InstanceData.KeyOf, found); // used as an existence check, sue me.
 		if (found)
 		{
 			UThistleBehavioralist::AttemptAttackFromKey(UThistleBehavioralist::Get(Context.GetWorld()), InstanceData.KeyOf);

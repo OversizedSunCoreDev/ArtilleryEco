@@ -66,77 +66,77 @@ public:
     FArtilleryStateManager(uint32 InBufferSize = 40)
     {
         BufferSize = InBufferSize;
-        Frames.Init(FArtilleryDataBuffer(), InBufferSize);
+        Ticks.Init(FArtilleryDataBuffer(), InBufferSize);
     };
     void Initialize(UWorld* World)
     {
 
     };
-    void StoreFrame(uint32 FrameNumber, const FArtilleryDataBuffer& Data, bool bIsVerified = false)
+    void StoreTick(uint32 FrameNumber, const FArtilleryDataBuffer& Data, bool bIsVerified = false)
     {
         if (FrameNumber >= OldestSequence + BufferSize) {
             OldestSequence = FrameNumber - BufferSize + 1;
         }
 
         uint32 Index = FrameNumber % BufferSize;
-        Frames[Index] = Data;
-        Frames[Index].SequenceNumber = FrameNumber;
-        Frames[Index].bIsValid = true;
-        Frames[Index].bIsVerified = bIsVerified;
+        Ticks[Index] = Data;
+        Ticks[Index].SequenceNumber = FrameNumber;
+        Ticks[Index].bIsValid = true;
+        Ticks[Index].bIsVerified = bIsVerified;
         SequenceRange = FMath::Max(SequenceRange, FrameNumber - OldestSequence + 1);
 
         if (bIsVerified)
         {
-            VerifiedFrame = Frames[Index];
-            LastVerifiedFrameNumber = FrameNumber;
+            VerifiedTick = Ticks[Index];
+            LastVerifiedTick = FrameNumber;
         }
-        //do not auto-promote the first frame stored; "verified" means the server said so,
+        //do not auto-promote the first frame stored; "verified" means the server said so or we've fallen out of recovery window,
         //and until that happens RollbackToVerified should no-op.
     }
 
-    FArtilleryDataBuffer* GetFrame(uint32 FrameNumber)
+    FArtilleryDataBuffer* GetTick(uint32 TickNumber)
     {
-        if (VerifiedFrame.bIsValid && VerifiedFrame.SequenceNumber == FrameNumber)
+        if (VerifiedTick.bIsValid && VerifiedTick.SequenceNumber == TickNumber)
         {
-            return &VerifiedFrame;
+            return &VerifiedTick;
         }
 
-        if (FrameNumber < OldestSequence || FrameNumber >= OldestSequence + SequenceRange)
+        if (TickNumber < OldestSequence || TickNumber >= OldestSequence + SequenceRange)
         {
             return nullptr;
         }
-        uint32 Index = FrameNumber % BufferSize;
-        FArtilleryDataBuffer* Frame = &Frames[Index];
-        return (Frame->bIsValid && Frame->SequenceNumber == FrameNumber) ? Frame : nullptr;
+        uint32 Index = TickNumber % BufferSize;
+        FArtilleryDataBuffer* Frame = &Ticks[Index];
+        return (Frame->bIsValid && Frame->SequenceNumber == TickNumber) ? Frame : nullptr;
     }
 
     void StoreVerified(uint32 FrameNumber)
     {
-        FArtilleryDataBuffer* VerifiedFramePtr = GetFrame(FrameNumber);
+        FArtilleryDataBuffer* VerifiedFramePtr = GetTick(FrameNumber);
         if (ensure(VerifiedFramePtr))
         {
             VerifiedFramePtr->bIsVerified = true;
             VerifiedFramePtr->bIsValid = true;
-            VerifiedFrame = *VerifiedFramePtr;
-            LastVerifiedFrameNumber = FrameNumber;
+            VerifiedTick = *VerifiedFramePtr;
+            LastVerifiedTick = FrameNumber;
         }
     }
 
     void Shutdown()
     {
-        Frames.Empty();
-        VerifiedFrame = FArtilleryDataBuffer();
-        LastVerifiedFrameNumber = 0;
+        Ticks.Empty();
+        VerifiedTick = FArtilleryDataBuffer();
+        LastVerifiedTick = 0;
     }
 
-    bool HasVerifiedFrame() const { return VerifiedFrame.bIsValid; }
-    uint32 GetLastVerifiedSequence() const { return LastVerifiedFrameNumber; }
+    bool HasVerifiedFrame() const { return VerifiedTick.bIsValid; }
+    uint32 GetLastVerifiedSequence() const { return LastVerifiedTick; }
 
 private:
-    TArray<FArtilleryDataBuffer> Frames;
-    FArtilleryDataBuffer VerifiedFrame;
+    TArray<FArtilleryDataBuffer> Ticks;
+    FArtilleryDataBuffer VerifiedTick;
     uint32 BufferSize = 20;
     uint32 OldestSequence = 0;
     uint32 SequenceRange = 0;
-    uint32 LastVerifiedFrameNumber = 0;
+    uint32 LastVerifiedTick = 0;
 };

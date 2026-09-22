@@ -131,14 +131,14 @@ public:
 	
 	//and viola [sic] actually pretty elegant even without type polymorphism by using overloading polymorphism.
 	//see EAllowedDOFs from Barrage\Source\JoltPhysics\Jolt\Physics\Body\AllowedDOFs.h
-	FBLet CreatePrimitive(FBBoxParams& Definition, FSkeletonKey Outkey, uint16 Layer, bool IsSensor = false, bool forceDynamic = false, bool isMovable = true, float AngularDamp = 0.2, JPH::EAllowedDOFs AllowedDOF = RelaxedBoxDOFs);
-	FBLet CreatePrimitive(FBCapParams& Definition, FSkeletonKey Outkey, uint16 Layer, bool IsSensor = false, bool forceDynamic = false, bool isMovable = true, float AngularDamp = 0.1, JPH::EAllowedDOFs AllowedDOF =  StandardCapAllowedDOFs);
+	FBLet CreatePrimitive(FBBoxParams& Definition, FSkeletonKey Outkey, uint16 Layer, bool IsSensor = false, bool forceDynamic = false, bool isMovable = true, float AngularDamp = 0.2, JPH::EAllowedDOFs AllowedDOF = RelaxedBoxDOFs, const FBarrageCollisionGroupSettings& CollisionGroupSettings = {});
+	FBLet CreatePrimitive(FBCapParams& Definition, FSkeletonKey Outkey, uint16 Layer, bool IsSensor = false, bool forceDynamic = false, bool isMovable = true, float AngularDamp = 0.1, JPH::EAllowedDOFs AllowedDOF = StandardCapAllowedDOFs, const FBarrageCollisionGroupSettings& CollisionGroupSettings = {});
 	FBLet CreatePrimitive(FBCharParams& Definition, FSkeletonKey Outkey, uint16 Layer);
-	FBLet CreatePrimitive(FBSphereParams& Definition, FSkeletonKey OutKey, uint16 Layer, bool IsSensor = false);
+	FBLet CreatePrimitive(FBSphereParams& Definition, FSkeletonKey OutKey, uint16 Layer, bool IsSensor = false, const FBarrageCollisionGroupSettings& CollisionGroupSettings = {});
 	FBLet CreateProjectile(FBBoxParams& Definition, FSkeletonKey OutKey, uint16_t Layer);
 	FBLet LoadComplexStaticMesh(FBTransform& MeshTransform, const UStaticMeshComponent* StaticMeshComponent, FSkeletonKey OutKey, bool IsSensor = false);
 	FBLet LoadEnemyHitboxFromStaticMesh(FBTransform& MeshTransform, const UStaticMeshComponent* StaticMeshComponent, FSkeletonKey OutKey, bool IsSensor = false, bool UseRawMeshForCollision = false, FVector CenterOfMassTranslation = {0,0,0});
-	// void CreateHeightfieldLandscapeMesh(TNotNull<const ALandscapeProxy*> LandscapeActor);
+	void CreateHeightfieldLandscapeMesh(TNotNull<const ALandscapeProxy*> LandscapeActor);
 	FBLet GetShapeRef(FBarrageKey Existing) const;
 	FBLet GetShapeRef(FSkeletonKey Existing) const;
 	void FinalizeReleasePrimitive(FBarrageKey BarrageKey);

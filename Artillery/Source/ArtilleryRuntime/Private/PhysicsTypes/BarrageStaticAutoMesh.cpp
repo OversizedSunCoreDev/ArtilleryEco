@@ -80,11 +80,11 @@ bool UBarrageStaticAutoMesh::RegistrationImplementation()
 				}
 			}
 			
-			// if (ALandscapeProxy* Landscape = Cast<ALandscapeProxy>(Actor))
-			// {
-			// 	UBarrageDispatch* Physics = GetWorld()->GetSubsystem<UBarrageDispatch>();
-			// 	Physics->CreateHeightfieldLandscapeMesh(Landscape);
-			// }
+			if (ALandscapeProxy* Landscape = Cast<ALandscapeProxy>(Actor))
+			{
+				UBarrageDispatch* Physics = GetWorld()->GetSubsystem<UBarrageDispatch>();
+				Physics->CreateHeightfieldLandscapeMesh(Landscape);
+			}
 		}
 	}
 

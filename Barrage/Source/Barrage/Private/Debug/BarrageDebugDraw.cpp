@@ -16,14 +16,7 @@ static FAutoConsoleVariableRef CVarUnrealJoltDebugDraw(TEXT("barrage.DrawJoltDeb
 	TEXT("if JoltUnrealDebugRender is on"));
 
 
-FORCEINLINE FColor ToFColorFromJoltColor(JPH::ColorArg Color)
-{
-	return FColor(Color.r, Color.g, Color.b, Color.a);
-};
-FORCEINLINE JPH::Color ToJoltColor(const FColor Color)
-{
-	return JPH::Color(Color.R, Color.G, Color.B, Color.A);
-};
+
 
 
 BarrageJoltDebugRender::BarrageJoltDebugRender()

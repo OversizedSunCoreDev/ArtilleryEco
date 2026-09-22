@@ -16,7 +16,7 @@ EStateTreeRunStatus FScoot::Tick(FStateTreeExecutionContext& Context, const floa
 	// The State Tree transition to this state should be evaluated periodically.
 
 	bool bFoundSelf = false;
-	FVector HereIAm = UArtilleryLibrary::implK2_GetLocation(UArtilleryDispatch::Get(Context.GetWorld()), InstanceData.KeyOf, bFoundSelf);
+	FVector HereIAm = UArtilleryLibrary::GetLocation(UArtilleryDispatch::Get(Context.GetWorld()), InstanceData.KeyOf, bFoundSelf);
 	if (bFoundSelf && (HereIAm - TargetLocation).Length() < Tolerance)
 	{
 		// We are too close, so we need to scoot.
@@ -68,7 +68,7 @@ EStateTreeRunStatus FBreakOff::Tick(FStateTreeExecutionContext& Context, const f
 	if (UArtilleryLibrary::GetTotalsTickCount(ArtilleryDispatch) % 4 == 0)
 	{
 		bool found = false;
-		FVector HereIAm = UArtilleryLibrary::implK2_GetLocation(ArtilleryDispatch, InstanceData.KeyOf, found);
+		FVector HereIAm = UArtilleryLibrary::GetLocation(ArtilleryDispatch, InstanceData.KeyOf, found);
 
 		if (found && (HereIAm - location).Length()  < Tolerance * 2)
 		{

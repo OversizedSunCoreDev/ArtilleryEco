@@ -7,14 +7,14 @@
 
 #include "CoreMinimal.h"
 #include "ArtilleryActorControllerConcepts.h"
-#include "ArtilleryGame.h"
+#include "ArtilleryGameSim.h"
 #include "HAL/RunnableThread.h"
 #include "CanonicalInputStreamECS.h"
 #include "BristleconeCommonTypes.h"
 #include "Containers/TripleBuffer.h"
 #include "LocomotionParams.h"
 #include "BarrageDispatch.h"
-#include "NeedA.h"
+#include "RequestRouter.h"
 
 // FRollbackArtilleryWorker delegates the entire simulation to FArtilleryGame,
 // only retaining: thread housekeeping, the deferred-start gate
@@ -72,7 +72,7 @@ class FRollbackArtilleryWorker : public FRunnable {
 	TObjectPtr<UBarrageDispatch> ContingentPhysicsLinkage;
 	TObjectPtr<UCanonicalInputStreamECS> ContingentInputECSLinkage;
 private:
-	TSharedPtr<FArtilleryGame> Game;
+	TSharedPtr<FArtilleryGameSim> Game;
 	TArray<TWeakInterfacePtr<IArtilleryLoadingProcessInterface>> ExternalLoadingProcessors;
 	void Cleanup();
 

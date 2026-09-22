@@ -33,26 +33,23 @@ public:
 	virtual bool Initialize(
 		const FGunKey& KeyFromDispatch,
 		const bool MyCodeWillHandleKeys,
-		UArtilleryPerActorAbilityMinimum* PF = nullptr,
-		UArtilleryPerActorAbilityMinimum* PFC = nullptr,
-		UArtilleryPerActorAbilityMinimum* F = nullptr,
-		UArtilleryPerActorAbilityMinimum* FC = nullptr,
-		UArtilleryPerActorAbilityMinimum* PtF = nullptr,
-		UArtilleryPerActorAbilityMinimum* PtFc = nullptr,
-		UArtilleryPerActorAbilityMinimum* FFC = nullptr) override
+		UAGunBitBP* PF = nullptr,
+		UAGunBitBP* PFC = nullptr,
+		UAGunBitBP* F = nullptr,
+		UAGunBitBP* FC = nullptr,
+		UAGunBitBP* PtF = nullptr,
+		UAGunBitBP* PtFc = nullptr,
+		UAGunBitBP* FFC = nullptr) override
 	{
 		ARTGUN_MACROAUTOINIT(MyCodeWillHandleKeys);
 		return true;
 	}
 	
 	virtual void PreFireGun(
-		const FGameplayAbilitySpecHandle Handle,
-		const FGameplayAbilityActorInfo* ActorInfo,
-		const FGameplayAbilityActivationInfo ActivationInfo,
-		const EventBufferInfo FireAction = EventBufferInfo::Default(),
-		const FGameplayEventData* TriggerEventData = nullptr,
-		bool RerunDueToReconcile = false,
-		int DallyFramesToOmit = 0, bool VerifiedFrame = false) override
+		FArtilleryStates OutcomeStates,
+		int DallyFramesToOmit,
+		bool RerunDueToReconcile, bool VerifiedFrame = false, const EventBufferInfo FireAction = EventBufferInfo::Default())
+		override
 	{
 		AttrPtr CooldownRemainingPtr = MyDispatch->GetAttrib(MyGunKey, COOLDOWN_REMAINING);
 		if (!CooldownRemainingPtr.IsValid() || CooldownRemainingPtr->GetCurrentValue() > 0.f)
@@ -64,18 +61,14 @@ public:
 		TWeakObjectPtr<AActor> Me = MyTransformDispatch->GetAActorByObjectKey(MyProbableOwner);
 		if(Me.Get())
 		{
-			FireGun(Fired, 0, ActorInfo, ActivationInfo, false, TriggerEventData, Handle);
+			FireGun(OutcomeStates, DallyFramesToOmit, RerunDueToReconcile);
 		}
 	}
 
-	virtual void FireGun(
+virtual void FireGun(
 		FArtilleryStates OutcomeStates,
 		int DallyFramesToOmit,
-		const FGameplayAbilityActorInfo* ActorInfo,
-		const FGameplayAbilityActivationInfo ActivationInfo,
-		bool RerunDueToReconcile,
-		const FGameplayEventData* TriggerEventData,
-		FGameplayAbilitySpecHandle Handle) override
+		bool RerunDueToReconcile) override
 	{
 		UArtilleryProjectileDispatch* ProjectileDispatch = MyDispatch->GetWorld()->GetSubsystem<UArtilleryProjectileDispatch>();
 		if (ProjectileDispatch)
@@ -91,17 +84,13 @@ public:
 			MyDispatch->RequestAddTicklite(ProjectileArc, Early);
 		}
 		
-		PostFireGun(Fired, 0, ActorInfo, ActivationInfo, false, TriggerEventData, Handle);
+		PostFireGun(OutcomeStates, DallyFramesToOmit, RerunDueToReconcile);
 	}
 
 	virtual void PostFireGun(
 		FArtilleryStates OutcomeStates,
 		int DallyFramesToOmit,
-		const FGameplayAbilityActorInfo* ActorInfo,
-		const FGameplayAbilityActivationInfo ActivationInfo,
-		bool RerunDueToReconcile,
-		const FGameplayEventData* TriggerEventData,
-		FGameplayAbilitySpecHandle Handle) override
+		bool RerunDueToReconcile)  override
 	{
 		AttrMapPtr MyAttribs = MyDispatch->GetAttribMap(MyGunKey);
 		AttrPtr CooldownPtr = MyAttribs->FindRef(COOLDOWN);

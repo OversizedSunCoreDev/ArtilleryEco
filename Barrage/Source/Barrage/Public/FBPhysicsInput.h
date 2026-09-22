@@ -16,7 +16,21 @@ static constexpr int FB_PHYSICS_INPUT_EXPECTED_SIZE = 48;
 struct FBPhysicsInput
 {
 	FBarrageKey Target;
+	friend bool operator<(const FBPhysicsInput& Lhs, const FBPhysicsInput& RHS) 
+	{
+		if (Lhs.Target.KeyIntoBarrage < RHS.Target.KeyIntoBarrage)
+			return true;
+		if (Lhs.Sequence < RHS.Sequence)
+			return true;
+		if (Lhs.Action < RHS.Action)
+			return true;
+		return false;
+	}
 
+	static bool Less(const FBPhysicsInput& LHS, const FBPhysicsInput& RHS)
+	{
+		return LHS < RHS;
+	}
 	FBPhysicsInput(const FBarrageKey& Target, uint64 Sequence, PhysicsInputType Action, FBShape Metadata,
 		const JPH::Quat& State)
 		: Target(Target),
@@ -48,5 +62,7 @@ struct FBPhysicsInput
 		Sequence = Seq;
 		Action = ThisBetterBeAdd;
 	}
+
+
 };
 static_assert(sizeof(FBPhysicsInput) == FB_PHYSICS_INPUT_EXPECTED_SIZE);

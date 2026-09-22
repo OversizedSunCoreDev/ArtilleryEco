@@ -5,7 +5,7 @@
 #include "CoreMinimal.h"
 #include "HAL/Runnable.h"
 #include "ArtilleryCommonTypes.h"
-#include "NeedA.h"
+#include "RequestRouter.h"
 
 //this is a busy-style thread, which runs AI systems in predetermined order. 
 template <typename UDispatch>

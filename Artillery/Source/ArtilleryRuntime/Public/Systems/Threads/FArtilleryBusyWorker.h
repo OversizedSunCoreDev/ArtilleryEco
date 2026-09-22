@@ -9,7 +9,7 @@
 #include "LocomotionParams.h"
 
 #include "BarrageDispatch.h"
-#include "NeedA.h"
+#include "RequestRouter.h"
 
 //this is a busy-style thread, which runs preset bodies of work in a specified order. Generally, the goal is that it never
 //actually sleeps. In fact, it yields rather than sleeps, in general operation.
@@ -21,7 +21,7 @@
 // no, seriously. with all the other sacrifices we've made occupying one core with game-sim physics, reconciliation,
 // rollbacks, and pattern matching is a pretty good bargain. we'll want to revisit this for servers, of course.
 
-class FArtilleryGame;
+class FArtilleryGameSim;
 
 class FArtilleryBusyWorker : public FRunnable {
 	public:
@@ -37,7 +37,8 @@ class FArtilleryBusyWorker : public FRunnable {
 	FSharedEventRef StartTicklitesSim;
 	FSharedEventRef StartTicklitesApply;
 	FSharedEventRef StartRunAhead;
-	int SeqNumber = 0;
+	FSharedEventRef PostRunFrameProcessingLoop; //Intended to allow things to know when a full frame is done
+	uint32 SeqNumber = 0;
 	//Going forward, it is potentially worthwhile for us switch to this...
 	ITickHeavy* ParticleSystemPointer = nullptr;
 	ITickHeavy* ProjectileSystemPointer = nullptr;
@@ -51,7 +52,8 @@ class FArtilleryBusyWorker : public FRunnable {
 		bool& burstDropDetected,
 		TheCone::PacketElement& current,
 		bool& RemoteInput);
-	void ProcessRequestRouterBusyWorkerThread();
+	// Currently accepts the dispatch ptr to run guns, this is a temporary thing though
+	void ProcessRequestRouterBusyWorkerThread(UArtilleryDispatch* MyDispatch);
 	virtual uint32 Run() override;
 	virtual void Exit() override;
 	virtual void Stop() override;
@@ -71,14 +73,27 @@ class FArtilleryBusyWorker : public FRunnable {
 	UTransformDispatch* UTransformLink = nullptr;
 	// This is atomic so the unreal gamethread can set it
 	std::atomic<bool> bPaused = false;
+	
+	
+	// Intended for debugging safely from the game thread. You should not use this for impactful gameplay code
+	bool QueueFunctionFromAnyThreadAndWait(TFunction<void()> Callback, float SecondsToWait = .1f);
+
+	FCriticalSection EventsFromOtherThreadEndCriticalSection;
+	TArray<FEvent*> EventsFromOtherThread_RequiresCriticalSection;
+	
+	
+	FORCEINLINE bool IsRunning() const { return bRunning; };
+	// Distinct from Running... Why? I needed something to indicate this is actually trying to run and not just constructed
+	FORCEINLINE bool IsInitialized() const { return bInitialized; };
 private:
 	void Cleanup();
 	
-	TSharedPtr<FArtilleryGame> Game;
+	TSharedPtr<FArtilleryGameSim> Game;
 	// monotonic (race-fix 2026-06-25): true at construction, only ever set false by Cleanup()/Stop()/Exit().
 	// Init() must NOT re-raise it -- a late-scheduled thread re-setting running=true after teardown set it false
 	// is what orphaned the worker and hung the jthread join on exit.
-	bool running = true;
+	bool bRunning = true;
+	bool bInitialized = false;
 	using FTMap = TMap<FSkeletonKey, FConservedTags>;
 	//this needs to remain private and only be modified or used on this thread.
 	//if you want to add the ability to expose this off-thread, first, see if the ATA already present in ArtilleryDispatch is good enough.

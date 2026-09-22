@@ -6,6 +6,8 @@
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Modules/ModuleInterface.h"
 #include "Modules/ModuleManager.h"
+#include "PinSupport.h"
+#include "InventoryDispatch.h"
 #include "UnrealEd.h"
 
 DECLARE_LOG_CATEGORY_EXTERN(MyGameEditor, All, All)
@@ -13,6 +15,7 @@ DECLARE_LOG_CATEGORY_EXTERN(MyGameEditor, All, All)
 class FArtilleryEditorModule : public IModuleInterface
 {
 public:
+	TSharedPtr<FArtillerySoundsPinFactory> GraphPinFactory;
     virtual void StartupModule() override;
     virtual void ShutdownModule() override;
 private:

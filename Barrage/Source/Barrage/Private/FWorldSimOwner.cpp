@@ -3,6 +3,9 @@
 #include "BarrageContactListener.h"
 #include "CoordinateUtils.h"
 //#include "LandscapeComponent.h"
+#include "LandscapeComponent.h"
+#include "LandscapeHeightfieldCollisionComponent.h"
+#include "LandscapeProxy.h"
 #include "MashFunctions.h"
 #include "PhysicsCharacter.h"
 #include "StaticMeshCompiler.h"
@@ -278,7 +281,7 @@ Ref<Shape> FWorldSimOwner::MakeBox(double JoltX, double JoltY, double JoltZ, flo
 }
 
 //we need the coordinate utils, but we don't really want to include them in the .h
-FBarrageKey FWorldSimOwner::CreatePrimitive(FBBoxParams& ToCreate, uint16 Layer, bool IsSensor, bool forceDynamic, bool isMovable, float AngularDamp, JPH::EAllowedDOFs AllowedDOF)
+FBarrageKey FWorldSimOwner::CreatePrimitive(FBBoxParams& ToCreate, uint16 Layer, bool IsSensor, bool forceDynamic, bool isMovable, float AngularDamp, JPH::EAllowedDOFs AllowedDOF, const FBarrageCollisionGroupSettings& CollisionGroupSettings)
 {
 	//if movable, check if dynamic. if not movable but dynamic, come on guys.
 	EMotionType MovementType = isMovable ?
@@ -317,6 +320,8 @@ FBarrageKey FWorldSimOwner::CreatePrimitive(FBBoxParams& ToCreate, uint16 Layer,
 	// Create the actual rigid body
 	Body* box_body = body_interface->CreateBody(box_body_settings);
 	// Note that if we run out of bodies this can return nullptr
+	
+	ConfigureBodyCollisionGroup(*box_body, CollisionGroupSettings);
 
 	// Queue adding it
 	AddInternalQueuing(box_body->GetID(), 0);// oh no. yeah this is.... this is for batching the add.
@@ -335,7 +340,7 @@ FBarrageKey FWorldSimOwner::CreatePrimitive(FBBoxParams& ToCreate, uint16 Layer,
 	return FBK;
 }
 
-FBarrageKey FWorldSimOwner::CreatePrimitive(FBCapParams& ToCreate, uint16 Layer, bool IsSensor, bool forceDynamic, bool isMovable, float AngularDamp, JPH::EAllowedDOFs AllowedDOF)
+FBarrageKey FWorldSimOwner::CreatePrimitive(FBCapParams& ToCreate, uint16 Layer, bool IsSensor, bool forceDynamic, bool isMovable, float AngularDamp, JPH::EAllowedDOFs AllowedDOF, const FBarrageCollisionGroupSettings& CollisionGroupSettings)
 {
 	//if movable, check if dynamic. if not movable but dynamic, come on guys.
 	EMotionType MovementType = isMovable ?
@@ -365,6 +370,8 @@ FBarrageKey FWorldSimOwner::CreatePrimitive(FBCapParams& ToCreate, uint16 Layer,
 	// Create the actual rigid body
 	Body* box_body = body_interface->CreateBody(cap_body_settings);
 	// Note that if we run out of bodies this can return nullptr
+
+	ConfigureBodyCollisionGroup(*box_body, CollisionGroupSettings);
 
 	// Queue adding it
 	AddInternalQueuing(box_body->GetID(), 0);// TODO: consider your life choices. you don't wanna sell death sticks.
@@ -403,7 +410,7 @@ FBarrageKey FWorldSimOwner::CreatePrimitive(FBCharParams& ToCreate, uint16 Layer
 	return FBK;
 }
 
-FBarrageKey FWorldSimOwner::CreatePrimitive(FBSphereParams& ToCreate, uint16 Layer, bool IsSensor)
+FBarrageKey FWorldSimOwner::CreatePrimitive(FBSphereParams& ToCreate, uint16 Layer, bool IsSensor, const FBarrageCollisionGroupSettings& CollisionGroupSettings)
 {
 	EMotionType MovementType = LayerToMotionTypeMapping(Layer);
 	BodyCreationSettings sphere_settings(new SphereShape(ToCreate.JoltRadius),
@@ -412,7 +419,10 @@ FBarrageKey FWorldSimOwner::CreatePrimitive(FBSphereParams& ToCreate, uint16 Lay
 		MovementType,
 		Layer);
 	sphere_settings.mIsSensor = IsSensor;
-	BodyID BodyIDTemp = body_interface->CreateBody(sphere_settings)->GetID();
+	Body* sphere_body = body_interface->CreateBody(sphere_settings);
+	ConfigureBodyCollisionGroup(*sphere_body, CollisionGroupSettings);
+	BodyID BodyIDTemp = sphere_body->GetID();
+
 	AddInternalQueuing(BodyIDTemp, 0);// we can't figure this out yet. we'll have to set it later or rearch for data exposure reasons. --JMK, can kicka
 	FBarrageKey FBK = GenerateBarrageKeyFromBodyId(BodyIDTemp);
 	//Barrage key is unique to WORLD and BODY. This is crushingly important.
@@ -420,7 +430,7 @@ FBarrageKey FWorldSimOwner::CreatePrimitive(FBSphereParams& ToCreate, uint16 Lay
 	return FBK;
 }
 
-FBarrageKey FWorldSimOwner::CreatePrimitive(FBCapParams& ToCreate, uint16 Layer, bool IsSensor, FMassByCategory::BMassCategories MassClass)
+FBarrageKey FWorldSimOwner::CreatePrimitive(FBCapParams & ToCreate, uint16 Layer, bool IsSensor, FMassByCategory::BMassCategories MassClass, const FBarrageCollisionGroupSettings & CollisionGroupSettings)
 {
 	EMotionType MovementType = LayerToMotionTypeMapping(Layer);
 	BodyCreationSettings cap_settings(new CapsuleShape(ToCreate.JoltHalfHeightOfCylinder, ToCreate.JoltRadius),
@@ -433,7 +443,11 @@ FBarrageKey FWorldSimOwner::CreatePrimitive(FBCapParams& ToCreate, uint16 Layer,
 	cap_settings.mMassPropertiesOverride = msp;
 	cap_settings.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
 	cap_settings.mIsSensor = IsSensor;
-	BodyID BodyIDTemp = body_interface->CreateBody(cap_settings)->GetID();
+
+	Body* cap_body = body_interface->CreateBody(cap_settings);
+	ConfigureBodyCollisionGroup(*cap_body, CollisionGroupSettings);
+	BodyID BodyIDTemp = cap_body->GetID();
+
 	AddInternalQueuing(BodyIDTemp, 0);// You know, it feels worse each time I use it.
 	FBarrageKey FBK = GenerateBarrageKeyFromBodyId(BodyIDTemp);
 	//Barrage key is unique to WORLD and BODY. This is crushingly important.
@@ -579,44 +593,44 @@ FBLet FWorldSimOwner::LoadComplexStaticMesh(FBTransform& MeshTransform,
 	}
 }
 
-// void FWorldSimOwner::CreateHeightfieldLandscapeMesh(TNotNull<const ALandscapeProxy*> InLandscapeActor) {
-// 	
-// 	for (const ULandscapeComponent* LandscapeComp : InLandscapeActor->LandscapeComponents) {
-// 		
-// 		if (const ULandscapeHeightfieldCollisionComponent* CollisionComp = LandscapeComp->GetCollisionComponent()) {
-// 			
-// 			//
-// 			auto BodyInstance = CollisionComp->GetBodyInstance();
-//
-//
-// 			auto& ActorGameHandle = BodyInstance->ActorHandle->GetGameThreadAPI();
-// 			
-// 			// Barrage::Conversion::TriMeshToJoltMeshShape()
-//
-// 			if (JPH::ShapeSettings* ShapeSettings = Barrage::Conversion::ConvertChaosGeoToJoltBody(*ActorGameHandle.GetGeometry())) {
-// 				
-// 				auto CreationResult = ShapeSettings->Create();
-// 				if (CreationResult.HasError()) {
-// 					return;
-// 				}
-// 				
-// 				const FTransform& UnrealTransform = CollisionComp->GetComponentTransform();
-// 				
-// 				JPH::BodyCreationSettings BodyCreationSettings;
-// 				BodyCreationSettings.SetShape(CreationResult.Get());
-// 				BodyCreationSettings.mPosition = CoordinateUtils::ToJoltCoordinates(UnrealTransform.GetLocation());
-// 				BodyCreationSettings.mRotation = CoordinateUtils::ToJoltRotation(UnrealTransform.GetRotation());
-// 				BodyCreationSettings.mMotionType = EMotionType::Static;
-// 				BodyCreationSettings.mObjectLayer = Layers::EJoltPhysicsLayer::NON_MOVING;
-//
-// 				
-// 				body_interface->CreateAndAddBody(BodyCreationSettings, EActivation::DontActivate);
-// 				// physics_system->
-// 				// CreationResult
-// 			}
-// 		}
-// 	}
-// }
+void FWorldSimOwner::CreateHeightfieldLandscapeMesh(const ALandscapeProxy* InLandscapeActor)
+{
+	if (!ensure(IsValid(InLandscapeActor)))
+	{
+		return;
+	}
+	
+	for (const ULandscapeComponent* LandscapeComp : InLandscapeActor->LandscapeComponents)
+	{
+		if (const ULandscapeHeightfieldCollisionComponent* CollisionComp = LandscapeComp->GetCollisionComponent())
+		{
+			FBodyInstance* BodyInstance = CollisionComp->GetBodyInstance();
+
+			Chaos::FRigidBodyHandle_External& ActorGameHandle = BodyInstance->ActorHandle->GetGameThreadAPI();
+
+			if (JPH::ShapeSettings* ShapeSettings = Barrage::Conversion::ConvertChaosGeoToJoltBody(*ActorGameHandle.GetGeometry()))
+			{
+				auto CreationResult = ShapeSettings->Create();
+				if (CreationResult.HasError())
+				{
+					return;
+				}
+
+				const FTransform& UnrealTransform = CollisionComp->GetComponentTransform();
+
+				JPH::BodyCreationSettings BodyCreationSettings;
+				BodyCreationSettings.SetShape(CreationResult.Get());
+				BodyCreationSettings.mPosition = CoordinateUtils::ToJoltCoordinates(UnrealTransform.GetLocation());
+				BodyCreationSettings.mRotation = CoordinateUtils::ToJoltRotation(UnrealTransform.GetRotation());
+				BodyCreationSettings.mMotionType = EMotionType::Static;
+				BodyCreationSettings.mObjectLayer = Layers::EJoltPhysicsLayer::NON_MOVING;
+
+
+				body_interface->CreateAndAddBody(BodyCreationSettings, EActivation::DontActivate);
+			}
+		}
+	}
+}
 
 void FWorldSimOwner::StepSimulation()
 {

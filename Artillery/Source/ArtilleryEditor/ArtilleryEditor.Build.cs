@@ -59,7 +59,8 @@ public class ArtilleryEditor : ModuleRules
 				"Bristlecone",
 				"ArtilleryRuntime",
 				"Kismet",
-				"UnrealEd"
+				"UnrealEd",
+				"GraphEditor"
 				// ... add other public dependencies that you statically link with here ...
 			}
 			);
@@ -79,7 +80,10 @@ public class ArtilleryEditor : ModuleRules
 				"ArtilleryRuntime",
 				"Bristlecone",
 				"Kismet",
-				"UnrealEd"
+				"UnrealEd",
+				"GraphEditor",
+				"BlueprintGraph",
+				"KismetCompiler",
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);

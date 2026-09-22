@@ -1,6 +1,4 @@
 // Copyright Oversized Sun. All Rights Reserved.
-// LocomoCore is subject to the GPLv3 license.
-// LocomoCore is a client of the Locomo library.
 
 using System;
 using System.IO;
@@ -12,7 +10,7 @@ public class LocomoCore : ModuleRules
 	{
 		//PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
 		// .Build.cs — overlay MUST precede UE's Boost so our 3 headers shadow it
-		PublicIncludePaths.Add(Path.Combine(PluginDirectory, "Source/Private/SpatialIndexDeps"));
+		PublicIncludePaths.Add(Path.Combine(PluginDirectory, "Source/LocomoCore/Private/SpatialIndexDeps"));
 		AddEngineThirdPartyPrivateStaticDependencies(Target, "Boost");  // adds .../boost-1.85.0/include as a root
 		
 		PublicIncludePaths.AddRange(

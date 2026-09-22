@@ -1,77 +1,60 @@
 ﻿#include "StaticAssetLoader.h"
 
+#include "ArtilleryDeveleperSettings.h"
+#include "ArtilleryGunBlueprint.h"
+#include "ArtilleryRuntimeModule.h"
 #include "FArtilleryGun.h"
 #include "FGunDefinitionRow.h"
 
 void UStaticGunLoader::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
-	auto Seek = StaticLoadObject(UDataTable::StaticClass(), nullptr, AssetTable());
-	if (Seek == nullptr)
+
+	
+	Definitions = GetDefault<UArtilleryDeveloperSettings>()->LoadMainGunsDataTable();
+	if (!ensureMsgf(Definitions, TEXT("Artillery UStaticGunLoader::Initialize failed to find a valid gun datatable")))
 	{
-		Seek = StaticLoadObject(UDataTable::StaticClass(), nullptr, GamePath);
+		return;
 	}
-	if (Seek == nullptr)
-	{
-		Seek = StaticLoadObject(UDataTable::StaticClass(), nullptr, EcoPath);
-	}
-	if (Seek == nullptr)
-	{
-		  
-		UE_LOG(LogTemp, Error, TEXT("GunLoader: Hey, there's no gun data file in any of the places we look."));
-	}
-	Definitions = Cast<UDataTable>(Seek); 
+	
 	Definitions->ForeachRow<FGunDefinitionRow>(
 		TEXT("UStaticGunLoader::Initialize"),
 		[this](const FName& Key, const FGunDefinitionRow& RowDefinition) mutable
 	{
-		if (RowDefinition.IsCPP)
+		if (!RowDefinition.LoadableCPP.IsNull())
 		{
-			const FString Bind = RowDefinition.LoadableCPP;
-			FTopLevelAssetPath LoadFrom = FTopLevelAssetPath(Bind);
-			// TODO - Add debugging tools to allow toggling messages like this
-			// enough get sent that it is starting to affect performance
-			//UE_LOG(LogTemp, Warning, TEXT("GunLoader: Loading from %s"), *Bind);
-			if (LoadFrom.IsValid())
+			UScriptStruct* StructMetadata = RowDefinition.LoadableCPP.LoadSynchronous();
+			if (ensure(StructMetadata))
 			{
-				//UE_LOG(LogTemp, Warning, TEXT("GunLoader: Loading..."));
-				UScriptStruct* StructMetadata = FindObject<UScriptStruct>(LoadFrom, EFindObjectFlags::None);
-				//for reference, this log line + input
-				//UScriptStruct* pointofcomp = FArtilleryGun::StaticStruct();
-				//UE_LOG(LogTemp, Warning, TEXT("GunLoader: FArtilleryGun Info: [%s], [%s]"), *pointofcomp->GetStructCPPName(), *pointofcomp->GetStructPathName().ToString());
-				//produces...
-				//GunLoader: FArtilleryGun Info: [FArtilleryGun], [/Script/ArtilleryRuntime.ArtilleryGun]
-				//And a similar line produces
-				// [FGunWeeRocket], [/Script/Bristle54.GunWeeRocket]
-				
-				// TODO: make sure we don't need to flip this over to LoadObject. That'd be a real hassle.
-				if (StructMetadata)
-				{
-					//UE_LOG(LogTemp, Warning, TEXT("GunLoader: Loaded UScriptStruct: [%s]"), *StructMetadata->GetName());
-					void* container = FMemory::Malloc(StructMetadata->GetStructureSize());
-					StructMetadata->InitializeStruct(container); //init & constructor
+				UE_LOG(LogArtillery, Verbose, TEXT("GunLoader: Loaded UScriptStruct: [%s]"), *StructMetadata->GetName());
+				void* container = FMemory::Malloc(StructMetadata->GetStructureSize());
+				StructMetadata->InitializeStruct(container); //init & constructor
 
-					//UE_LOG(LogTemp, Warning, TEXT("GunLoader: Initing USSI..."));
-					TSharedPtr<FArtilleryGun> Form = MakeShareable(static_cast<FArtilleryGun*>(container));
-					if (Form.IsValid())
-					{
-						ZardozMapping.Add(Bind, StructMetadata);
-						
-						FString InstanceOfPath = FString(RowDefinition.LoadableCPP, 0);
-						FString InstanceOfId = FString(RowDefinition.GunDefinitionId, 0);
-						//UE_LOG(LogTemp, Warning, TEXT("GunLoader: Loaded via [%s] with shortname: [%s]"),
-						//*StructMetadata->GetAuthoredName(), *InstanceOfId);
-						//slack can be quite large and this guarantees we store a copy.
-						CommonNameToProperNameMapping.Add(InstanceOfId, InstanceOfPath);
-					}
+				UE_LOG(LogArtillery, Verbose, TEXT("GunLoader: Initing USSI..."));
+				TSharedPtr<FArtilleryGun> Form = MakeShareable(static_cast<FArtilleryGun*>(container));
+				if (Form.IsValid())
+				{
+					auto Data = static_cast<FArtilleryGun*>(container);
+					ZardozMapping.Add(StructMetadata->GetFName(), StructMetadata);
+					CommonNameToProperNameMapping.Add(RowDefinition.GunDefinitionId, StructMetadata->GetFName());
 				}
 			}
 		}
-		else
-		//right now we don't handle hybrids. if you want C++ gun functionality in BP, the gun be a blueprint class that inherits from the C++ class
-		//and to do this, you'll want to deeply understand the difference between BlueprintNativeEvent vs BlueprintImplementableEvent and sibling pairs.
+			
+		if (!RowDefinition.LoadableBP.IsNull())
 		{
-			//we don't handle bp stuff yet, sorry.
+			UClass* BPGunClass = RowDefinition.LoadableBP.LoadSynchronous();
+			if (ensure(BPGunClass))
+			{
+				UArtilleryGunBlueprint* Singleton = NewObject<UArtilleryGunBlueprint>(this, BPGunClass);
+				BPGunNamesToSingletons.Add(FName(RowDefinition.GunDefinitionId), Singleton);
+			}
+		}
+		
+			
+		if (RowDefinition.LoadableCPP.IsNull() && RowDefinition.LoadableBP.IsNull())
+		{
+			UE_LOG(LogArtillery, Warning, TEXT("GunLoader: Gun row: [%s] has neither a BP or C++ loadable"), *Key.ToString());
 		}
 	});
 }
@@ -79,11 +62,14 @@ void UStaticGunLoader::Initialize(FSubsystemCollectionBase& Collection)
 void UStaticGunLoader::Deinitialize()
 {
 	Super::Deinitialize();
+	
+	// Currently the guns contain a strong pointer to their singleton instance, which means you should be careful with actually making sure guns are... disarmed early
+	BPGunNamesToSingletons.Reset();
 }
 
-TSharedPtr<FArtilleryGun> UStaticGunLoader::GetNewInstanceUninitialized(FString RequestedGunDefinitionID)
+TSharedPtr<FArtilleryGun> UStaticGunLoader::GetNewInstanceUninitialized(const FName& RequestedGunDefinitionID)
 {
-	FString* TrueName = CommonNameToProperNameMapping.Find(RequestedGunDefinitionID);
+	FName* TrueName = CommonNameToProperNameMapping.Find(RequestedGunDefinitionID);
 	if (TrueName)
 	{
 		UScriptStruct** GhostlyGun = ZardozMapping.Find(*TrueName);

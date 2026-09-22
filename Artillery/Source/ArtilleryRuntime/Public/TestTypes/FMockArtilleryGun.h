@@ -31,7 +31,7 @@ struct ARTILLERYRUNTIME_API FMockArtilleryGun : public FArtilleryGun
 	
 public:
 	// this can be handed into abilities.
-	friend class UArtilleryPerActorAbilityMinimum;
+	friend class UAGunBitBP;
 
 	//this just sets the gunkey.
 	//this mock doesn't use the delegate chaining, because it doesn't use abilities.
@@ -41,13 +41,9 @@ public:
 	};
 
 	virtual void PreFireGun(
-		const FGameplayAbilitySpecHandle Handle,
-		const FGameplayAbilityActorInfo* ActorInfo,
-		const FGameplayAbilityActivationInfo ActivationInfo,
-		const EventBufferInfo FireAction = EventBufferInfo::Default(),
-		const FGameplayEventData* TriggerEventData = nullptr,
-		bool RerunDueToReconcile = false,
-		int DallyFramesToOmit = 0, bool VerifiedFrame = false) 
+		FArtilleryStates OutcomeStates,
+		int DallyFramesToOmit,
+		bool RerunDueToReconcile, bool VerifiedFrame = false, const EventBufferInfo FireAction = EventBufferInfo::Default())
 		override
 	{
 	}
@@ -55,11 +51,7 @@ public:
 	virtual void FireGun(
 		FArtilleryStates OutcomeStates,
 		int DallyFramesToOmit,
-		const FGameplayAbilityActorInfo* ActorInfo,
-		const FGameplayAbilityActivationInfo ActivationInfo,
-		bool RerunDueToReconcile,
-		const FGameplayEventData* TriggerEventData,
-		FGameplayAbilitySpecHandle Handle) 
+		bool RerunDueToReconcile)
 		override
 	{
 	}
@@ -67,11 +59,7 @@ public:
 	virtual void PostFireGun(
 		FArtilleryStates OutcomeStates,
 		int DallyFramesToOmit,
-		const FGameplayAbilityActorInfo* ActorInfo,
-		const FGameplayAbilityActivationInfo ActivationInfo,
-		bool RerunDueToReconcile,
-		const FGameplayEventData* TriggerEventData,
-		FGameplayAbilitySpecHandle Handle) 
+		bool RerunDueToReconcile) 
 		override
 	{
 	}
@@ -79,13 +67,13 @@ public:
 	virtual bool Initialize(
 		const FGunKey& KeyFromDispatch,
 		const bool MyCodeWillHandleKeys,
-		UArtilleryPerActorAbilityMinimum* PF = nullptr,
-		UArtilleryPerActorAbilityMinimum* PFC = nullptr,
-		UArtilleryPerActorAbilityMinimum* F = nullptr,
-		UArtilleryPerActorAbilityMinimum* FC = nullptr,
-		UArtilleryPerActorAbilityMinimum* PtF = nullptr,
-		UArtilleryPerActorAbilityMinimum* PtFc = nullptr,
-		UArtilleryPerActorAbilityMinimum* FFC = nullptr)
+		UAGunBitBP* PF = nullptr,
+		UAGunBitBP* PFC = nullptr,
+		UAGunBitBP* F = nullptr,
+		UAGunBitBP* FC = nullptr,
+		UAGunBitBP* PtF = nullptr,
+		UAGunBitBP* PtFc = nullptr,
+		UAGunBitBP* FFC = nullptr)
 		override
 	{
 		return ARTGUN_MACROAUTOINIT(MyCodeWillHandleKeys);

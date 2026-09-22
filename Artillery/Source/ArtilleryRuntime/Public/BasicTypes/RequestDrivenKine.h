@@ -1,6 +1,6 @@
 ﻿#pragma once
 #include "ArtilleryDispatch.h"
-#include "NeedA.h"
+#include "RequestRouter.h"
 
 //shares the lifecycle of the owner.
 struct ManagedRequestingKine

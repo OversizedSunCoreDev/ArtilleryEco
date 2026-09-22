@@ -9,6 +9,9 @@
 #include "KeyedConcept.h"
 #include "FBarrageKey.h"
 #include "seq/SeqU64Prefix.hpp"
+	
+#include "EdGraphUtilities.h"
+#include "SlateFwd.h"
 
 #include "BarrageDispatch.h"
 #include "FArtilleryGun.h"
@@ -17,6 +20,30 @@
 #include "Subsystems/WorldSubsystem.h"
 
 #include "InventoryDispatch.generated.h"
+
+
+class AUInventoryTriggerProxy;
+
+USTRUCT(BlueprintType)
+struct FSoundPinBag
+{
+	GENERATED_BODY()
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Custom Data")
+	FName AvailableSoundsAtEditTime;
+};	
+
+USTRUCT(Blueprintable)
+struct FEventParameterPackage
+{
+	GENERATED_BODY()
+	FSkeletonKey EventKey; //I don't remember what this was supposed to be. I go one week where I'm light on comments and I suffer immediately.
+	double VolumePercentage0to100 = 0; 
+	FVector Loc = {0,0,0};
+	uint32 Hash()
+	{
+		return HashCombineFast(  GetTypeHash(EventKey), GetTypeHash(Loc));
+	}
+};
 
 /**
  * Hi! If you're looking at Inventory, you're probably (hopefully) trying to either do fast queries that allow you to compose behaviors
@@ -27,6 +54,7 @@
  * 
  * This is not a complete inventory system. I'm not sure a fully general one is possible.
  * It's not something we wanted to include in the core of artillery, because it is a little out of scope.
+ * On the other hand, it's pretty hard to build this with just attribs and tags, so we do want to provide it.
  * Finally, this is headless - there's no UI included in Inventory. Eventually, a lot of it will appear in sunflower!
  * 
  * What it is:
@@ -45,7 +73,7 @@
  *		like when some fucker puts on three rings instead of two, because someone made a hand of glory item? well, the hand of glory item just adds a third ring socket.
  *		That's not something that describes well with the triples. you can do it, but it's awkward, and as someone with a decade of experience using graph DBs:
  *		paradigm purity can fuck itself.
- *		3) Item Instance keys! These are special keys that contain a reference to their item archetype uniquely in their actual key layout!
+ *		3) Item Instance keys! These are special keys that contain a reference to their item Definition uniquely in their actual key layout!
  *		In simple systems, they may also contain a set reference! Sockets actually do, and it's very useful. This isn't a great fit for everything,
  *		so we don't enforce or assume it. (It also makes almost the whole key just the set and instance. This is Not Great for technical reasons.)
  *		Instance keys and variations on this hierarchical key concept form the backbone of what allows Inventory to answer certain kinds of queries in
@@ -56,7 +84,7 @@
  *		Inventory Sets
  *		Results Sets
  *		
- *		Item Archetype Keys
+ *		Item Definition Keys
  *		Item Instance Keys
  *		Attribute-keys-as-currency
  *		
@@ -76,14 +104,58 @@
  *		
  * 
  */
+//oh boy this is a mess.
 UCLASS()
 class ARTILLERYRUNTIME_API UInventoryDispatch : public UTickableWorldSubsystem, public ISkeletonLord, public ITickHeavy
 {
 	GENERATED_BODY()
-    //TPair<FSkeletonKey, FVector2d> worked fine...
+	//TPair<FSkeletonKey, FVector2d> worked fine...
 	friend class UArtilleryDispatch;
 	friend class FRequestRouter;
 public:
+	
+	//Okay, this gets a bit odd. These exist SPECIFICALLY so that we have a good way to do a very particular set of things
+	//We need to be able to choose if an effect plays in predicted frames, and then ensure that if so, it plays at most once.
+	//So cues run on verified frames and map to the UE cue concept.
+	//Effect keys run in predicted frames
+	//both have a concept of idempotence. this means that we need to EITHER be able to persist the keys across rollbacks, which is borderline satanic
+	//since the things generating the keys won't persist, or we need a key to be its own idempotence token, which means every key must generate exactly the same way
+	//no matter what. Thankfully, this is a pretty common problem and even doing it very fast and locklessly is pretty solved. still annoying though.
+	TArray<FAssetData> Sounds;
+
+
+	
+	
+	
+	//TODO TODO TODO PERFORMANCE HAZARD
+	//this design can be made WAY more elegant. We also do not care yet.
+	//if we use it, I'll fix it up.
+	seq::concurrent_set<FSKEffectTicket> FiredEffectSet;
+	seq::concurrent_map<FSKEffectTicket, FEventParameterPackage> EventParamsToFire;
+	
+	seq::concurrent_set<FSKCueTicket> FiredCueSet;
+	seq::concurrent_map<FSKCueTicket, FEventParameterPackage> CueParamsToFire;
+	UPROPERTY()
+	TMap<FSKSoundFXDefinitionKey, USoundBase*> SFXDefinitionKeyToSound;
+	UPROPERTY()
+	TMap<FSKSoundFXDefinitionKey, FSKSoundFXDefinitionKey> FNameToSoundKey;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sounds")
+	TArray<FName> SoundNamesForPulldown;
+	UFUNCTION()
+	TArray<FName> GetSoundNamesOptions() const
+	{
+		return SoundNamesForPulldown;
+	}
+	
+	TMap<uint32, FName> CueDefinitionKeyToAssetName;
+	FSKEffectTicket GetSoundEffectTicket(FSkeletonKey OwnerOrSource, FSkeletonKey EffectDefinition, FEventParameterPackage EffectParameters, bool UseParametersForHash);
+
+	//this can run any time but will only fire once per ticket.
+	//tickets are an idempotent construct.
+	bool FireSoundEffect(FSKEffectTicket Nyooooom);
+
+
 	constexpr static uint32 Inventory_MAPPINGCADENCE = 32;
 	seq::ordered_set<FSimpleTriggerGun> TriggerLinkedGuns;
 	enum SpecialPlugKeySlices : uint64
@@ -95,7 +167,7 @@ public:
 		Conditions	  = 0x51c51c
 	};
 
-	std::atomic<uint64_t> MonotonicKey = 1;//starts at 1, in case we want item archetypes to simply be hash-blanked item keys, which frankly is sounding good.
+	std::atomic<uint64_t> MonotonicKey = 1;//starts at 1, in case we want item Definitions to simply be hash-blanked item keys, which frankly is sounding good.
 	
 	
 	//note that ordered set is the order that things are added in, not a sorted order.
@@ -131,14 +203,8 @@ public:
 	
 	//this can be used to look up the quest that owns a given trigger using just the meta field embedded in the trigger's key if needed.
 	seq::concurrent_map<uint32, FInventoryQuest> MetaFieldToQuest;
-	bool FetchQuest(FSkeletonKey MustHaveValidMetaField, FInventoryQuest& OutParam)
-	{
-		
-		return 
-		MetaFieldToQuest.visit((MustHaveValidMetaField.Obj & SFIX_MaskForMetaBits) >> 32, [&](auto& a) { OutParam = a.second; })
-		!= 0;
-	}
-	
+	bool FetchQuest(FSkeletonKey MustHaveValidMetaField, FInventoryQuest& OutParam);
+
 	//uses a double buffer model
 	//could be considered a shadowcopy I guess.
 	struct FSafeDataSet
@@ -176,25 +242,27 @@ public:
 	
 	using OwnedSets = FInventoryResultSet;//GOT THAT OUROBOROS IN ME, OUROBOROS
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+	
+	//each supported type ends up basically having a load helper,
+	//a graph pin factory, and a pulldown implementation.
+	static void LoadSoundsHelper(TMap<FSKSoundFXDefinitionKey, 
+	USoundBase*>& SFXDefinitionKeyToSound, 
+	TMap<FSKSoundFXDefinitionKey, FSKSoundFXDefinitionKey>& FNameToSoundKey,
+	TArray<FName>& SoundNamesForPulldown,
+	TArray<FAssetData>& Sounds
+	);
 	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
 	virtual void Deinitialize() override;
 	virtual void Tick(float DeltaTime) override;
 	virtual TStatId GetStatId() const override;
 
 	uint64 GetSubtypedPrefix(SKELLY type, uint32 Notched28BitKey) // if you didn't notch it, it will _GET_ notched
-	{
-		uint64 ret = (type >> 28) | ((Notched28BitKey & SKELLY::SFIX_NotchKeyForMetaUse) << 4);
-		return ret;
-	}
-	
+	;
+
 	uint64 BuildKnownKey(SKELLY type, uint32 Notched28BitKey, SpecialPlugKeySlices KnownSlice) // if you didn't notch it, it will _GET_ notched
-{
-		uint64 ret = GetSubtypedPrefix(type, Notched28BitKey);
-		ret = (ret << 28) | KnownSlice;
-		return ret;
-}
-	
-	
+	;
+
+
 	UArtilleryDispatch* ArtilleryDispatch;
 	UArtilleryProjectileDispatch* ProjectileDispatch;
 	bool GetSetKeysByOwner(FSkeletonKey Owner, OwnedSets& OutParamOptionallyLiveMemory);
@@ -221,16 +289,16 @@ public:
 	FInventoryResultSet GetSubsetByTag(FGameplayTag Tag, FInventoryResultSet B);
 	seq::radix_set<unsigned long long>::const_iterator GetInventoriesOfKey(FSkeletonKey Owner); // privileged for sanity reasons. i'm not a monster.
 	TArray<FInventorySetKey> GetKeysFromResultSet(FInventoryResultSet ToUnpack);
-	
-	
+	;
+	FSkeletonKey CreateQueuedTriggerOnVerifiedFrame(FTransform LocationnAndDimensions);
 	//pairwise
 	TPair<FSKSocketKey, FSkeletonKey> PlugToSocket(FSkeletonKey A, FSKSocketKey Into, FSkeletonKey SocketOwnedBy); 
 	TPair<FSKSocketKey, FSkeletonKey> PlugToSocket(FSkeletonKey A, FSKSocketKey Into, PlayerKey SocketOwnedBy);
 	//Bind Operators
 	FSKItemKey AddItemInstanceToSet(FSKItemKey Place, FInventorySetKey Into);
-	FInventorySetKey GiveShiny(FSkeletonKey A, FSKItemArchetypeKey B);
-	FSKItemKey InstanceItem(FSkeletonKey OptionalOwner, FSKItemArchetypeKey A);
-	FInventorySetKey GiveSpecificShiny(FSkeletonKey A, FSKItemKey B);
+	FInventorySetKey GiveNewInstanceToSet(FSkeletonKey A, FSKItemDefinitionKey B);
+	FSKItemKey InstanceItem(FSkeletonKey OptionalOwner, FSKItemDefinitionKey A);
+	FInventorySetKey GiveSpecificInstance(FSkeletonKey A, FSKItemKey B);
 	FSKSocketKey GrantSocketToSet(FInventorySetKey Set);
 	FInventorySetKey GrantSetToKey (FSkeletonKey Owner);
 	
@@ -285,14 +353,24 @@ protected:
 public:
 	virtual void ArtilleryTick(uint64_t TicksSoFar) override;
 	
+	UFUNCTION(Blueprintable, Category="Artillery|ReadOnly|Attributes")
+	bool IDM_TrySFX(FSkeletonKey OwnerOrSource, FSkeletonKey EffectDefinition, FEventParameterPackage EffectParameters, bool UseParametersForHash);
+	
 	void RunDelayedTriggers() {};
+
+protected:
+	//this ONLY runs on verified frames.
+	void FireCue(FSKCueTicket Nyooooom);
 
 private:
 	constexpr static int OrdinateSeqKey = ORDIN::E_D_C::InventorySystem;
-	virtual bool RegistrationImplementation() override; 
+	virtual bool RegistrationImplementation() override;
+
 	void ItemInstance(FTriggerInstance& ToCreate)
 	{
-		ToCreate.MyKey = FSKItemInstance(MonotonicKey++, ToCreate.MyKey.GetSK().Meta(), SFIX_SubtypeSelector::SFIX_ST_ONE);
+		ToCreate.MyKey = FSKItemInstance(MonotonicKey++, ToCreate.MyKey.GetSK().GetShiftedMeta(), SFIX_SubtypeSelector::Tradiitional_Item);
 	}
 
 };
+
+

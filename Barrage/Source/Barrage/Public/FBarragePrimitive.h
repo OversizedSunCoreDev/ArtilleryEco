@@ -191,6 +191,23 @@ struct PossibleRecordType
 	PrecursorDefRef* NeverDoThis;
 };
 */
+
+/*
+* GroupID and SubGroupID allow granularity in disabling collisions against objects in the same collision layer.
+* https://jrouwe.github.io/JoltPhysics/class_group_filter_table.html
+* GroupFilterTables specify:
+* - If one of the objects is in the cInvalidGroup the objects will collide.
+* - If the objects are in different groups they will collide.
+* - If they're in the same group but their collision filter is different they will not collide.
+* - If they're in the same group and their collision filters match, we'll use the SubGroupID and the table below.
+*/
+struct BARRAGE_API FBarrageCollisionGroupSettings
+{
+	JPH::CollisionGroup::GroupID GroupID = JPH::CollisionGroup::cInvalidGroup;
+	JPH::CollisionGroup::SubGroupID SubGroupID = 0;
+	const JPH::GroupFilter* GroupFilter = nullptr;
+};
+
 THIRD_PARTY_INCLUDES_START
 PRAGMA_PUSH_PLATFORM_DEFAULT_PACKING
 typedef seq::concurrent_map<FBarrageKey, FBLet> KeyToFBLet;

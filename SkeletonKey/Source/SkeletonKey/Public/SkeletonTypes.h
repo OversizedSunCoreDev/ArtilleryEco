@@ -50,21 +50,94 @@ public:
 		return oss.str();
 	}
 
-	FORCEINLINE uint32 Meta() const
+	//these getters probably seem superfluous but we added them
+	//because single entry point reduces mistakes.
+	//this is shifted and so it's useful for building dependent keys
+	//or pretty printing, but not as useful necessarily for matching.
+	//you may want getunshiftedmeta
+	FORCEINLINE uint32 GetShiftedMeta() const
 	{
-		return  ((Obj  >> 32) & SFIX_MaskForMetaBits);
+		return  ((Obj & SFIX_MaskForMetaBits)>> 32);
+	}
+	
+	//the bit exact string of the meta in the original location. 
+	FORCEINLINE uint32 GetUnshiftedMeta() const
+	{
+		return  ((Obj & SFIX_MaskForMetaBits));
+	}
+	
+	//id is the same shifted or unshifted.
+	//id is often called hash for historical reasons.
+	FORCEINLINE uint32 GetID() const
+	{
+		return  static_cast<uint32>(Obj);
+	}
+	
+	//gets the type and shifts it down.
+	//don't use this for matching the SK types.
+	FORCEINLINE uint32 GetShiftedType() const
+	{
+		return  ((GET_SK_TYPE(Obj ) >> 60));
+	}
+	//doesn't shift. used for sk internals.
+	uint64_t GetUnshiftedType() const 
+	{
+		return GET_SK_TYPE(Obj);
 	}
 	
 	FString PrettyPrint() const
 	{
+		return FString::Printf(TEXT("ID: %lu, Meta: %lu, Type: %s"),
+								   GetID(),
+								   GetShiftedMeta(),
+								   *GetTypeNameString()); 
+	}
+	
+	FString PrettyPrintUnshifted() const
+	{
 		std::ostringstream oss;
-		oss << "Type " << std::hex << (GET_SK_TYPE(Obj ) >> 60)
-		<< " Meta " << std::hex << ((Obj  >> 32) & SFIX_MaskForMetaBits)
-		<< " Hash " << std::hex << static_cast<uint32>(Obj);
+		oss << "ID " << std::hex << GetID()
+		<< " Meta " << std::hex << GetUnshiftedMeta()
+		<< "Type " << std::hex << GetUnshiftedType();
 		return FString(oss.str().c_str());
 	}
 	
+	FAnsiString PrettyPrintAnsi() const
+	{
+		return FAnsiString::Printf("ID: %lu, Meta: %lu, Type: %ls",
+		                           GetID(),
+		                           GetShiftedMeta(),
+		                           *GetTypeNameString()); 
+	}
 	
+	FString GetTypeNameString() const
+	{
+		switch (GET_SK_TYPE(Obj))
+		{
+		case SKELLY::SFIX_GunOrAbilityInstance:
+		{
+			return "GunOrAbilityInstance!";
+		}
+		case SKELLY::SFIX_GunOrAbilityPrototypeKey:
+		{
+			return "GunOrAbilityPrototypeKey";
+		}
+		case SKELLY::SFIX_ProjectileOrDeployable:
+		{
+			return "ProjectileOrDeployable";
+		}
+		case SKELLY::SFIX_BarrageKey:
+		{
+			return "BarrageKey";
+		}
+		case SKELLY::SFIX_ActorOrActorlike:
+		{
+			return "ActorOrActorlike";
+		}
+		default:
+			return FString::Printf(TEXT("GetTypeNameString unknown type %llu"), GET_SK_TYPE(Obj));
+		}
+	}
 	static bool IsValid(const FSkeletonKey& Other)
 	{
 		return Other != FSkeletonKey::Invalid();
@@ -114,7 +187,7 @@ public:
 	//two, some key types may be notched by default, which would allow you to extract the meta value and use it directly as a key
 	//this gives us a limited hierarchical mechanism, but it's actually used mostly to avoid needing reverse lookups. after all,
 	//the parent key could be any key you needed to store, I suppose. if we see a lot of that, I'll rename the param.
-	static FSkeletonKey GenerateDependentKey(uint64_t parent, uint32_t localunique, uint64_t type = SKELLY::SFIX_ItemArchetype)
+	static FSkeletonKey GenerateDependentKey(uint64_t parent, uint32_t localunique, uint64_t type = SKELLY::SFIX_ItemDefinition)
 	{
 		auto ret = parent & SKELLY::SFIX_NotchKeyForMetaUse;
 		ret = (ret << 32) | localunique;
@@ -122,10 +195,15 @@ public:
 		return FSkeletonKey(ret);
 	};
 	
-	uint64_t GetType() const 
+	//Definition keys have their META and SUBTYPE set, but not their hash. Setting the hash makes them into an INSTANCE of that DEFINITION
+	static FSkeletonKey GenerateInstanceFromDefinition(FSkeletonKey parent, uint32_t localunique)
 	{
-		return GET_SK_TYPE(*this);
-	}
+		auto ret = localunique & SKELLY::SFIX_NotchKeyForMetaUse;
+		ret = parent.Obj | localunique;
+		return FSkeletonKey(ret);
+	};
+	
+
 };
 
 template<>
@@ -151,8 +229,7 @@ public:
 	explicit ActorKey(const unsigned int rhs) {
 		Obj = rhs;
 		Obj <<= 32;
-		//this doesn't seem like it should work, but because the SFIX bit patterns are intentionally asym
-		//we actually do reclaim a bit of randomness.
+		//this is prettttttty stupid.
 		Obj += rhs; 
 		Obj = FORGE_SKELETON_KEY(Obj, SKELLY::SFIX_ActorOrActorlike);
 	}
@@ -387,7 +464,9 @@ struct SKELETONKEY_API FGunInstanceKey
 	GENERATED_BODY()
 	friend struct FSkeletonKey;
 public:
-	uint64_t Obj;
+	
+	UPROPERTY(VisibleAnywhere, Transient)
+	uint64 Obj;
 	
 	explicit FGunInstanceKey()
 	{

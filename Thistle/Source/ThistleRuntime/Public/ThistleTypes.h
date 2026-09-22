@@ -176,14 +176,16 @@ struct THISTLERUNTIME_API F_TPOIInstanceData: public  F_ArtilleryKeyInstanceData
 	
 	FVector ShuckPoi(FStateTreeExecutionContext& Context, bool& ShuckedSuccessfully) const
 	{
+		
+		auto Dispatch = Context.GetWorld()->GetSubsystem<UArtilleryDispatch>();
 		switch (Mode) {
 		case E_PointOfInterestMode::VectorOnly:
 			ShuckedSuccessfully = !(Vec3.ContainsNaN());
 			return Vec3;
 		case E_PointOfInterestMode::KeyOnly:
-			return UArtilleryLibrary::K2_GetBarrageLocIfAny(Context.GetWorld(), PointOfInterestKey, ShuckedSuccessfully);
+			return UArtilleryLibrary::GetLocation(Dispatch, PointOfInterestKey, ShuckedSuccessfully);
 		case E_PointOfInterestMode::KeyRelativeVec:
-			FVector RequiresNANCheck = UArtilleryLibrary::K2_GetBarrageLocIfAny(Context.GetWorld(), PointOfInterestKey, ShuckedSuccessfully);
+			FVector RequiresNANCheck = UArtilleryLibrary::GetLocation(Dispatch, PointOfInterestKey, ShuckedSuccessfully);
 			if (ShuckedSuccessfully)
 			{
 				if (!Vec3.ContainsNaN())

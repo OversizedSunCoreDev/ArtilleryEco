@@ -63,6 +63,7 @@ class SKELETONKEY_API IKeyedConstruct : public ICanReady
 {
 	GENERATED_IINTERFACE_BODY()
 	
+	UFUNCTION(BlueprintCallable)
 	virtual FSkeletonKey GetMyKey() const
 	{
 		UE_LOG(

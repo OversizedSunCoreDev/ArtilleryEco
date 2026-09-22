@@ -15,18 +15,14 @@ class UStaticGunLoader : public UGameInstanceSubsystem //note game instance life
 ///that said, I haven't done an actual feasibility assess on that in UE yet.
 {
 	GENERATED_BODY()
-	
-	inline static auto GamePath = TEXT("DataTable'/Game/DataTables/GunDefinitions.GunDefinitions'");
-	//we don't really recommend using this path for long, but we ship with it because we believe you should be
-	//able to run software. I k n o w I'm old fashioned.
-	inline static auto EcoPath = TEXT("DataTable'/Artillery/DataTables/GunDefinitions.GunDefinitions'");
 public:
 	
 	//If you rename this, it had better be a funnier name than this.
-	TMap<FString, UScriptStruct*> ZardozMapping; //The Gun Is, For Lack Of A Better Term, Good.
+	UPROPERTY()
+	TMap<FName, UScriptStruct*> ZardozMapping; //The Gun Is, For Lack Of A Better Term, Good.
 	//I think we should use a skeletonkey here or a tag or SOMETHING. SOMETHING other than a raw-string as the key.
 	//I don't know WHAT yet tho. I'm real anxious about this. this has to be a solved problem.
-	TMap<FString, FString> CommonNameToProperNameMapping; //yea. yea ok.
+	TMap<FName, FName> CommonNameToProperNameMapping; //yea. yea ok.
 
 //	A success might emit a set of log lines that looks a lot like this:
 // 	LogTemp: Warning: GunLoader: Loading from /Script/Bristle54.GunWeeRocket
@@ -38,15 +34,21 @@ public:
 	virtual void Deinitialize() override;
 	//There are a number of ways to get around the fixed typing of the shared pointer when deriving other loaders, but I recommend
 	//defactoring here and building an internal templated impl class rather than futzing around. atm, yagni tho
-	virtual TSharedPtr<FArtilleryGun> GetNewInstanceUninitialized(FString RequestedGunDefinitionID);
+	virtual TSharedPtr<FArtilleryGun> GetNewInstanceUninitialized(const FName& RequestedGunDefinitionID);
 	virtual ~UStaticGunLoader() override;
 	
-	UDataTable* Definitions = nullptr;
+	
+	UPROPERTY()
+	TObjectPtr<UDataTable> Definitions;
+	
+	
+	// This is where BP instances for guns live for now (as singletons per-type, we can't spam NewObject on another thread too much) 
+	// Note these can be kept alive from their artillery thread representation being a strong ptr but that is more of a fallback and not intended to be the main thing
+	UPROPERTY()
+	TMap<FName, TObjectPtr<class UArtilleryGunBlueprint>> BPGunNamesToSingletons;
 	
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
 	FArtilleryGun BaseTypeBinding; //we need this so that we can extract a uclass object for artillerygun
-
-	auto AssetTable() { return GamePath; }
 };
 
 /** We'll be using this UE method. It talks about objects, but that's not UObjects, it's just... objects.

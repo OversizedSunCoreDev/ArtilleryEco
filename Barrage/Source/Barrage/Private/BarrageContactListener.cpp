@@ -42,8 +42,7 @@ BarrageContactListener::BarrageContactListener(UBarrageDispatch* Barrage)
 
 //TODO: This is a JANKY hack for character collisions and basically doesn't include enough info to really get
 //fine grained about stuff.
-void BarrageContactListener::OnContactAdded(const JPH::CharacterVirtual* inCharacter, const JPH::BodyID& inBodyID2,
-	const JPH::SubShapeID& inSubShapeID2, JPH::RVec3Arg inContactPosition, JPH::Vec3Arg inContactNormal,
+void BarrageContactListener::OnContactAdded(const JPH::CharacterVirtual* inCharacter, const JPH::CharacterContact& inContact,
 	JPH::CharacterContactSettings& ioSettings)
 {
 		TRACE_CPUPROFILER_EVENT_SCOPE_STR("Report Contact");
@@ -53,7 +52,7 @@ void BarrageContactListener::OnContactAdded(const JPH::CharacterVirtual* inChara
 				MyBarrage->GenerateBarrageKeyFromBodyId(inCharacter->GetInnerBodyID()) 
 					); // hey so good chance this is our problem.
 			
-			auto Ent2 = BarrageContactEntity(MyBarrage->GenerateBarrageKeyFromBodyId(inBodyID2));
+			auto Ent2 = BarrageContactEntity(MyBarrage->GenerateBarrageKeyFromBodyId(inContact.mBodyB));
 			//in general, almost nothing should push the character without explicitly invoking one of the apply forces functions.
 			//the exception RIGHT NOW is other non-enemy non-hitboxed movers, and terrain. this is in part because the player weighs 1 Unit
 			//to make the math for forces easier. That is Not Very Many Units.
@@ -70,16 +69,16 @@ void BarrageContactListener::OnContactAdded(const JPH::CharacterVirtual* inChara
 }
 
 //TODO: this needs replaced when we go to multiplayer.
-void BarrageContactListener::OnCharacterContactAdded(const JPH::CharacterVirtual* inCharacter,
-	const JPH::CharacterVirtual* inOtherCharacter, const JPH::SubShapeID& inSubShapeID2,
-	JPH::RVec3Arg inContactPosition, JPH::Vec3Arg inContactNormal, JPH::CharacterContactSettings& ioSettings)
+void BarrageContactListener::OnCharacterContactAdded(const JPH::CharacterVirtual *inCharacter,
+											const JPH::CharacterContact &inContact,
+											JPH::CharacterContactSettings &ioSettings)
 {
 		TRACE_CPUPROFILER_EVENT_SCOPE_STR("Report Contact");
 		if (MyBarrage)
 		{
 			auto Ent1 = BarrageContactEntity(MyBarrage->GenerateBarrageKeyFromBodyId(inCharacter->GetInnerBodyID()));
 			
-			auto Ent2 = BarrageContactEntity(MyBarrage->GenerateBarrageKeyFromBodyId(inOtherCharacter->GetInnerBodyID()));
+			auto Ent2 = BarrageContactEntity(MyBarrage->GenerateBarrageKeyFromBodyId(inContact.mBodyB)); //TODO: this may be wrong...
 			MyBarrage->HandleContactAdded(Ent1, Ent2);
 		}  
 }

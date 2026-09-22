@@ -8,6 +8,8 @@
 #include "Anim/AsyncAnimValidationAndUtils.h"
 #endif
 
+DEFINE_LOG_CATEGORY(LogArtillery)
+
 #define LOCTEXT_NAMESPACE "FArtilleryRuntimeModule"
 
 void FArtilleryRuntimeModule::StartupModule()

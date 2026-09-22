@@ -1,7 +1,7 @@
 // ReSharper disable CppMemberFunctionMayBeConst
 #include "ArtilleryDispatch.h"
 #include "FArtilleryGun.h"
-#include "NeedA.h"
+#include "RequestRouter.h"
 #include "ABarragePlayerController.h"
 #include "Engine/GameInstance.h"
 #include "GameFramework/GameState.h"
@@ -24,6 +24,32 @@
 #include "Threads/FArtilleryStateTreesThread.h"
 #include "Threads/FArtilleryTicklitesThread.h"
 
+UArtilleryDispatch::UArtilleryDispatch()
+{
+	GameplayTagContainerToDataMapping = MakeShareable(new AtomicTagArray());
+	RequestorQueue_Abilities_TripleBuffer = MakeShareable(new BufferedEvents());
+	RequestorQueue_Locomos = MakeShareable(new BufferedMoveEvents());
+	GunToFiringFunctionMapping = MakeShareable(new TMap<FGunKey, FArtilleryFireGunFromDispatch>());
+	AttributeSetToDataMapping = MakeShareable(new AttrCuckoo());
+	IdentSetToDataMapping = MakeShareable(new IdentCuckoo());
+	KeyToControlliteMapping = MakeShareable(new TMap<FSkeletonKey, Machlet>());
+	VectorSetToDataMapping = MakeShareable(new TMap<FSkeletonKey, Attr3MapPtr>());
+	GunByKey = MakeShareable(new TMap<FSkeletonKey, TSharedPtr<FArtilleryGun>>());
+#if WITH_EDITOR
+	ArtilleryDebugger = MakeShared<class ArtilleryDebugger>();
+#endif
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+}
+
 bool UArtilleryDispatch::RegistrationImplementation()
 {
 	GameplayTagContainerToDataMapping->Init();
@@ -31,9 +57,8 @@ bool UArtilleryDispatch::RegistrationImplementation()
 	AttributeSetToDataMapping = MakeShareable(new AttrCuckoo());
 	RequestRouter = MakeShareable(new FRequestRouter());
 	TransformUpdateQueue = BarrageDispatch->GameTransformPump;
-	UCanonicalInputStreamECS* InputECS = GetWorld()->GetSubsystem<UCanonicalInputStreamECS>();
-	ArtilleryAsyncWorldSim.CablingControlStream = InputECS->getNewStreamConstruct(APlayer::CABLE);
-	ArtilleryAsyncWorldSim.BristleconeControlStream = InputECS->getNewStreamConstruct(APlayer::ECHO);
+	ArtilleryAsyncWorldSim.CablingControlStream = InputStreamECS->getNewStreamConstruct(APlayer::CABLE);
+	ArtilleryAsyncWorldSim.BristleconeControlStream = InputStreamECS->getNewStreamConstruct(APlayer::ECHO);
 	UE_LOG(LogTemp, Warning, TEXT("ArtilleryDispatch:Subsystem: World beginning play"));
 	// getting input from Bristle
 	UseNetworkInput.store(true);
@@ -51,11 +76,11 @@ bool UArtilleryDispatch::RegistrationImplementation()
 	ArtilleryAsyncWorldSim.StartTicklitesApply = StartTicklitesApply;
 	ArtilleryAsyncWorldSim.StartTicklitesSim = StartTicklitesSim;
 	ArtilleryAsyncWorldSim.StartRunAhead = StartRunAhead;
+	ArtilleryAsyncWorldSim.PostRunFrameProcessingLoop = PostRunFrameProcessingLoop;
 	ArtilleryAsyncWorldSim.InputRingBuffer = MakeShareable(new PacketQ(256));
 	UCablingWorldSubsystem* DirectLocalInputSystem = GetWorld()->GetSubsystem<UCablingWorldSubsystem>();
 	ArtilleryAsyncWorldSim.InputSwapSlot = MakeShareable(new IncQ(256));
 	DirectLocalInputSystem->DestructiveChangeLocalOutboundQueue(ArtilleryAsyncWorldSim.InputSwapSlot);
-	UCanonicalInputStreamECS* InputStreamECS = GetWorld()->GetSubsystem<UCanonicalInputStreamECS>();
 	ArtilleryAsyncWorldSim.ContingentInputECSLinkage = InputStreamECS;
 	ArtilleryAsyncWorldSim.ContingentPhysicsLinkage = BarrageDispatch;
 	ArtilleryAsyncWorldSim.UTransformLink = TransformDispatch;
@@ -157,6 +182,22 @@ void UArtilleryDispatch::FinishAndCleanupThreadsAndTicklites()
 	{
 		___LIVING->IsReady = false;
 	}
+	
+	// IF the sim is running we NEED to wait for one simulation to finish. We cannot just randomly delete things ituses
+	if (ArtilleryAsyncWorldSim.IsInitialized() && ArtilleryAsyncWorldSim.IsRunning())
+	{
+		if (ArtilleryAsyncWorldSim.bPaused == false)
+		{
+			// Pause the sim, then wait a bit for it to ACTUALLY be not running
+			ArtilleryAsyncWorldSim.bPaused =true;
+			if (!PostRunFrameProcessingLoop->Wait(FTimespan::FromSeconds(8.f)))
+			{
+				ensureMsgf(false, TEXT("UArtilleryDispatch::FinishAndCleanupThreadsAndTicklites PostRunFrameProcessingLoop wait timed out. "
+						   "This means we did not correctly guess the sim is running or the frame took more than 8 entire seconds (very bad) unless it's during editor startup or a breakpoint."));
+			}
+		}
+	}
+	
 	StartTicklitesSim->Trigger();
 	ArtilleryAIWorker_LockstepToWorldSim.Stop();
 	ArtilleryTicklitesWorker_LockstepToWorldSim.Stop();
@@ -164,6 +205,7 @@ void UArtilleryDispatch::FinishAndCleanupThreadsAndTicklites()
 	ArtilleryAIWorker_LockstepToWorldSim.Exit();
 	StartTicklitesApply->Trigger();
 	StartRunAhead->Trigger();
+	PostRunFrameProcessingLoop->Trigger();
 	//We have to wait on worldsim, but we actually can just hard kill ticklites.
 
 	if (Ticklite_Thread.IsValid())
@@ -209,6 +251,7 @@ void UArtilleryDispatch::Initialize(FSubsystemCollectionBase& Collection)
 	
 	BarrageDispatch = Collection.InitializeDependency<UBarrageDispatch>();
 	TransformDispatch = Collection.InitializeDependency<UTransformDispatch>();
+	InputStreamECS = Collection.InitializeDependency<UCanonicalInputStreamECS>();
 }
 
 void UArtilleryDispatch::PostInitialize()
@@ -287,29 +330,9 @@ void UArtilleryDispatch::ProcessRequestRouterGameThread()
 					{
 					case ArtilleryRequestType::FireAGun:
 						{
-							TSharedPtr<FArtilleryGun> GunHoldOpen = GunByKey->FindRef(Request.Gun);
-							TDelegate<void(TSharedPtr<FArtilleryGun>, bool, EventBufferInfo)>* FireFunction =
-								GunToFiringFunctionMapping->Find(Request.Gun);
-
-							if (FireFunction != nullptr && GunHoldOpen)
-							{
-								EventBufferInfo def = EventBufferInfo::Default();
-								def.Action = ArtIPMKey::InternallyStateless;
-								TotalFirings += FireFunction->ExecuteIfBound(GunHoldOpen, false, def);
-							}
-							else
-							{
-								// TODO - we are absolutely going to want to turn this and things like it into a periodic
-								//		  log call to avoid clogging log files
-								UE_LOG(
-									LogTemp,
-									Error,
-									TEXT(
-										"ArtilleryDispatch::ProcessRequestRouterGameThread: Error processing FireGun request with gun key [id: %llu, name: %s]"
-									),
-									Request.Gun.GunInstanceID.Obj,
-									*Request.Gun.GunDefinitionID);
-							}
+							// Guns have moved to the artillery thread! Good for them!!!
+							// (FArtilleryBusyWorker::ProcessRequestRouterBusyWorkerThread)
+							ensure(false);
 						}
 						break;
 					// *****************
@@ -361,40 +384,9 @@ void UArtilleryDispatch::ProcessRequestRouterGameThread()
 						break;
 					case ArtilleryRequestType::GetAnUnboundGun:
 						{
-							IdMapPtr WordsOfPower = GetRelationships(Request.SourceOrSelf);
-							FGunKey Gun = GetGun(Request.Gun.GunDefinitionID, ActorKey(Request.SourceOrSelf));
-							FGunInstanceKey BANG = Gun.GunInstanceID;
-							if (WordsOfPower)
-							{
-								TSharedPtr<FConservedAttributeKey> MaterialComponent = WordsOfPower.Get()->FindOrAdd(
-									Request.Relationship);
-								if (MaterialComponent)
-								{
-									MaterialComponent.Get()->SetCurrentValue(BANG);
-								}
-								else
-								{
-									TSharedPtr<FConservedAttributeKey> PowerWordGun = MakeShareable(
-										new FConservedAttributeKey);
-									PowerWordGun->SetBaseValue(BANG);
-									PowerWordGun->SetCurrentValue(BANG);
-									WordsOfPower.Get()->Add(Request.Relationship, PowerWordGun);
-								}
-							}
-							else
-							{
-								TSharedPtr<TMap<Ident, IdentPtr>> RelationshipMap = MakeShareable(new IdentityMap());
-
-								//TODO: swap this to loading values from a data table, and REMOVE this fallback.
-								//If we want defaults, those defaults should ALSO live in a data table, that way when a defaulting bug screws us
-								//maybe we can fix it without going through a full cert using a data only update.
-								TSharedPtr<FConservedAttributeKey> PowerWordGun = MakeShareable(
-									new FConservedAttributeKey);
-								RelationshipMap->Add(Request.Relationship, PowerWordGun);
-								PowerWordGun->SetBaseValue(BANG);
-								PowerWordGun->SetCurrentValue(BANG);
-								RegisterOrAddRelationships(Request.SourceOrSelf, RelationshipMap);
-							}
+							// Guns have moved to the artillery thread! Good for them!!!
+							// (FArtilleryBusyWorker::ProcessRequestRouterBusyWorkerThread)
+							ensure(false);						
 						}
 						break;
 					case ArtilleryRequestType::SpawnParticleSystemAtLocation:
@@ -469,7 +461,6 @@ void UArtilleryDispatch::Tick(float DeltaTime)
 		ArtilleryDebugger->Draw(DeltaTime);
 	}
 #endif
-	RunGuns(); // ALL THIS WORK. FOR THIS?! (Okay, that's really cool)
 	
 	// both transform dispatch and gamesim must be ready. Otherwise, let the queue build up.
 	if (ensure(TransformDispatch))
@@ -494,7 +485,7 @@ TStatId UArtilleryDispatch::GetStatId() const
 }
 
 // TODO - Rename to ConjureGun, not renaming right now
-FGunKey UArtilleryDispatch::GetGun(const FString& GunDefinitionID, const FSkeletonKey& ProbableOwner) const
+FGunKey UArtilleryDispatch::GetGun(const FName& GunDefinitionID, const FSkeletonKey& ProbableOwner) const
 {
 	const UWorld* World = GetWorld();
 	if (World != nullptr)

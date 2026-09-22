@@ -12,6 +12,16 @@
 class ABarrageDebugDrawActor;
 
 namespace JPH {
+	
+	FORCEINLINE FColor ToFColorFromJoltColor(JPH::ColorArg Color)
+	{
+		return FColor(Color.r, Color.g, Color.b, Color.a);
+	};
+	FORCEINLINE JPH::Color ToJoltColor(const FColor Color)
+	{
+		return JPH::Color(Color.R, Color.G, Color.B, Color.A);
+	};
+	
 	/// Implementation specific batch object
 	class BatchImpl : public RefTargetVirtual {
 	public:

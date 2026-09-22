@@ -1,6 +1,8 @@
 /Linux*
+/WASM*
 /VS20*
 /XCode*
 /MinGW*
+/Ninja*
 /Doxygen
 /CoverageReport

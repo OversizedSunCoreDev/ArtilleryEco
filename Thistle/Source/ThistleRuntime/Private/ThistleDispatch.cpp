@@ -44,7 +44,7 @@ void UThistleDispatch::ArtilleryTick(uint64_t TicksSoFar)
 		for(TTuple<ActorKey, TObjectPtr<AThistleInject>>& Enemy : ThistleBehavioralist->ActorToThistleAIMapping)
 		{
 			bool YouAliveInThere = false;
-			FVector center = UArtilleryLibrary::implK2_GetLocation(UArtilleryDispatch::Get(GetWorld()),  Enemy.Key, YouAliveInThere);
+			FVector center = UArtilleryLibrary::GetLocation(UArtilleryDispatch::Get(GetWorld()),  Enemy.Key, YouAliveInThere);
 			if (YouAliveInThere)
 			{
 				FVector2d TwoDCenter = FVector2d(center.X, center.Y);

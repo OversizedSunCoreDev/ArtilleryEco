@@ -2,9 +2,6 @@
 
 #pragma once
 
-#include "CoreMinimal.h"
-#include "CoreTypes.h"
-
 #include "ArtilleryCommonTypes.h"
 #include "ArtilleryProjectileDispatch.h"
 #include "FAttributeMap.h"
@@ -13,7 +10,31 @@
 #include "Abilities/GameplayAbility.h"
 #include "UArtilleryAbilityMinimum.h"
 #include "Camera/CameraComponent.h"
+#include "Templates/TypeHash.h"
 #include "FArtilleryGun.generated.h"
+
+//Will be used in conjunction with the gun definition rows to set up player guns.
+//currently just testing the ergonomics of it.
+USTRUCT(BlueprintType)
+struct ARTILLERYRUNTIME_API FArtilleryGunProperties
+{
+	GENERATED_BODY()
+	friend uint32 GetTypeHash(const FArtilleryGunProperties& Arg)
+	{
+		uint32 Hash = HashCombine(GetTypeHash(Arg.Intent), GetTypeHash(Arg.GunKey));
+		return Hash;
+	}
+
+	UPROPERTY(BlueprintReadWrite)
+	E_ArtilleryIntents Intent;
+	UPROPERTY(BlueprintReadWrite)
+	FGunKey GunKey;
+	UPROPERTY(BlueprintReadWrite)
+	TMap<E_AttribKey, float> Attributes;
+	UPROPERTY(BlueprintReadWrite)
+	TMap<E_VectorAttrib, FVector> VectorAttributes;
+};
+	
 
 /**
  * * GUNS MUST BE INITIALIZED. This is handled in the various loaders and builders, but any unique gun MUST be initialized.
@@ -34,9 +55,11 @@ struct ARTILLERYRUNTIME_API FArtilleryGun
 	
 public:
 	// this can be handed into abilities.
-	friend class UArtilleryPerActorAbilityMinimum;
+	friend class UAGunBitBP;
+	UPROPERTY(BlueprintReadOnly)
 	FGunKey MyGunKey;
-	ActorKey MyProbableOwner;
+	UPROPERTY(BlueprintReadOnly)
+	FSkeletonKey MyProbableOwner;
 	bool ReadyToFire = false;
 	
 	UArtilleryDispatch* MyDispatch;
@@ -69,25 +92,25 @@ public:
 	//is not GC reachable. This means that as soon as the reference expires and the sweep completes, as was, you'll
 	//get an error.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	TObjectPtr<UArtilleryPerActorAbilityMinimum> Prefire;
+	TObjectPtr<UAGunBitBP> Prefire;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	TObjectPtr<UArtilleryPerActorAbilityMinimum> PrefireCosmetic;
+	TObjectPtr<UAGunBitBP> PrefireCosmetic;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	TObjectPtr<UArtilleryPerActorAbilityMinimum> Fire;
+	TObjectPtr<UAGunBitBP> Fire;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	TObjectPtr<UArtilleryPerActorAbilityMinimum> FireCosmetic;
+	TObjectPtr<UAGunBitBP> FireCosmetic;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	TObjectPtr<UArtilleryPerActorAbilityMinimum> PostFire;
+	TObjectPtr<UAGunBitBP> PostFire;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	TObjectPtr<UArtilleryPerActorAbilityMinimum> PostFireCosmetic;
+	TObjectPtr<UAGunBitBP> PostFireCosmetic;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	TObjectPtr<UArtilleryPerActorAbilityMinimum> FailedFireCosmetic;
+	TObjectPtr<UAGunBitBP> FailedFireCosmetic;
 
 	//we use the GunBinder delegate to link the MECHANICAL abilities to phases.
 	//cosmetics don't get linked the same way.
@@ -113,23 +136,10 @@ public:
 	//OnGameplayAbilityEnded doesn't actually let you know if the ability was canceled.
 	//That's... not so good. We use OnGameplayAbilityEndedWithData instead.
 	virtual void PreFireGun(
-		const FGameplayAbilitySpecHandle Handle,
-		const FGameplayAbilityActorInfo* ActorInfo,
-		const FGameplayAbilityActivationInfo ActivationInfo,
-		const EventBufferInfo FireAction = EventBufferInfo::Default(),
-		const FGameplayEventData* TriggerEventData = nullptr,
-		bool RerunDueToReconcile = false,
-		int DallyFramesToOmit = 0, bool VerifiedFrame = false);
+		FArtilleryStates OutcomeStates,
+		int DallyFramesToOmit,
+		bool RerunDueToReconcile, bool VerifiedFrame = false, const EventBufferInfo FireAction = EventBufferInfo::Default());
 
-	/**************************************
-	 *the following are delegates for Ability Minimum.
-	 * We could likely use this with some cleverness to avoid object alloc while still getting
-	 * per instance behavior but atm, that's not something I'm building.
-	 * Dally frames don't work yet. But they will. Be ready.
-	 *
-	 * These are fired during end ability.
-	 *****************************************
-	 */
 
 	/*
 	 * This fires the gun when the prefire ability succeeds.
@@ -139,20 +149,12 @@ public:
 	virtual void FireGun(
 		FArtilleryStates OutcomeStates,
 		int DallyFramesToOmit,
-		const FGameplayAbilityActorInfo* ActorInfo,
-		const FGameplayAbilityActivationInfo ActivationInfo,
-		bool RerunDueToReconcile,
-		const FGameplayEventData* TriggerEventData,
-		FGameplayAbilitySpecHandle Handle);;
+		bool RerunDueToReconcile);
 
 	virtual void PostFireGun(
 		FArtilleryStates OutcomeStates,
 		int DallyFramesToOmit,
-		const FGameplayAbilityActorInfo* ActorInfo,
-		const FGameplayAbilityActivationInfo ActivationInfo,
-		bool RerunDueToReconcile,
-		const FGameplayEventData* TriggerEventData,
-		FGameplayAbilitySpecHandle Handle);;
+		bool RerunDueToReconcile);;
 
 	//The unusual presence of the modal switch AND a requirement for the related parameter is due to the
 	//various fun vagaries of inheritance. IF you override this function, and any valid child class should,
@@ -164,13 +166,13 @@ public:
 	virtual bool Initialize(
 		const FGunKey& KeyFromDispatch,
 		const bool MyCodeWillSetGunKey,
-		UArtilleryPerActorAbilityMinimum* PF = nullptr,
-		UArtilleryPerActorAbilityMinimum* PFC = nullptr,
-		UArtilleryPerActorAbilityMinimum* F = nullptr,
-		UArtilleryPerActorAbilityMinimum* FC = nullptr,
-		UArtilleryPerActorAbilityMinimum* PtF = nullptr,
-		UArtilleryPerActorAbilityMinimum* PtFc = nullptr,
-		UArtilleryPerActorAbilityMinimum* FFC = nullptr);
+		UAGunBitBP* PF = nullptr,
+		UAGunBitBP* PFC = nullptr,
+		UAGunBitBP* F = nullptr,
+		UAGunBitBP* FC = nullptr,
+		UAGunBitBP* PtF = nullptr,
+		UAGunBitBP* PtFc = nullptr,
+		UAGunBitBP* FFC = nullptr);
 
 	void SetGunKey(FGunKey NewKey);
 

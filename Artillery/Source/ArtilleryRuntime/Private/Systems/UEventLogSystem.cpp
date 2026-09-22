@@ -25,7 +25,7 @@ void UEventLogSubsystem::ArtilleryTick()
 {
 	if (MyDispatch != nullptr)
 	{
-		int32 now = UArtilleryLibrary::GetTotalsTickCount(this->GetWorld());
+		int32 now = UArtilleryLibrary::GetTotalsTickCount(UArtilleryDispatch::Get(GetWorld()));
 		// RemoveAllSwap does not maintain ordering but is the faster option
 		// For now we do not care about ordering
 		EventLog.RemoveAllSwap([now] (const FArtilleryEvent& Event)
@@ -37,7 +37,7 @@ void UEventLogSubsystem::ArtilleryTick()
 
 void UEventLogSubsystem::LogEvent(E_EventLogType LoggingType, FSkeletonKey LoggingKey, FSkeletonKey Other)
 {
-	int32 now = UArtilleryLibrary::GetTotalsTickCount(this->GetWorld());
+	int32 now = UArtilleryLibrary::GetTotalsTickCount(UArtilleryDispatch::Get(GetWorld()));
 	FArtilleryEvent NewEvent;
 	NewEvent.LogTime = now;
 	NewEvent.ExpiryTime = now + (5 * 120);

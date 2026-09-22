@@ -1,5 +1,7 @@
 ﻿#pragma once
 #include "CoreMinimal.h"
+#include "EPhysicsLayer.h"
+#include "ArtilleryCommonTypes.h"
 #include "EAttributes.h"
 #include "ConservedTagContainer.h"
 #include "SkeletonTypes.h"
@@ -27,7 +29,7 @@ enum ArtilleryRequestType
 	SpawnInstancedStaticMesh,
 	//Ticklites
 	DeferredTickliteInstantiation,
-	
+	CreateTriggerOnVerifiedTick,
 	AddText,
 	AddName,
 	FreeTextAndName,

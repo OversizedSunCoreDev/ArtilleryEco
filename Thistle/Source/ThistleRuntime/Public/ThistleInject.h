@@ -88,7 +88,7 @@ class THISTLERUNTIME_API AThistleInject : public ADestructible
 
 public:
 	UPROPERTY(EditAnywhere)
-	FString GunDefinitionID;
+	FName GunDefinitionID;
 	/** Properties that define how the component can move.
 	 * normally on character movement... but we don't USE that.
 	 * We can't.

@@ -68,6 +68,7 @@ public:
 	void Initialize(UArtilleryDispatch* InDispatchOwner);
 	void Draw(float DeltaTime);
 private:
+	void DrawImGuiOverview();
 	void DrawImGuiInputDebug();
 	void CaptureInputDebugData();
 	void CompareRawInputs();

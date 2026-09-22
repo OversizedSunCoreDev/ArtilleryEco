@@ -51,7 +51,7 @@ EStateTreeRunStatus FMoveOrder::Tick(FStateTreeExecutionContext& Context, const 
 	//run on cadence.
 
 	bool found = false;
-	FVector HereIAm = UArtilleryLibrary::implK2_GetLocation(UArtilleryDispatch::Get(Context.GetWorld()), InstanceData.KeyOf, found);
+	FVector HereIAm = UArtilleryLibrary::GetLocation(UArtilleryDispatch::Get(Context.GetWorld()), InstanceData.KeyOf, found);
 	if (found && (HereIAm - location).Length() <= Tolerance)
 	{
 		return EStateTreeRunStatus::Succeeded;

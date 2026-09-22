@@ -1,7 +1,15 @@
 #include "ArtilleryRuntime/Public/Debugging/ArtilleryDebugger.h"
 
 #include "ABarragePlayerController.h"
+#include "FArtilleryGun.h"
 #include "imgui.h"
+
+static TAutoConsoleVariable<bool> CVarEnableImGuiArtilleryOverview(
+	TEXT("imgui.Enable.Artillery.Overview"),
+	false,
+	TEXT(""),
+	ECVF_Default
+);
 
 static TAutoConsoleVariable<int32> CVarEnableImGuiArtilleryInput(
 	TEXT("imgui.Enable.Artillery.Input"),
@@ -113,13 +121,159 @@ void ArtilleryDebugger::Initialize(UArtilleryDispatch* InDispatchOwner)
 
 void ArtilleryDebugger::Draw(float DeltaTime)
 {
+	
 	if (CVarEnableImGuiArtilleryNetwork.GetValueOnGameThread() != 0)
 	{
 		NetworkDebug->Update(DeltaTime);
 		NetworkDebug->Draw();
 	}
 
+	DrawImGuiOverview();
+	
 	DrawImGuiInputDebug();
+}
+
+void ArtilleryDebugger::DrawImGuiOverview()
+{
+	if (!CVarEnableImGuiArtilleryOverview->GetBool())
+	{
+		return;
+	}
+	
+	const ImGui::FScopedContext ScopedContext;
+	if (!ScopedContext)
+	{
+		return;
+	}
+	
+	ImGui::SetNextWindowSize(ImVec2(700, 500), ImGuiCond_FirstUseEver);
+	
+	const bool bIsOnScreen = ImGui::Begin("Artillery Overview");
+	ON_SCOPE_EXIT
+	{
+		ImGui::End();
+	};
+	if (!bIsOnScreen)
+	{
+		return;
+	}
+	
+
+
+
+	UArtilleryDispatch* DispatchOwnerPtr = DispatchOwner.Get();
+	if (!DispatchOwnerPtr)
+	{
+		ImGui::Text("ArtilleryDebugger::DispatchOwner is invalid!");
+		return;
+	}
+
+	DispatchOwnerPtr->ArtilleryAsyncWorldSim.QueueFunctionFromAnyThreadAndWait([=]
+	{
+		TSharedPtr<const AttrCuckoo> AttributeMapping = DispatchOwnerPtr->GetAttributeSetToDataMapping();
+
+		TSharedPtr<const TMap<FSkeletonKey, TSharedPtr<FArtilleryGun>>> GunsByKey = DispatchOwnerPtr->GetGunByKeyMap();
+		
+		TSharedPtr<const TMap<FSkeletonKey, Attr3MapPtr>> VectorMapping = DispatchOwnerPtr->GetVectorSetToDataMapping();
+
+		
+		// @todo this might miss things that don't have float atributes?
+		int32 IncrementingIndex = 0;
+		AttributeMapping->visit_all([&](auto& AttribeMapElem)
+		{
+			FSkeletonKey Key = AttribeMapElem.first;
+			AttrMapPtr Attribute = AttribeMapElem.second;
+			IncrementingIndex++;
+			ImGui::PushID(IncrementingIndex);
+			ON_SCOPE_EXIT
+			{
+				ImGui::PopID();
+			};
+			
+			ImGui::Separator();
+			
+			FAnsiString NodeName = {};
+
+			switch (GET_SK_TYPE(Key))
+			{
+			case SKELLY::SFIX_GunOrAbilityInstance:
+			case SKELLY::SFIX_GunOrAbilityPrototypeKey:
+			{
+				auto FoundGunPtr = GunsByKey->Find(Key);
+				if (*FoundGunPtr)
+				{
+					auto& GunName = (*FoundGunPtr)->MyGunKey.GunDefinitionID;
+					NodeName = FAnsiString::Printf("%ls, (%s)", *GunName.ToString(), *Key.PrettyPrintAnsi());
+
+				}
+				break;
+			}
+			case SKELLY::SFIX_ActorOrActorlike:
+			{
+				auto FoundPtr = DispatchOwnerPtr->TransformDispatch->GetActorKineByObjectKey(Key);
+				if (FoundPtr)
+				{
+					const AActor* ActorPtr = FoundPtr->MySelf.Get();
+					if (ActorPtr)
+					{
+						
+						NodeName = FAnsiString::Printf("%ls, (%s)", *ActorPtr->GetActorNameOrLabel(), *Key.PrettyPrintAnsi());
+					}
+				}
+				break;
+			}
+			default: ;
+			}
+
+			
+			if (NodeName.IsEmpty())
+			{
+				NodeName = Key.PrettyPrintAnsi();
+			}
+			
+			if (ImGui::TreeNode(*NodeName))
+			{
+				ON_SCOPE_EXIT
+				{
+					ImGui::TreePop();
+				};
+				
+				if (ImGui::BeginTable("Attribute Table", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg))
+				{
+					ImGui::TableSetupColumn("Attribute", ImGuiTableColumnFlags_WidthFixed, 250.0f);
+					ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+					ImGui::TableHeadersRow();
+
+					for (auto& [AttributeKey, AttributeData] : *Attribute)
+					{
+						ImGui::TableNextRow();
+						ImGui::TableNextColumn();
+						ImGui::TextUnformatted(TCHAR_TO_ANSI(*StaticEnum<E_AttribKey>()->GetNameStringByValue(static_cast<uint64>(AttributeKey))));
+						ImGui::TableNextColumn();
+						ImGui::Text("%f", AttributeData->GetCurrentValue());
+					}
+
+					const TSharedPtr<TMap<E_VectorAttrib, TSharedPtr<FConservedVector>>>* VectorAttributes = VectorMapping->Find(Key);
+					
+					if (VectorAttributes && *VectorAttributes)
+					{
+						for (auto& [AttributeKey, AttributeData] : **VectorAttributes)
+						{
+							ImGui::TableNextRow();
+							ImGui::TableNextColumn();
+							ImGui::TextUnformatted(TCHAR_TO_ANSI(*StaticEnum<E_VectorAttrib>()->GetNameStringByValue(static_cast<uint64>(AttributeKey))));
+							ImGui::TableNextColumn();
+							ImGui::Text("%s", TCHAR_TO_ANSI(*AttributeData->CurrentValue.ToCompactString()));
+						}
+						
+					}
+					ImGui::EndTable();
+				}
+				
+			}
+		});
+	});
+	
 }
 
 void ArtilleryDebugger::DrawImGuiInputDebug()

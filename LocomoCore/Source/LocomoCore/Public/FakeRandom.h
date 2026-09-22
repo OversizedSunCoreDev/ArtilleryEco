@@ -34,7 +34,7 @@ public:
 	template<std::size_t LL, float mult>
 		constexpr static std::array<float, LL> t_mult(std::array<float, LL> rhs)
 	{
-		auto multiply = [](float a) -> float { return a * mult; };
+		auto multiply = [](float& a) -> void { a = a * mult; };
 		std::array<float, LL> ar;
 		std::for_each(
 			rhs.begin(), rhs.end(),

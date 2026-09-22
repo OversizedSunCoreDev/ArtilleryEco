@@ -354,7 +354,7 @@ void UThistleBehavioralist::SightLinesUpdate(const TArray<AActor*>& VisibleByAct
 
 FSkeletonKey UThistleBehavioralist::GetCurrentPlayer()
 {
-	return UArtilleryLibrary::GetLocalPlayerKey_LOW_SAFETY(MyDispatch);
+	return UArtilleryLibrary::GetLocalPlayerKey_LOW_SAFETY(MyDispatch->InputStreamECS);
 }
 
 void UThistleBehavioralist::ProcessRallyPoint()
@@ -569,7 +569,7 @@ uint32 UThistleBehavioralist::GetEnemiesWithinRangeOfPoint(
 		if (CurrentEnemyHealth > 0.f)
 		{
 			bool found = false;
-			auto ALocation= UArtilleryLibrary::implK2_GetLocation(MyDispatch, EnemyKey, found);
+			auto ALocation= UArtilleryLibrary::GetLocation(MyDispatch, EnemyKey, found);
 			if (found)
 			{
 				if (FVector::Distance(Location, ALocation) <= Range)

@@ -5,49 +5,45 @@
 #include "FMasks.h"
 #include "FGunDefinitionRow.generated.h"
 
+class UArtilleryGunBlueprint;
+
 USTRUCT(BlueprintType)
 struct FGunDefinitionRow : public FTableRowBase
 {
 	GENERATED_USTRUCT_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=GunDefinition)
-	FString GunDefinitionId;
+	FName GunDefinitionId;
 	
-	//these could BOTH be true. enjoy that, I guess. it's not implemented though.
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=GunDefinition)
-	bool IsCPP = false;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=GunDefinition)
-	bool IsBP = false;
-	
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=GunDefinition)
-	FString LoadableCPP;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=GunDefinition,  meta = (MetaStruct="/Script/ArtilleryRuntime.ArtilleryGun"))
+	TSoftObjectPtr<UScriptStruct> LoadableCPP;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=GunDefinition)
-	FString LoadableBP; 
+	TSoftClassPtr<UArtilleryGunBlueprint> LoadableBP; 
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=GunDefinition)
-	FString ProjectileDefinitionID; 
+	FName ProjectileDefinitionID; 
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=GunDefinition)
-	FString PreFireAbility;
+	UPROPERTY(EditDefaultsOnly)
+	TSoftClassPtr<UAGunBitBP> PreFireAbility;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=GunDefinition)
-	FString PreFireCosmeticAbility;
+	UPROPERTY(EditDefaultsOnly)
+	TSoftClassPtr<UAGunBitBP> PreFireCosmeticAbility;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=GunDefinition)
-	FString FireAbility;
+	UPROPERTY(EditDefaultsOnly)
+	TSoftClassPtr<UAGunBitBP>  FireAbility;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=GunDefinition)
-	FString FireCosmeticAbility;
+	UPROPERTY(EditDefaultsOnly)
+	TSoftClassPtr<UAGunBitBP>  FireCosmeticAbility;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=GunDefinition)
-	FString PostFireAbility;
+	UPROPERTY(EditDefaultsOnly)
+	TSoftClassPtr<UAGunBitBP>  PostFireAbility;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=GunDefinition)
-	FString PostFireCosmeticAbility;
+	UPROPERTY(EditDefaultsOnly)
+	TSoftClassPtr<UAGunBitBP> PostFireCosmeticAbility;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=GunDefinition)
-	FString FailureCosmeticAbility;
+	UPROPERTY(EditDefaultsOnly)
+	TSoftClassPtr<UAGunBitBP>  FailureCosmeticAbility;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=GunDefinition)
 	int32 BaseDamage = 0;
@@ -61,7 +57,14 @@ struct FGunDefinitionRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=GunDefinition)
 	int32 BaseRecoil = 0;
 	
+
 	//Unsure at this point in implementation if this value will always be respected.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=GunDefinition)
 	E_ArtilleryIntents IntendedRegistrationPattern = E_ArtilleryIntents::MenuIndex;
+	
+	UPROPERTY(BlueprintReadWrite)
+	TMap<E_AttribKey, float> Attributes;
+	UPROPERTY(BlueprintReadWrite)
+	TMap<E_VectorAttrib, FVector> VectorAttributes;
+	
 };

@@ -3,6 +3,11 @@
 #include "SkeletonTypes.h"
 #include "Skeletonize.h"
 #include "Templates/TypeHash.h"
+#include "DataTableEditorUtils.h"
+#include "Engine/DataTable.h"
+#include "SGraphPinNameList.h"
+#include "UObject/SoftObjectPtr.h"
+#include "Widgets/DeclarativeSyntaxSupport.h"
 THIRD_PARTY_INCLUDES_START
 #include "seq/ordered_map.hpp"
 #include "seq/concurrent_map.hpp"
@@ -13,6 +18,18 @@ THIRD_PARTY_INCLUDES_START
 THIRD_PARTY_INCLUDES_END
 #include "InventoryEssentialTypes.generated.h"
 #define Inventory_VERIFIEDFRAMETESTMODE true
+
+
+
+
+UENUM(BlueprintType, Blueprintable)
+enum class E_FidEffectParameter : uint8
+{
+	Volume,
+	None
+};
+
+
 //hi! Using a radix trie here allows us to search by partial prefix! this lets us pull just plugs, or just sockets, very very
 //very fast! it also allows us to search elegantly over the _meta_ in the keys themselves, which we've QUITE CAREFULLY
 //set up to present a structured hierarchy. this lets you access it VERY VERY FAST by just saying [type][parent_key]
@@ -24,23 +41,29 @@ struct SEQGetSKKey
 	}
 };
 using FCRKeyStruct = SeqSet64;
-struct ARTILLERYRUNTIME_API Prehashed
+
+//These are basically skeleton keys with some extra convenience methods on them that waste storage space but significantly
+//reduce incidence of insanity in even casual users. Sorry, but sometimes efficiency isn't efficient.
+USTRUCT()
+struct ARTILLERYRUNTIME_API FUSInventoryKeys
 {
-	virtual ~Prehashed() = default;
+	
+	GENERATED_BODY()
+	virtual ~FUSInventoryKeys() = default;
 
 	uint64_t MyKey = 0;
 	
-	friend uint32 GetTypeHash(const Prehashed& Arg)
+	friend uint32 GetTypeHash(const FUSInventoryKeys& Arg)
 	{
 		return MashFunctions::FastHash6432(Arg.MyKey);
 	}
 	
-	virtual bool operator==(const Prehashed& rhs) const {
+	virtual bool operator==(const FUSInventoryKeys& rhs) const {
 		return (MyKey == rhs.MyKey);
 	}
 };
 
-struct ARTILLERYRUNTIME_API FInventorySetKey : public  Prehashed
+struct ARTILLERYRUNTIME_API FInventorySetKey : public  FUSInventoryKeys
 {
 	constexpr static auto MasterKeyType = SFIX_SetOf;
 	FInventorySetKey(uint32 GetsSlicedTo28Bits, uint64_t ParentKey, SFIX_SubtypeSelector MySubtype)
@@ -72,22 +95,21 @@ struct ARTILLERYRUNTIME_API FInventorySetKey : public  Prehashed
 	}
 };
 
-//item instances use the subtype nibble for a set of four bitflags.
-//we only use two, leaving two to any other users.
-struct ARTILLERYRUNTIME_API FSKItemInstance : public Prehashed
+//item instances use the subtype field. they keep their definition hash in the meta, their instance hash in the hash field.
+//so they are of the form:        Type|Definition|Subtype|InstanceID  ->              	 0xTDDD DDDD SIII IIII,
+//where T is the 4 bit type field, S is the 4 bit subtype field, I is the 28 bit instance hash, and D is the 28 bit definition.
+//Consolidating them this way makes a number of operations less stupid.
+////////////////////////////////////////////////////////////////////////////
+///
+/// TESTING NOTE: 
+/// we'll wannna use specific subtypes where we can. 
+/// idk how to do that elegantly yet, so..
+///
+////////////////////////////////////////////////////////////////////////////
+struct ARTILLERYRUNTIME_API FSKItemInstance : public FUSInventoryKeys
 {
-	constexpr static auto MasterKeyType = SFIX_ItemInstance;
-	
-    bool IsStackable()
-    {
-	    return MyKey & SFIX_ItemInstanceStackableMask;
-    }
-	
-	bool IsPersistent()
-    {
-    	return MyKey & SFIX_ItemInstancePersistenceMask;
-    }
-	
+	constexpr static auto MasterKeyType = SFIX_InventoryItem;
+
 	FSKItemInstance(uint32 GetsSlicedTo28Bits, uint64_t ParentKeyOfItemInstance, SFIX_SubtypeSelector MySubtype)
 	{
 		MyKey = SFIX_DestructiveApplySubtype(
@@ -108,7 +130,7 @@ struct ARTILLERYRUNTIME_API FSKItemInstance : public Prehashed
 		return (MyKey == rhs.MyKey);
 	}
 	
-	inline bool operator==(const Prehashed& rhs) const override {
+	inline bool operator==(const FUSInventoryKeys& rhs) const override {
 		return (MyKey == rhs.MyKey);
 	}
 	
@@ -119,19 +141,20 @@ struct ARTILLERYRUNTIME_API FSKItemInstance : public Prehashed
 	}
 };
 
-struct ARTILLERYRUNTIME_API FSKItemArchetypeKey : public  Prehashed
+struct ARTILLERYRUNTIME_API FSKItemDefinitionKey : public  FUSInventoryKeys
 {
-	constexpr static auto MasterKeyType = SFIX_ItemArchetype;
+	constexpr static auto MasterKeyType = SFIX_ItemDefinition;
 	uint64_t MyKey = 0;
-	FSKItemArchetypeKey(uint32 GetsSlicedTo28Bits, SFIX_SubtypeSelector MySubtype, uint64_t ParentKey = 0)
+	FSKItemDefinitionKey(uint32 GetsSlicedTo28Bits, SFIX_SubtypeSelector MySubtype)
 	{
 		MyKey = SFIX_DestructiveApplySubtype(
-			SFIX_ImprintKeyDependency(ParentKey, GetsSlicedTo28Bits, MasterKeyType),
+			//oh hey, would you look at that. definition keys FORCE an empty instance so they're valid. Isn't that cute? :/
+			SFIX_ImprintKeyDependency(GetsSlicedTo28Bits, 0, MasterKeyType),
 			MySubtype);
 		
 	}
 
-	FSKItemArchetypeKey() = default;
+	FSKItemDefinitionKey() = default;
 
 	FSkeletonKey GetSK()
 	{
@@ -139,8 +162,50 @@ struct ARTILLERYRUNTIME_API FSKItemArchetypeKey : public  Prehashed
 	}
 };
 
+USTRUCT()
+struct ARTILLERYRUNTIME_API FSKSoundFXDefinitionKey : public  FUSInventoryKeys
+{
+	GENERATED_BODY()
+	constexpr static auto MasterKeyType = SFIX_SoundEffect;
+	FPrimaryAssetId AssetId; //convenience var'd.
+	uint64_t MyKey = 0;
+	FSKSoundFXDefinitionKey(FName SoundEffectName)
+	{
+		MyKey = SFIX_DestructiveApplySubtype(
+			//oh hey, would you look at that. definition keys FORCE an empty instance so they're valid. Isn't that cute? :/
+			SFIX_ImprintKeyDependency(GetTypeHash(SoundEffectName), 0, MasterKeyType),
+			SFX);
+	}
+	
+	FSKSoundFXDefinitionKey(uint32 SoundEffectIdFromShiftedMeta)
+	{
+		MyKey = SFIX_DestructiveApplySubtype(
+			//oh hey, would you look at that. definition keys FORCE an empty instance so they're valid. Isn't that cute? :/
+			SFIX_ImprintKeyDependency(SoundEffectIdFromShiftedMeta, 0, MasterKeyType),
+			SFX);
+	}
+	
+	explicit FSKSoundFXDefinitionKey(const FPrimaryAssetId& PrimaryAssetId)
+	{
+		AssetId = PrimaryAssetId;
+		FSKSoundFXDefinitionKey(PrimaryAssetId.ToString());
+	}
 
-struct ARTILLERYRUNTIME_API FSKPlugKey : public  Prehashed
+	FSkeletonKey GetSK()
+	{
+		return FSkeletonKey(MyKey);
+	}
+	FSKSoundFXDefinitionKey() = default;
+	
+	//generally, you shouldn't use this constructor, it's present in case I forgot some use case.
+	explicit FSKSoundFXDefinitionKey(const FString& String)
+	{
+		FSKSoundFXDefinitionKey(GetTypeHash(String));	
+	}
+};
+
+
+struct ARTILLERYRUNTIME_API FSKPlugKey : public  FUSInventoryKeys
 {
 	constexpr static auto MasterKeyType = SFIX_Socket;
 	FSKPlugKey(FSKItemInstance GetsSlicedTo28Bits, SFIX_SubtypeSelector MySubtype, FInventorySetKey ParentSet)
@@ -159,7 +224,7 @@ struct ARTILLERYRUNTIME_API FSKPlugKey : public  Prehashed
 	}
 };
 
-struct ARTILLERYRUNTIME_API FSKSocketKey : public  Prehashed
+struct ARTILLERYRUNTIME_API FSKSocketKey : public  FUSInventoryKeys
 {
 	constexpr static auto MasterKeyType = SFIX_Socket;
 	FSKSocketKey(uint32 GetsSlicedTo28Bits, FInventorySetKey ParentSet)
@@ -367,8 +432,9 @@ struct ARTILLERYRUNTIME_API FEventedInventoryData : public FInventoryData
 
 
 
-	enum WhatMattersToThis //I don't know that we'll really use these as bitflags, but there are damn good reasons you might.
+	enum class WhatMattersToThis : uint16  //I don't know that we'll really use these as bitflags, but there are damn good reasons you might.
 	{
+		None = 							0b0,
 		Player = 						0b1,
 		Enemy = 						0b10,
 		AnyMob =						0b11,
@@ -412,7 +478,7 @@ struct ARTILLERYRUNTIME_API FEventedInventoryData : public FInventoryData
 		{
 		};
 		FGunKey MyGun;
-		FSKItemInstance MyKey; // you can extract the archetype from this!
+		FSKItemInstance MyKey; // you can extract the Definition from this!
 		//the following two or three fields should probably be excised by creating guns that actually follow the logic.
 		TOptional<FGameplayTag> AddToInventoryEntitlements; //If set, all entities in the radius that matter to this trigger will get this tag added to them as an entitlement when it goes off
 		TOptional<FGameplayTag> TagNeededIfAny;
@@ -421,7 +487,7 @@ struct ARTILLERYRUNTIME_API FEventedInventoryData : public FInventoryData
 		//this is literally smaller than an optional. *sigh*
 		//if set, this trigger will act like an aura around that transform's center. it does not perform a minkowsky sum. Just measures from the center. Crudely.
 		FBarrageKey MyTransformLinkIfAny;
-		FBox2D BoxIfInQuadTrie;
+		FBox2D BoxIfInQuadTrie = FBox2D(ForceInit);
 		float radius = 100;		//sane initial value
 		int EntitiesInRadiusToPrime = 1;
 		int TimesTriggeredToSetOff = 1;
@@ -429,7 +495,7 @@ struct ARTILLERYRUNTIME_API FEventedInventoryData : public FInventoryData
 		int LastTickPrimed = -1;
 		int MaxAllowedDelayBetweenPrimedFrames = -1;//this just uses the triggered count as a smoothing or dejittering tool for "charging" triggers. add an allowed delay if you want the trigger to require continuous presence.
 		int TimesAllowedToTrigger = 1; //if you need more than this, you are a somewhat bad person.
-		WhatMattersToThis CategoryChecked;
+		WhatMattersToThis CategoryChecked = WhatMattersToThis::None;
 		FVector MyStartingLocation = FVector::ZeroVector;
 
 		bool CloseTrigger()
@@ -456,22 +522,25 @@ USTRUCT()
 			return true;
 		}
 		
-		virtual void PreFireGun(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo,
-		                        const EventBufferInfo FireAction = EventBufferInfo::Default(), const FGameplayEventData* TriggerEventData = nullptr, bool RerunDueToReconcile = false,
-		                        int DallyFramesToOmit = 0, bool VerifiedFrame = false) override
+	virtual void PreFireGun(
+		FArtilleryStates OutcomeStates,
+		int DallyFramesToOmit,
+		bool RerunDueToReconcile, bool VerifiedFrame = false, const EventBufferInfo FireAction = EventBufferInfo::Default()) override
 		{
 			if (VerifiedFrame || Inventory_VERIFIEDFRAMETESTMODE)
 			{
 				if (Precheck()){
-					FireGun(Fired, 0, ActorInfo, ActivationInfo, false, TriggerEventData, Handle);
+					FireGun(OutcomeStates, DallyFramesToOmit, RerunDueToReconcile);
 				}
 			}
 		}
 		
-		virtual void FireGun(FArtilleryStates OutcomeStates, int DallyFramesToOmit, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo,
-							 bool RerunDueToReconcile, const FGameplayEventData* TriggerEventData, FGameplayAbilitySpecHandle Handle) override
+	virtual void FireGun(
+	FArtilleryStates OutcomeStates,
+	int DallyFramesToOmit,
+	bool RerunDueToReconcile) override
 		{
-			FArtilleryGun::PostFireGun(OutcomeStates, DallyFramesToOmit, ActorInfo, ActivationInfo, RerunDueToReconcile, TriggerEventData, Handle);
+			FArtilleryGun::PostFireGun(OutcomeStates, DallyFramesToOmit, RerunDueToReconcile);
 		}
 
 		friend uint32 GetTypeHash(const FSimpleTriggerGun& Arg)
@@ -489,8 +558,103 @@ USTRUCT()
 	};
 
 
+//Idempotent keys can ONLY be generated by the dispatch. It's the only spot with enough knowledge to correctly generate them.
+struct ARTILLERYRUNTIME_API Idempotent
+{
+	friend class UInventoryDispatch;
+	friend struct std::hash<Idempotent>;
+	virtual ~Idempotent() = default;
 
-// Add specialization to the std namespace
+	friend uint32 GetTypeHash(const Idempotent& Arg)
+	{
+		return MashFunctions::FastHash6432(Arg.MyKey);
+	}
+	
+	virtual bool operator==(const Idempotent& rhs) const {
+		return (MyKey == rhs.MyKey);
+	}
+		
+protected:
+	uint64_t MasterKeyType = 0;
+	uint64_t MyKey = 0;
+
+};
+	
+
+
+
+//This key is type-preserving, like FSkeletonKey, but offers a semantic guarantee that this key can
+//be used for as a uniqueness ticket for idempotent effects like, say, gunshot sound effects
+//this allows us to make sure we don't play the effect every time we resimulate the frame.
+//So unless you want to hear sound effects a million times, maybe use this.
+struct ARTILLERYRUNTIME_API FSKEffectTicket : public Idempotent
+{
+	friend struct std::hash<FSKEffectTicket>;
+	FSKEffectTicket() = default;
+	FSKEffectTicket(FSkeletonKey Definition, uint32 IdempotenceTrick)
+	{
+		MasterKeyType = Definition.GetUnshiftedType();
+		MyKey = Definition.GenerateInstanceFromDefinition(Definition, IdempotenceTrick);
+	}
+	virtual  FSkeletonKey GetSK()
+	{
+		return FSkeletonKey(MyKey);
+	}
+};
+
+//Cues are generally actual UE Cues, and should only fire on verified frames.
+//This class is used with 
+struct ARTILLERYRUNTIME_API FSKCueTicket : public FSKEffectTicket
+{
+	friend struct std::hash<FSKCueTicket>;
+	FSKCueTicket() = default;
+
+	FSKCueTicket(FSkeletonKey Definition, uint32 IdempotenceTrick)
+	{
+		MasterKeyType = Definition.GetUnshiftedType();
+		if (MasterKeyType != SFIX_Cue)
+		{
+			MyKey = 0; //invalid.
+		}
+		else{
+			MyKey = Definition.GenerateInstanceFromDefinition(Definition, IdempotenceTrick);
+		}
+	}
+	virtual FSkeletonKey GetSK() override
+	{
+		return FSkeletonKey(MyKey);
+	}
+};
+
+
+
+
+// Add specializations to the std namespace
+namespace std {
+	template <>
+	struct hash<Idempotent> {
+		std::size_t operator()(const Idempotent& u) const noexcept {
+			return MashFunctions::FastHash64(u.MyKey);
+		}
+	};
+}
+namespace std {
+	template <>
+	struct hash<FSKEffectTicket> {
+		std::size_t operator()(const FSKEffectTicket& u) const noexcept {
+			return MashFunctions::FastHash64(u.MyKey);
+		}
+	};
+}
+namespace std {
+	template <>
+	struct hash<FSKCueTicket> {
+		std::size_t operator()(const FSKCueTicket& u) const noexcept {
+			return MashFunctions::FastHash64(u.MyKey);
+		}
+	};
+}
+
 namespace std {
 	template <>
 	struct hash<FSimpleTriggerGun> {

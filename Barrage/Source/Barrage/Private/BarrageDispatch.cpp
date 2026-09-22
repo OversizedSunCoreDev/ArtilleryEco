@@ -19,11 +19,10 @@
 void UBarrageDispatch::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-		if (BarrageDebugger.IsValid())
-		{
-			BarrageDebugger->Draw(DeltaTime);
-		}
-	
+	if (BarrageDebugger.IsValid())
+	{
+		BarrageDebugger->Draw(DeltaTime);
+	}
 }
 
 #endif
@@ -226,12 +225,13 @@ void UBarrageDispatch::CastRay(
 //and it's not clear to me that Shapefulness is going to actually be the defining shared
 //feature. I'm going to wait to refactor the types until testing is complete.
 FBLet UBarrageDispatch::CreatePrimitive(FBBoxParams& Definition, FSkeletonKey OutKey, uint16_t Layer, bool isSensor,
-                                        bool forceDynamic, bool isMovable, float AngularDamp, JPH::EAllowedDOFs AllowedDOF)
+                                        bool forceDynamic, bool isMovable, float AngularDamp, JPH::EAllowedDOFs AllowedDOF,
+										const FBarrageCollisionGroupSettings& CollisionGroupSettings)
 {
 	if (JoltGameSim)
 	{
 		AllowedDOF = isMovable ? AllowedDOF : JPH::EAllowedDOFs::None;
-		FBarrageKey temp = JoltGameSim->CreatePrimitive(Definition, Layer, isSensor, forceDynamic, isMovable, AngularDamp, AllowedDOF);
+		FBarrageKey temp = JoltGameSim->CreatePrimitive(Definition, Layer, isSensor, forceDynamic, isMovable, AngularDamp, AllowedDOF, CollisionGroupSettings);
 		return ManagePointers(OutKey, temp, Box);
 	}
 	return nullptr;
@@ -243,7 +243,8 @@ FBLet UBarrageDispatch::CreatePrimitive(FBBoxParams& Definition, FSkeletonKey Ou
 //and it's not clear to me that Shapefulness is going to actually be the defining shared
 //feature. I'm going to wait to refactor the types until testing is complete.
 FBLet UBarrageDispatch::CreatePrimitive(FBCapParams& Definition, FSkeletonKey OutKey, uint16_t Layer, bool isSensor,
-                                        bool forceDynamic, bool isMovable, float AngularDamp, JPH::EAllowedDOFs AllowedDOF)
+                                        bool forceDynamic, bool isMovable, float AngularDamp, JPH::EAllowedDOFs AllowedDOF,
+										const FBarrageCollisionGroupSettings& CollisionGroupSettings)
 {
 	if (JoltGameSim)
 	{
@@ -273,11 +274,12 @@ FBLet UBarrageDispatch::CreatePrimitive(FBCharParams& Definition, FSkeletonKey O
 	return nullptr;
 }
 
-FBLet UBarrageDispatch::CreatePrimitive(FBSphereParams& Definition, FSkeletonKey OutKey, uint16_t Layer, bool isSensor)
+FBLet UBarrageDispatch::CreatePrimitive(FBSphereParams& Definition, FSkeletonKey OutKey, uint16_t Layer, bool isSensor,
+										const FBarrageCollisionGroupSettings& CollisionGroupSettings)
 {
 	if (JoltGameSim)
 	{
-		FBarrageKey temp = JoltGameSim->CreatePrimitive(Definition, Layer, isSensor);
+		FBarrageKey temp = JoltGameSim->CreatePrimitive(Definition, Layer, isSensor, CollisionGroupSettings);
 		return ManagePointers(OutKey, temp, FBShape::Sphere);
 	}
 	return nullptr;
@@ -342,12 +344,12 @@ FBLet UBarrageDispatch::LoadEnemyHitboxFromStaticMesh(FBTransform& MeshTransform
 	return nullptr;
 }
 
-// void UBarrageDispatch::CreateHeightfieldLandscapeMesh(const TNotNull<const ALandscapeProxy*> LandscapeActor)
-// {
-// 	
-// 	check(JoltGameSim)
-// 	JoltGameSim->CreateHeightfieldLandscapeMesh(LandscapeActor);
-// }
+void UBarrageDispatch::CreateHeightfieldLandscapeMesh(const TNotNull<const ALandscapeProxy*> LandscapeActor)
+{
+	
+	check(JoltGameSim)
+	JoltGameSim->CreateHeightfieldLandscapeMesh(LandscapeActor);
+}
 
 //unlike our other ecs components in artillery, barrage dispatch does not maintain the mappings directly.
 //this is because we may have _many_ jolt sims running if we choose to do deterministic rollback in certain ways.
@@ -451,9 +453,16 @@ void UBarrageDispatch::StackUp()
 				++Adding;
 			}
 		}
-		// std::sort(Adds.data(), Adding....); add sort here once we have our ordering worked out.
-
+		
+		if (Adding>1)
+		{
+			JPH::QuickSort(Adds.begin(), Adds.begin()+Adding);
+		}
 		JPH::BodyInterface* BodyInt = JoltGameSim->body_interface;
+		if (RefilledUpTo > 1)
+		{
+			std::sort(InternalSortableSet.begin(), InternalSortableSet.begin()+RefilledUpTo, &FBPhysicsInput::Less);
+		}
 		//adding in one batch MASSIVELY reduces thread contention and the amount of quadtree messiness.
 		//it'd be honestly nice to batch the creation as well, but that hasn't actually been showing up in
 		//our execution cost metrics. instead, I think we're just getting be-beefed by the mess.

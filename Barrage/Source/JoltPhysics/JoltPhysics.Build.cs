@@ -50,17 +50,16 @@ public class JoltPhysics : ModuleRules
 			PrivateDefinitions.Add("JPH_BUILD_SHARED_LIBRARY");
 		}
 		
-
+		if (bDebugDraw) 
+		{
+			PublicDefinitions.Add("JPH_DEBUG_RENDERER");
+		}
 		
 		// Even during development it's kind of painful for every single sweep to be 10x slower.
 		// Enable bSlowerDebugCode when actually debugging Jolt internals
 		if (bSlowerDebugCode && Target.Configuration <= UnrealTargetConfiguration.DebugGame)
 		{
 			PublicDefinitions.Add("JPH_ENABLE_ASSERTS");
-			if (bDebugDraw) 
-			{
-				PublicDefinitions.Add("JPH_DEBUG_RENDERER");
-			}
 			
 			if (bProfiling)
 			{

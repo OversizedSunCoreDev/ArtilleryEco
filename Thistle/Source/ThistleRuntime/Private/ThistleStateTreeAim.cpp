@@ -13,7 +13,7 @@ EStateTreeRunStatus FAimTurret::Tick(FStateTreeExecutionContext& Context, const 
 	if (AreWeBarraging != nullptr)
 	{
 		bool found = true;
-		FVector HereIAm = UArtilleryLibrary::implK2_GetLocation(ArtilleryDispatch, InstanceData.KeyOf, found);
+		FVector HereIAm = UArtilleryLibrary::GetLocation(ArtilleryDispatch, InstanceData.KeyOf, found);
 		if (found)
 		{
 			if (!Shuck)
@@ -21,8 +21,8 @@ EStateTreeRunStatus FAimTurret::Tick(FStateTreeExecutionContext& Context, const 
 				return EStateTreeRunStatus::Failed;
 			}
 			FRotator Rot = UKismetMathLibrary::FindLookAtRotation(HereIAm, location);
-			Attr3Ptr MyRot = UArtilleryLibrary::implK2_GetAttr3Ptr(ArtilleryDispatch, InstanceData.KeyOf, E_VectorAttrib::AimVector, found);
-			if (found)
+			Attr3Ptr MyRot = UArtilleryLibrary::GetAttr3Ptr(ArtilleryDispatch, InstanceData.KeyOf, E_VectorAttrib::AimVector);
+			if (MyRot)
 			{
 				if (MyRot->CurrentValue.Equals(Rot.Vector(), 0.2f))
 				{

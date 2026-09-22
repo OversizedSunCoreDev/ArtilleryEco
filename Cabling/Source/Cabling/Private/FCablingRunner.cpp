@@ -117,6 +117,7 @@ uint64_t FCabling::FromKeyboardAndMouseState(uint32_t keyCount, GameInputKeyStat
 		boxing.buttons.set(12, true);
 	}
 
+	boxing.buttons.set(17, /*mouse mode swap bit*/ true);//we don't do anything with this yet, but!
 	uint64_t currentRead = boxing.PackImpl();
 	//don't check events because we may set an event to indicate that we're on keeb input....
 	return currentRead;
@@ -150,28 +151,14 @@ uint64_t FCabling::FromGamePadState(GameInputGamepadState state)
 	{
 		boxing.buttons.set(14, true);
 	}
-	if (state.buttons & GameInputGamepadDPadUp)
-	{
-		boxing.ly = -999;
-	}
-	else if (state.buttons & GameInputGamepadDPadDown)
-	{
-		boxing.ly = 999;
-	}
-	
-	if (state.buttons & GameInputGamepadDPadLeft)
-	{
-		boxing.lx = 999;
-	}
-	else if (state.buttons & GameInputGamepadDPadRight)
-	{
-		boxing.lx = -999;
-	}
 	
 	//we'll need a little damping over these which is why they're classed as virtual.
 	boxing.buttons.set(15, (state.buttons & GameInputGamepadLeftThumbstick) != 0);
 	
-	boxing.buttons.set(16, (state.buttons & GameInputGamepadRightThumbstick) != 0);
+	//set the swap bit if B is pressed, allowing us a little bit of fudge if we miss an input.
+	//generally, things the run on swap bits should trigger on _release_
+	boxing.buttons.set(16, (state.buttons & GameInputGamepadB) != 0);
+	boxing.buttons.set(17, /*mouse mode swap bit*/ false);//we don't do anything with this yet, but!
 	// UE_LOG(
 	// LogTemp,
 	// Warning,
@@ -194,7 +181,7 @@ uint64_t FCabling::FromGamePadState(GameInputGamepadState state)
 // normalized stick deflection in [-1, 1], scaled linearly by the player's sensitivity. This is
 // the whole of the ported "mouse look feel": relative counts in, proportional deflection out,
 // every count registering. Deliberately excluded, because they live elsewhere: the deadzone
-// (IntegerizedStick applies 0.1875), the per-count angular factor and pitch clamp (the
+// (IntegerizedStick applies k<0.1875), the per-count angular factor and pitch clamp (the
 // downstream look pipeline), and aim assist (a higher layer). Pure function: no state, no globals.
 float FCabling::ShapeMouseAxisToDeflection(float Delta, double sensitivity)
 {
@@ -220,6 +207,58 @@ uint64_t FCabling::CheckGamepadState(IGameInputReading* reading)
 	reading->GetGamepadState(&state);
 	return FromGamePadState(state);
 }
+
+struct SwapBitHandler
+{
+	//the indexes should always be the same.
+	//we track them separately for debug purposes only.
+	
+	uint64 StateBufferC[8];
+	uint8 indexC = 0;
+	uint64 StateBufferK[8];
+	uint8 indexK = 0;
+	void AddController(uint64_t ControllerByValue)
+	{
+		StateBufferC[indexC] = ControllerByValue;
+		indexC = (indexC + 1) % 8;
+	}
+	
+	void AddKeyboard(uint64_t ControllerByValue)
+	{
+		StateBufferK[indexK] = ControllerByValue;
+		indexK = (indexK + 1) % 8;
+	}
+	
+	uint64_t ApplySwapBitRules(uint64_t ControllerByValue)
+	{
+		
+		auto CurC = StateBufferC[indexC];
+		auto CurK = StateBufferK[indexK];
+		//cur not currently used... but may need.
+		
+		auto C1 = StateBufferC[
+			(indexC - 1) % 8
+			];
+		auto C2 = StateBufferC[
+			(indexC - 2) % 8
+			];
+		
+		auto K1 = StateBufferK[
+			(indexK - 1) % 8
+			];
+		auto K2 = StateBufferK[
+			(indexK - 2) % 8
+			];
+		auto TK = (K1 ^ K2);
+		auto TC = (C1 ^ C2);
+		auto truth = (TK | TC) & 0x0000000000000000000000000000000F;
+		
+		return ControllerByValue | truth; // effectively, if only one was set over the last two, we'll set next.
+	}
+	
+};
+
+
 
 //this is based directly on the gameinput sample code.
 uint32 FCabling::Run()
@@ -252,7 +291,7 @@ uint32 FCabling::Run()
 	constexpr uint32_t sendHertz = Cabling::BristleconeSendHertz;
 	constexpr int sendHertzFactor = sampleHertz / sendHertz;
 	constexpr int Period = 1000000 / sampleHertz; //swap to microseconds. standardizing.
-
+	SwapBitHandler TwiddleForHeld;
 	GuessedInputCount = 0;
 
 	constexpr auto HalfStep = std::chrono::microseconds(Period / 2);
@@ -334,7 +373,8 @@ uint32 FCabling::Run()
 					reading->GetDevice(&g_gamepad);
 				}
 				GamepadCurrentRead = CheckGamepadState(reading);
-
+				
+				
 				reading->Release();
 			}
 			else if (g_gamepad != nullptr) // if gamepad read failed but a gamepad exists, we're in a failed state.
@@ -342,6 +382,10 @@ uint32 FCabling::Run()
 				g_gamepad->Release(); //release it, we'll reacquire it on the next pass.
 				g_gamepad = nullptr;
 			}
+			TwiddleForHeld.AddController(GamepadCurrentRead);
+			TwiddleForHeld.AddKeyboard(KeyboardCurrentRead);
+			GamepadCurrentRead = TwiddleForHeld.ApplySwapBitRules(GamepadCurrentRead);
+			KeyboardCurrentRead = TwiddleForHeld.ApplySwapBitRules(KeyboardCurrentRead);
 			Sent = SendNew(Sent, PriorReadingGamepad, GamepadCurrentRead);
 			Sent = SendNew(Sent, PriorReadingKeyboard, KeyboardCurrentRead);
 			if (GamepadCurrentRead != BlankGamepad)

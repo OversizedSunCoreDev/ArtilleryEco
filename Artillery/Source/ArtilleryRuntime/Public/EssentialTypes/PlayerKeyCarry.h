@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "ArtilleryCommonTypes.h"
 #include "SkeletonTypes.h"
 #include "TransformDispatch.h"
 #include "KeyCarry.h"
