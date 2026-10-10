@@ -5,7 +5,6 @@
 #include "ABarragePlayerController.h"
 #include "Engine/GameInstance.h"
 #include "GameFramework/GameState.h"
-#include "GameFramework/PlayerState.h"
 #include <FTEntityFinalTickResolver.h>
 #include <FTGunFinalTickResolver.h>
 #include <FTJumpTimer.h>
@@ -35,19 +34,11 @@ UArtilleryDispatch::UArtilleryDispatch()
 	KeyToControlliteMapping = MakeShareable(new TMap<FSkeletonKey, Machlet>());
 	VectorSetToDataMapping = MakeShareable(new TMap<FSkeletonKey, Attr3MapPtr>());
 	GunByKey = MakeShareable(new TMap<FSkeletonKey, TSharedPtr<FArtilleryGun>>());
+	
+	
 #if WITH_EDITOR
 	ArtilleryDebugger = MakeShared<class ArtilleryDebugger>();
 #endif
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
 }
 
 bool UArtilleryDispatch::RegistrationImplementation()
@@ -82,8 +73,7 @@ bool UArtilleryDispatch::RegistrationImplementation()
 	ArtilleryAsyncWorldSim.InputSwapSlot = MakeShareable(new IncQ(256));
 	DirectLocalInputSystem->DestructiveChangeLocalOutboundQueue(ArtilleryAsyncWorldSim.InputSwapSlot);
 	ArtilleryAsyncWorldSim.ContingentInputECSLinkage = InputStreamECS;
-	ArtilleryAsyncWorldSim.ContingentPhysicsLinkage = BarrageDispatch;
-	ArtilleryAsyncWorldSim.UTransformLink = TransformDispatch;
+
 	//IF YOU REMOVE THIS. EVERYTHING EXPLODE. IN A BAD WAY.
 	//TARRAY IS A VALUE TYPE. SO IS TRIPLEBUFF I THINK.
 	ArtilleryAsyncWorldSim.RequestorQueue_Abilities_TripleBuffer = RequestorQueue_Abilities_TripleBuffer;
@@ -120,6 +110,44 @@ bool UArtilleryDispatch::RegistrationImplementation()
 	return true;
 }
 
+void UArtilleryDispatch::StoreArtilleryState(FArtilleryDataBuffer& State)
+{
+	auto& DispatchStateStruct = State.GenericData.Emplace_GetRef(TInstancedStruct<FArtilleryGenericData>::Make<FArtilleryDispatchState>({}));
+	FArtilleryDispatchState& StateStruct = DispatchStateStruct.GetMutable<FArtilleryDispatchState>();
+	
+	
+	StateStruct.GunToFiringFunctionMapping = *GunToFiringFunctionMapping;
+	StateStruct.AttributeSetToDataMapping = *AttributeSetToDataMapping;
+	StateStruct.KeyToControlliteMapping = *KeyToControlliteMapping;
+	
+	StateStruct.IdentSetToDataMapping = *IdentSetToDataMapping;
+	StateStruct.VectorSetToDataMapping = *VectorSetToDataMapping;
+	StateStruct.PlayersControlStreamMap = PlayersControlStreamMap;
+}
+
+void UArtilleryDispatch::LoadArtilleryState(const FArtilleryDataBuffer& State)
+{
+	const TInstancedStruct<FArtilleryGenericData>* FoundStateStruct = State.GenericData.FindByPredicate(
+		[](const TInstancedStruct<FArtilleryGenericData>& Value) { return Value.GetScriptStruct() == FArtilleryDispatchState::StaticStruct(); });
+	
+	if (!ensure(FoundStateStruct))
+	{
+		return;
+	}
+	
+	const FArtilleryDispatchState* StateStruct = FoundStateStruct->GetPtr<FArtilleryDispatchState>();
+	if (ensure(StateStruct))
+	{
+		*GunToFiringFunctionMapping = StateStruct->GunToFiringFunctionMapping;
+		*AttributeSetToDataMapping = StateStruct->AttributeSetToDataMapping;
+		*KeyToControlliteMapping = StateStruct->KeyToControlliteMapping;
+		
+		*IdentSetToDataMapping = StateStruct->IdentSetToDataMapping;
+		*VectorSetToDataMapping = StateStruct->VectorSetToDataMapping;
+		PlayersControlStreamMap = StateStruct->PlayersControlStreamMap;
+	}
+}
+
 void UArtilleryDispatch::SetupNewPlayer(AActor* Player)
 {
 	// Stubbed: full implementation requires per-player Bristlecone networking (DeltaDelta port).
@@ -152,6 +180,29 @@ void UArtilleryDispatch::Bop(FSkeletonKey Target, uint16 TicksFromNow, FVector F
 {
 	StructureFullTL(Ticklite, TL_Bop, FTDelayedForce, Target, ForceAppliedOnce, TicksFromNow, ForceType);
 	this->RequestAddTicklite(Ticklite, Normal);
+}
+
+void UArtilleryDispatch::SetProjectileDispatch(ITickHeavy* ReferenceToSubsystem)
+{
+	check(ArtilleryAsyncWorldSim.GetOrCreateGameSim())
+	ArtilleryAsyncWorldSim.GetOrCreateGameSim()->SetProjectileDispatch(ReferenceToSubsystem);
+}
+
+void UArtilleryDispatch::SetParticleDispatch(ITickHeavy* ReferenceToSubsystem)
+{
+	check(ArtilleryAsyncWorldSim.GetOrCreateGameSim())
+	ArtilleryAsyncWorldSim.GetOrCreateGameSim()->SetParticleDispatch(ReferenceToSubsystem);
+}
+
+void UArtilleryDispatch::SetSkeletalMeshDispatch(ITickHeavy* ReferenceToSubsystem)
+{
+	ArtilleryTicklitesWorker_LockstepToWorldSim.SkeletalMeshSystemPointer = ReferenceToSubsystem;
+}
+
+void UArtilleryDispatch::SetEventLogSystem(ITickHeavy* ReferenceToSubsystem)
+{
+	check(ArtilleryAsyncWorldSim.GetOrCreateGameSim())
+	ArtilleryAsyncWorldSim.GetOrCreateGameSim()->SetEventLogDispatch(ReferenceToSubsystem);
 }
 
 //allows you to get tombstoned fibs.

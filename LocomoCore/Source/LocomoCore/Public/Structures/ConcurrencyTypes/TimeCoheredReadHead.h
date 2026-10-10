@@ -79,21 +79,20 @@ struct FTimedArray
     // I couldn't find a way to early out in case of just one candidate that was actually faster.
     FORCEINLINE double Read() const
     {
-        uint64 Newest = 0;
+        uint64 Newest[6] = {}; //this MAY be able to move to the data structure level. MAY MAY MAY
+        double V0 = Candidate(BandedHeads[0], Newest[0]);
+        double V1 = Candidate(BandedHeads[1], Newest[1]);
+        double V2 = Candidate(BandedHeads[2], Newest[2]);
+        double V3 = Candidate(BandedHeads[3], Newest[3]);
+        double V4 = Candidate(BandedHeads[4], Newest[4]);
+        double V5 = Candidate(BandedHeads[5], Newest[5]);
 
-        double V0 = Candidate(BandedHeads[0], Newest);
-        double V1 = Candidate(BandedHeads[1], Newest);
-        double V2 = Candidate(BandedHeads[2], Newest);
-        double V3 = Candidate(BandedHeads[3], Newest);
-        double V4 = Candidate(BandedHeads[4], Newest);
-        double V5 = Candidate(BandedHeads[5], Newest);
+        if (V1 < V0 && Newest[1] < Newest[0]) V0 = V1;
+        if (V3 < V2 && Newest[3] < Newest[2]) V2 = V3;
+        if (V5 < V4 && Newest[5] < Newest[4]) V4 = V5;
 
-        if (V1 < V0) V0 = V1;
-        if (V3 < V2) V2 = V3;
-        if (V5 < V4) V4 = V5;
-
-        if (V2 < V0) V0 = V2;
-        if (V4 < V0) V0 = V4;
+        if (V2 < V0 && Newest[2] < Newest[0]) V0 = V2;
+        if (V4 < V0 && Newest[4] < Newest[0]) V0 = V4;
 
         return V0;
     }

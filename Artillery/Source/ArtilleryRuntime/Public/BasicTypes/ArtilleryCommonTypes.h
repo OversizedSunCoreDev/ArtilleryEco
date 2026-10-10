@@ -11,6 +11,9 @@
 #include "Containers/TripleBuffer.h"
 #include "SkeletonTypes.h"
 
+// Defines the maximum number of distinct live tags that can be active on a given entity. This is hardcoded for optimization reasons (allocated inline)
+#define FAST_TAG_MAX_C 30
+
 DECLARE_DELEGATE_TwoParams(FArtilleryAddEnemyToControllerSubsystem, const ActorKey ThistleInject, uint64_t CurrentTick)
 
 enum SKLiveness

@@ -19,7 +19,7 @@ bool BLK::BLKRing::AddBones(FSkeletonKey Key, FTransform* ThisIsSafe, uint16_t c
 		}
 		
 		NewRecord.key = Key;
-		NewRecord.hash = hash16_s6M8(Key);
+		NewRecord.hash = FMMM::hash16_s6M8(Key);
 		NewRecord.count = count;
 		ProducerBuffers[ThreadStateTicket.MyBufferAssignment].Records.Add(NewRecord, tick);
 		return true;

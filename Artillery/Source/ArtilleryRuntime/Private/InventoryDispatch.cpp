@@ -60,9 +60,9 @@ bool UInventoryDispatch::FireSoundEffect(FSKEffectTicket Nyooooom)
 		auto Key = FSKSoundFXDefinitionKey(Nyooooom.GetSK().GetShiftedMeta());
 		auto send = SFXDefinitionKeyToSound.Find(Key);
 		FEventParameterPackage A;
-		if (send)
+		if (send && *send && (*send)->IsPlayable())
 		{
-			UGameplayStatics::PlaySoundAtLocation(GetWorld(), *send /* lookup loaded asset here. What solution do you like, @megafunk? */, A.Loc);
+			UGameplayStatics::PlaySoundAtLocation(GetWorld(),  *send, A.Loc);
 		}
 		a = FiredEffectSet.insert(Nyooooom);
 	}

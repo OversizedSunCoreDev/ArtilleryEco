@@ -43,6 +43,8 @@ enum class E_AttribKey : uint8
 	ReloadTimeRemaining,
 	Range,
 	TicksSinceLastFired,
+	RefireTickCount,
+	StartFiredTimestamp,
 	LastFiredTimestamp,
 	TriggerPulled,
 	

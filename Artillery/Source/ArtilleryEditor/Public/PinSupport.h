@@ -1,5 +1,6 @@
 ﻿#pragma once
 #include "EdGraphSchema_K2.h"
+#include "EdGraphUtilities.h"
 #include "InventoryDispatch.h"
 #include "SGraphPinNameList.h"
 

@@ -26,7 +26,7 @@ struct ARTILLERYRUNTIME_API FArtilleryGunProperties
 	}
 
 	UPROPERTY(BlueprintReadWrite)
-	E_ArtilleryIntents Intent;
+	E_ArtilleryIntents Intent = {};
 	UPROPERTY(BlueprintReadWrite)
 	FGunKey GunKey;
 	UPROPERTY(BlueprintReadWrite)
@@ -114,15 +114,7 @@ public:
 
 	//we use the GunBinder delegate to link the MECHANICAL abilities to phases.
 	//cosmetics don't get linked the same way.
-	FArtilleryGun(const FGunKey& KeyFromDispatch, UArtilleryDispatch* Dispatch)
-	{
-		MyDispatch = Dispatch;
-		MyProjectileDispatch = nullptr;
-		MyTransformDispatch = nullptr;
-		MyGunKey = KeyFromDispatch;
-		MyTransformDispatch = MyDispatch->GetWorld()->GetSubsystem<UTransformDispatch>();
-		MyProjectileDispatch = MyDispatch->GetWorld()->GetSubsystem<UArtilleryProjectileDispatch>();
-	};
+	FArtilleryGun(const FGunKey& KeyFromDispatch, UArtilleryDispatch* Dispatch);;
 
 	virtual ~FArtilleryGun();
 

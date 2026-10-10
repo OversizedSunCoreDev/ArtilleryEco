@@ -39,10 +39,7 @@ class FArtilleryBusyWorker : public FRunnable {
 	FSharedEventRef StartRunAhead;
 	FSharedEventRef PostRunFrameProcessingLoop; //Intended to allow things to know when a full frame is done
 	uint32 SeqNumber = 0;
-	//Going forward, it is potentially worthwhile for us switch to this...
-	ITickHeavy* ParticleSystemPointer = nullptr;
-	ITickHeavy* ProjectileSystemPointer = nullptr;
-	ITickHeavy* EventLogSystemPointer = nullptr;
+
 	//Thanks to OrdIn, we can guarantee what is up when, and by expanding OrdIn, we can control what is
 	//deinitialized when if we need to, as well. It wouldn't even be that hard, simply add a deregister to SkeletonLord
 	
@@ -52,8 +49,6 @@ class FArtilleryBusyWorker : public FRunnable {
 		bool& burstDropDetected,
 		TheCone::PacketElement& current,
 		bool& RemoteInput);
-	// Currently accepts the dispatch ptr to run guns, this is a temporary thing though
-	void ProcessRequestRouterBusyWorkerThread(UArtilleryDispatch* MyDispatch);
 	virtual uint32 Run() override;
 	virtual void Exit() override;
 	virtual void Stop() override;
@@ -62,15 +57,14 @@ class FArtilleryBusyWorker : public FRunnable {
 	
 	//this is a hack and MIGHT be replaced with an ECS lookup
 	//though the clarity gain is quite nice, and privileging Cabling makes sense
-	TSharedPtr<ArtilleryControlStream>  CablingControlStream;
+	TSharedPtr<ArtilleryControlStream> CablingControlStream;
 	TSharedPtr<ArtilleryControlStream> BristleconeControlStream;
 	TSharedPtr<ArtilleryControlStream> ThistleControlStream;
 	TSharedPtr<FRequestRouter> RequestRouter;
 	TheCone::RecvQueue InputRingBuffer;
 	TheCone::SendQueue InputSwapSlot;
 	UCanonicalInputStreamECS* ContingentInputECSLinkage = nullptr;
-	UBarrageDispatch* ContingentPhysicsLinkage = nullptr;
-	UTransformDispatch* UTransformLink = nullptr;
+
 	// This is atomic so the unreal gamethread can set it
 	std::atomic<bool> bPaused = false;
 	
@@ -81,6 +75,7 @@ class FArtilleryBusyWorker : public FRunnable {
 	FCriticalSection EventsFromOtherThreadEndCriticalSection;
 	TArray<FEvent*> EventsFromOtherThread_RequiresCriticalSection;
 	
+	TSharedPtr<FArtilleryGameSim> GetOrCreateGameSim();
 	
 	FORCEINLINE bool IsRunning() const { return bRunning; };
 	// Distinct from Running... Why? I needed something to indicate this is actually trying to run and not just constructed
@@ -94,10 +89,4 @@ private:
 	// is what orphaned the worker and hung the jthread join on exit.
 	bool bRunning = true;
 	bool bInitialized = false;
-	using FTMap = TMap<FSkeletonKey, FConservedTags>;
-	//this needs to remain private and only be modified or used on this thread.
-	//if you want to add the ability to expose this off-thread, first, see if the ATA already present in ArtilleryDispatch is good enough.
-	//second, assess if you can use a shadow-copy-and-swap pattern identical to the one used for generating the quadtree we expose for radar.
-	//third, if neither is true, let me know what you come up with! just ping me on github -JMK
-	FTMap TagRollbackManagement;
 };

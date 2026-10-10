@@ -132,10 +132,10 @@ bool AtomicTagArray::Empty()
 //do we want to allow a few tags to be Tracked?
 //this is NOT free but it's actually not that much more expensive if we use the result sets + an add\kill list? gotta think about it.
 //we'd need it on remove. now, we do basically only gots sorta one of these actually under the hood. so... maybe?
-bool AtomicTagArray::AddImpl(uint32_t Key, FGameplayTag Bot)
+bool AtomicTagArray::AddImpl(uint32_t Key, FGameplayTag Tag)
 {
 	TSharedPtr<Entities> HOpen = FastEntities;
-	if (uint16_t* search = SeenT->Find(Bot); HOpen && search != nullptr)
+	if (uint16_t* search = SeenT->Find(Tag); HOpen && search != nullptr)
 	{
 		FTagsPtr Tags;
 		uint16_t InternalCompressedTagCode = *search;

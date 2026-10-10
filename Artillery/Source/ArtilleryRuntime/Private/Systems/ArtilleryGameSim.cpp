@@ -1,11 +1,13 @@
 #include "ArtilleryGameSim.h"
 
 #include "ArtilleryDispatch.h"
+#include "ArtilleryRuntimeModule.h"
 #include "InputRollback.h"
 #include "BarrageDispatch.h"
 #include "CanonicalInputStreamECS.h"
 #include "CoordinateUtils.h"
 #include "FWorldSimOwner.h"
+#include "InventoryDispatch.h"
 #include "StateContainer.h"
 
 //TMap iteration is hash-bucketed; bucket layout doesn't survive a process boundary.
@@ -106,13 +108,19 @@ void FArtilleryGameSim::Initialize(UWorld* World)
 
 	ContingentInputECSLinkage = GameWorld->GetSubsystem<UCanonicalInputStreamECS>();
 	ArtilleryDispatch = GameWorld->GetSubsystem<UArtilleryDispatch>();
-	PhysicsManager = GameWorld->GetSubsystem<UBarrageDispatch>();
-	ItemsAndEventsManager = GameWorld->GetSubsystem<UInventoryDispatch>();
 	if (!ensure(ArtilleryDispatch.IsValid()))
 	{
 		UE_LOG(LogTemp, Error, TEXT("ArtilleryGame: Required subsystems not found"));
 		return;
 	}
+	
+	// @todo arguably transform dispatch should be later but I moved dispatch into here
+	TransformDispatch = GameWorld->GetSubsystem<UTransformDispatch>();
+
+	
+	PhysicsManager = GameWorld->GetSubsystem<UBarrageDispatch>();
+	ItemsAndEventsManager = GameWorld->GetSubsystem<UInventoryDispatch>();
+
 
 	if (ensure(InputManager.IsValid()))
 	{
@@ -167,9 +175,9 @@ void FArtilleryGameSim::Tick()
 //This allows us to shove stuff into the past where once it runs, it will always have run.
 //This is useful for really compute expensive operations, events that require extremely high certainty like player death,
 //or ops that - if spuriously repeated - might blow up the gpu render pipeline, player experience, or web backend 
-void FArtilleryGameSim::RunEventsRequiringVerifiedTicks(uint32 Sequence, bool bIsVerified)
+void FArtilleryGameSim::RunEventsRequiringVerifiedTicks(FArtillerySimContext& Context)
 {
-	if (bIsVerified)
+	if (Context.bIsVerified)
 	{
 		auto KeysToDeploy = VerifiedCreateDeadliner.UpdateAndConsume(); //todo: check if we really still want this.
 		auto EventKeys = VerifiedEventDeadliner.UpdateAndConsume();
@@ -183,68 +191,82 @@ void FArtilleryGameSim::RunEventsRequiringVerifiedTicks(uint32 Sequence, bool bI
 	
 }
 
-void FArtilleryGameSim::Simulate(uint32 Sequence, const TMap<PlayerKey, FArtilleryShell>& PrevInputs, const TMap<PlayerKey, FArtilleryShell>& Inputs, bool bIsVerified)
+void FArtilleryGameSim::UpdateInputDriven(FArtillerySimContext& Context)
 {
-	auto& AbilitiesWriteBuffer =
-		RequestorQueue_Abilities_TripleBuffer->GetWriteBuffer();
-
-
+	TRACE_CPUPROFILER_EVENT_SCOPE(FArtilleryGameSim::UpdateInputDriven)
 	
-	FArtilleryDataBuffer Data;
-	Data.SequenceNumber = Sequence;
-	Data.Inputs = Inputs;
-	Data.bIsValid = true;
-	Data.TimeStamp = TickliteNow;
-
-	RunEventsRequiringVerifiedTicks(Sequence, bIsVerified);
+	auto& AbilitiesWriteBuffer = RequestorQueue_Abilities_TripleBuffer->GetWriteBuffer();
 	
-	//sorted; locomotion-Add and pattern-matcher invocation order must agree for everyone.
-	for (PlayerKey Player : SortedPlayerKeys(Inputs))
+	if (Context.InputGatherFunction)
 	{
-		const FArtilleryShell& Shell = Inputs[Player];
-
-		// Get stream for pattern matcher and actor info
-		auto streamkey = ContingentInputECSLinkage->GetStreamForPlayer(Player);
-		auto sptr = ContingentInputECSLinkage->GetStream(streamkey);
-		if (!sptr.IsValid()) continue;
-
-		ActorKey controllingActor = sptr->GetActorByInputStream();
-		if (!controllingActor) continue;
-
-		const auto PrevInput = PrevInputs.Find(Player);
-
-		Locomos_BufferNotThreadSafe->Add(
-			LocomotionParams(Shell.SentAt, controllingActor, PrevInput ? *PrevInput : FArtilleryShell(), Shell)
-			);
-
-		// Run pattern matcher with authoritative input
-		if (sptr->MyPatternMatcher.IsValid())
+		Context.InputGatherFunction();
+	}
+	else
+	{
+		//sorted; locomotion-Add and pattern-matcher invocation order must agree for everyone.
+		for (PlayerKey Player : SortedPlayerKeys(Context.Inputs))
 		{
-			sptr->MyPatternMatcher->runOneFrameWithSideEffects(
-				/* isResim= */ true,  // Indicate this is a resimulation
-				/* leftTrim= */ 0,
-				/* rightTrim= */ 0,
-				/* inputCycleNumber= */ Sequence, // Use frame number as index
-				/* eventsOut= */ AbilitiesWriteBuffer
-			);
+			const FArtilleryShell& Shell = Context.Inputs[Player];
+
+			// Get stream for pattern matcher and actor info
+			auto streamkey = ContingentInputECSLinkage->GetStreamForPlayer(Player);
+			auto sptr = ContingentInputECSLinkage->GetStream(streamkey);
+			if (!sptr.IsValid()) continue;
+
+			ActorKey controllingActor = sptr->GetActorByInputStream();
+			if (!controllingActor) continue;
+
+			const auto PrevInput = Context.PrevInputs.Find(Player);
+
+			Locomos_BufferNotThreadSafe->Add(LocomotionParams(Shell.SentAt, controllingActor, PrevInput ? *PrevInput : FArtilleryShell(), Shell));
+
+			// Run pattern matcher with authoritative input
+			if (sptr->MyPatternMatcher.IsValid())
+			{
+				sptr->MyPatternMatcher->runOneFrameWithSideEffects(
+					/* isResim= */ true,
+					               // Indicate this is a resimulation
+					               /* leftTrim= */
+					               0,
+					               /* rightTrim= */
+					               0,
+					               /* inputCycleNumber= */
+					               Context.Tick,
+					               // Use frame number as index
+					               /* eventsOut= */
+					               AbilitiesWriteBuffer);
+			}
 		}
 	}
 
 	Locomos_BufferNotThreadSafe->Sort();
 	AbilitiesWriteBuffer.Sort();
+}
+
+void FArtilleryGameSim::Simulate(FArtillerySimContext& Context)
+{
+	TRACE_CPUPROFILER_EVENT_SCOPE(FArtilleryGameSim::Simulate)
+
+	RunEventsRequiringVerifiedTicks(Context);
+	
+	UpdateInputDriven(Context);
+	
 	if (!RequestorQueue_Abilities_TripleBuffer->IsDirty())
 	{
 		RequestorQueue_Abilities_TripleBuffer->SwapWriteBuffers();
 	}
 
-	ProcessRequestRouterBusyWorkerThread();
+	ProcessRequestRouterBusyWorkerThread(Context.Tick);
+	
+	ArtilleryDispatch->RunGuns();  // ALL THIS WORK. FOR THIS?! (Okay, that's really cool)
+
 	ArtilleryDispatch->RunLocomotions();
 	if (PhysicsManager.IsValid())
 	{
 		PhysicsManager->StackUp();
 		StartTicklitesApply->Trigger();
 		StartRunAhead->Trigger();
-		PhysicsManager->StepWorld(TickliteNow, Sequence);
+		PhysicsManager->StepWorld(TickliteNow, Context.Tick);
 		PhysicsManager->BroadcastContactEvents();
 		if (ParticleSystemPointer)
 		{
@@ -253,6 +275,10 @@ void FArtilleryGameSim::Simulate(uint32 Sequence, const TMap<PlayerKey, FArtille
 		if (ProjectileSystemPointer)
 		{
 			ProjectileSystemPointer->ArtilleryTick();
+		}
+		if (EventLogSystemPointer)
+		{
+			EventLogSystemPointer->ArtilleryTick();
 		}
 	}
 
@@ -264,13 +290,61 @@ void FArtilleryGameSim::Simulate(uint32 Sequence, const TMap<PlayerKey, FArtille
 		{
 			if (CharacterKeyAndBase.Value.Get()->mCharacter)
 			{
-				UE_LOG(LogTemp, Warning, TEXT("Position After simulation %u, pos: %s"), Sequence, *CoordinateUtils::FromJoltCoordinates(CharacterKeyAndBase.Value.Get()->mCharacter->GetPosition()).ToString());
+				UE_LOG(LogTemp, Warning, TEXT("Position After simulation %u, pos: %s"), Context.Tick, *CoordinateUtils::FromJoltCoordinates(CharacterKeyAndBase.Value.Get()->mCharacter->GetPosition()).ToString());
 				break;
 			}
 		}
 	}
+	
+	FArtilleryDataBuffer Data;
+	Data.SequenceNumber = Context.Tick;
+	Data.Inputs = Context.Inputs;
+	Data.bIsValid = true;
+	Data.TimeStamp = TickliteNow;
+	
+	StoreState(Context, Data);
+	
+	TRACE_CPUPROFILER_EVENT_SCOPE(Simualate CacheLayer)
+
+	//tag container save-off currently happens before player and player-like locomotion.
+	//this SHOULD be the right place, by my limited reasoning, but I could be wrong.
+	for (auto TagSet : TagRollbackManagement) // do not change to ref.
+	{
+		if (TagSet.Value)
+		{
+			TagSet.Value->CacheLayer();	
+		}
+	}
+}
+
+void FArtilleryGameSim::StoreState(FArtillerySimContext& Context, FArtilleryDataBuffer Data)
+{
 	PhysicsManager->SaveState(Data.PhysicsData);
-	StateManager->StoreTick(Sequence, Data, bIsVerified);
+	
+	if (UArtilleryDispatch* Dispatch = ArtilleryDispatch.Get())
+	{
+		Dispatch->StoreArtilleryState(Data);
+	}
+	
+	StateManager->StoreTick(Context.Tick, Data, Context.bIsVerified);
+}
+
+bool FArtilleryGameSim::RollbackToState(FArtilleryDataBuffer& RollbackData)
+{
+	bool bSuccess = true;
+	
+	PhysicsManager->RestoreState(RollbackData.PhysicsData);
+	
+	if (UArtilleryDispatch* Dispatch = ArtilleryDispatch.Get())
+	{
+		Dispatch->LoadArtilleryState(RollbackData);
+	}
+	else
+	{
+		bSuccess = false;
+	}
+	
+	return bSuccess;
 }
 
 void FArtilleryGameSim::RollbackAndResimulate(uint32 FromFrame, bool bUseAuthorityIfAvailable)
@@ -289,10 +363,10 @@ void FArtilleryGameSim::RollbackAndResimulate(uint32 FromFrame, bool bUseAuthori
 		UE_LOG(LogTemp, Warning, TEXT("No data for rollback frame %u"), Start);
 		return;
 	}
+	
 
 	LastMispredictionSequence = CurrentSequence;
-
-	PhysicsManager->RestoreState(RollbackData->PhysicsData);
+	bool bRollbackSuccessful = RollbackToState(*RollbackData);
 
 	TMap<PlayerKey,FArtilleryShell> FrameInputs;
 	for (uint32 Frame = Start + 1; Frame <= CurrentSequence-1; ++Frame)
@@ -330,7 +404,12 @@ void FArtilleryGameSim::RollbackAndResimulate(uint32 FromFrame, bool bUseAuthori
 			}
 		}
 
-		Simulate(Frame, Prev, FrameInputs, /*bIsVerified=*/bHasServerData);
+		FArtillerySimContext Context;
+		Context.Tick = Frame;
+		Context.bIsVerified = bHasServerData;
+		Context.PrevInputs = Prev;
+		Context.Inputs = FrameInputs;
+		Simulate(Context);
 	}
 
 	InputManager->SendInputsToServer(FromFrame,CurrentSequence, FrameInputs);
@@ -344,7 +423,7 @@ void FArtilleryGameSim::RollbackToVerified()
 	}
 	if (FArtilleryDataBuffer* VerifiedState = StateManager->GetTick(StateManager->GetLastVerifiedSequence()))
 	{
-		PhysicsManager->RestoreState(VerifiedState->PhysicsData);
+		RollbackToState(*VerifiedState);
 	}
 }
 
@@ -367,6 +446,11 @@ uint32 FArtilleryGameSim::GetLastVerifiedSequence() const
 	return StateManager->GetLastVerifiedSequence();
 }
 
+uint32 FArtilleryGameSim::GetOldestStoredSequence() const
+{
+	return StateManager->GetOldestSequence();
+}
+
 bool FArtilleryGameSim::IsNetInitialized() const
 {
 	return InputManager->IsNetInitialized() && InputManager->GetLatestServerFrame() > 0;
@@ -383,7 +467,12 @@ void FArtilleryGameSim::ServerTick()
 		PrevInputs = PrevFrame->Inputs;
 	}
 
-	Simulate(CurrentSequence, PrevInputs, Inputs, true);
+	FArtillerySimContext Context;
+	Context.Tick = CurrentSequence;
+	Context.bIsVerified = true;
+	Context.PrevInputs = PrevInputs;
+	Context.Inputs = Inputs;
+	Simulate(Context);
 	// SendInputsToClients removed (Phase-1): the Longboy reflector relays; we only send ours.
 	++CurrentSequence;
 }
@@ -405,7 +494,12 @@ void FArtilleryGameSim::ClientTick()
 		PrevInputs = PrevFrame->Inputs;
 	}
 
-	Simulate(CurrentSequence, PrevInputs, Inputs, false);
+	FArtillerySimContext Context;
+	Context.Tick = CurrentSequence;
+	Context.bIsVerified = false;
+	Context.PrevInputs = PrevInputs;
+	Context.Inputs = Inputs;
+	Simulate(Context);
 
 	InputManager->SendInputsToServer(GetLastVerifiedSequence(), CurrentSequence, Inputs);
 	++CurrentSequence;
@@ -478,7 +572,12 @@ void FArtilleryGameSim::DoCatchUp()
 			}
 		}
 
-		Simulate(CurrentSequence, Prev, FrameInputs, bHasAuthorityData);
+		FArtillerySimContext Context;
+		Context.Tick = CurrentSequence;
+		Context.bIsVerified = bHasAuthorityData;
+		Context.PrevInputs = Prev;
+		Context.Inputs = FrameInputs;
+		Simulate(Context);
 		InputManager->SendInputsToServer(PreCatchupSeq,CurrentSequence, FrameInputs);
 		CurrentSequence++;
 	}
@@ -553,20 +652,157 @@ uint32 FArtilleryGameSim::FindEarliestMisprediction(uint32 StartSequence, uint32
 //The order that threads get queues is random, so if you just go down the line, that won't produce a deterministic execution order.
 //Even if you fix that, you still need to order the requests as a gestalt, and now you have a problem where you don't know the
 //correct\true order to run things with the same timestamp in. This is fixable but it's gonna need to wait.
-void FArtilleryGameSim::ProcessRequestRouterBusyWorkerThread()
+void FArtilleryGameSim::ProcessRequestRouterBusyWorkerThread(const uint32 SeqNumber)
 {
-	if (RequestRouter)
+	TRACE_CPUPROFILER_EVENT_SCOPE(FArtilleryGameSim::ProcessRequestRouterBusyWorkerThread)
+	
+	if (!ensure(RequestRouter))
 	{
-		for (FRequestRouter::FeedMap& WorkerFeedMap : RequestRouter->BusyWorkerAcc)
+		return;
+	}
+	
+	auto MyDispatch = ArtilleryDispatch.Get();
+	
+	auto ContingentPhysicsLinkage = PhysicsManager.Get();
+	
+	auto TransformPtr = TransformDispatch.Get();
+	
+	for (FRequestRouter::FeedMap& WorkerFeedMap : RequestRouter->BusyWorkerAcc)
+	{
+		TSharedPtr<FRequestRouter::ThreadFeed> HoldOpen;
+		if (WorkerFeedMap.Queue && ((HoldOpen = WorkerFeedMap.Queue)) && WorkerFeedMap.That != std::thread::id()) //if there IS a thread.
 		{
-			TSharedPtr<FRequestRouter::ThreadFeed> HoldOpen;
-			if (WorkerFeedMap.Queue && ((HoldOpen = WorkerFeedMap.Queue)) && WorkerFeedMap.That != std::thread::id()) //if there IS a thread.
+			FRequestThing Request;
+			while (HoldOpen->Dequeue(Request))
 			{
-				FRequestThing RouterQueue;
-				while (HoldOpen->Dequeue(RouterQueue))
+				//PINPOINT: YABUSYTHREADBOYRUNNETHREQUESTSHERE
+				switch (Request.GetType())
 				{
-					//PINPOINT: YABUSYTHREADBOYRUNNETHREQUESTSHERE
+				case ArtilleryRequestType::FireAGun:
+				// Guns fired from the artillery thread is brand new, this mapping mighg not mean as much now
+				{
+					TSharedPtr<FArtilleryGun> GunHoldOpen = MyDispatch->GunByKey->FindRef(Request.Gun);
+					TDelegate<void(TSharedPtr<FArtilleryGun>, bool, EventBufferInfo)>* FireFunction =
+						MyDispatch->GunToFiringFunctionMapping->Find(Request.Gun);
 
+					if (FireFunction != nullptr && GunHoldOpen)
+					{
+						EventBufferInfo def = EventBufferInfo::Default();
+						def.Action = ArtIPMKey::InternallyStateless;
+						UArtilleryDispatch::TotalFirings += FireFunction->ExecuteIfBound(GunHoldOpen, false, def);
+					}
+					else
+					{
+						// TODO - we are absolutely going to want to turn this and things like it into a periodic
+						//		  log call to avoid clogging log files
+						UE_LOG(
+							LogArtillery,
+							Error,
+							TEXT(
+								"FArtilleryBusyWorker::ProcessRequestRouterBusyWorkerThread: Error processing FireGun request with gun key [id: %llu, name: %s]"
+							),
+							Request.Gun.GunInstanceID.Obj,
+							*Request.Gun.GunDefinitionID.ToString());
+					}
+				}
+				break;
+					
+				case ArtilleryRequestType::GetAnUnboundGun:
+				{
+					IdMapPtr WordsOfPower = MyDispatch->GetRelationships(Request.SourceOrSelf);
+					FGunKey Gun = MyDispatch->GetGun(Request.Gun.GunDefinitionID, ActorKey(Request.SourceOrSelf));
+					FGunInstanceKey BANG = Gun.GunInstanceID;
+					if (WordsOfPower)
+					{
+						TSharedPtr<FConservedAttributeKey> MaterialComponent = WordsOfPower.Get()->FindOrAdd(
+							Request.Relationship);
+						if (MaterialComponent)
+						{
+							MaterialComponent.Get()->SetCurrentValue(BANG);
+						}
+						else
+						{
+							TSharedPtr<FConservedAttributeKey> PowerWordGun = MakeShareable(
+								new FConservedAttributeKey);
+							PowerWordGun->SetBaseValue(BANG);
+							PowerWordGun->SetCurrentValue(BANG);
+							WordsOfPower.Get()->Add(Request.Relationship, PowerWordGun);
+						}
+					}
+					else
+					{
+						TSharedPtr<TMap<Ident, IdentPtr>> RelationshipMap = MakeShareable(new IdentityMap());
+
+						//TODO: swap this to loading values from a data table, and REMOVE this fallback.
+						//If we want defaults, those defaults should ALSO live in a data table, that way when a defaulting bug screws us
+						//maybe we can fix it without going through a full cert using a data only update.
+						TSharedPtr<FConservedAttributeKey> PowerWordGun = MakeShareable(
+							new FConservedAttributeKey);
+						RelationshipMap->Add(Request.Relationship, PowerWordGun);
+						PowerWordGun->SetBaseValue(BANG);
+						PowerWordGun->SetCurrentValue(BANG);
+						MyDispatch->RegisterOrAddRelationships(Request.SourceOrSelf, RelationshipMap);
+					}
+				}
+				break;
+				case ArtilleryRequestType::TagReferenceModel:
+					{
+						if (TagRollbackManagement.Find(Request.SourceOrSelf) == nullptr)
+						{
+							TagRollbackManagement.Add(Request.SourceOrSelf, Request.ConservedTags);
+						}
+						else
+						{
+							//CustomTimer<"ReferenceInitAttemptedOnInited"> RateCheck;
+						}
+					}
+					break;
+				case ArtilleryRequestType::NoTagReferenceModel:
+					{
+						TagRollbackManagement.Remove(Request.SourceOrSelf);
+					}
+					break;
+				case ArtilleryRequestType::FakeTransformUpdate:
+					{
+						if (ContingentPhysicsLinkage && TransformPtr &&
+							TransformPtr->GetKineByObjectKey(Request.SourceOrSelf))
+						{
+							TSharedPtr<TransformUpdatesForGameThread> HoldOpenTransformPump =  ContingentPhysicsLinkage->GameTransformPump;
+							if (HoldOpenTransformPump)	
+							{
+								HoldOpenTransformPump->AddMove(
+									Request.SourceOrSelf,
+									Request.Stamp,
+									FQuat4f(Request.ThingRotator.Quaternion()),
+									FVector3f(Request.ThingVector));
+							}
+						}
+					}
+					break;
+				case ArtilleryRequestType::CreateTriggerOnVerifiedTick:
+					{
+						if (ContingentPhysicsLinkage && SeqNumber <= GetLastVerifiedSequence()) //more than one frame might become verified at once in some scenarios.
+						{
+							auto inv = MyDispatch->GetWorld()->GetSubsystem<UInventoryDispatch>();
+							FTransform LocationnAndDimensions;
+							LocationnAndDimensions.SetIdentityZeroScale();
+							LocationnAndDimensions.SetLocation(Request.ThingVector);
+							LocationnAndDimensions.SetRotation(Request.ThingRotator.Quaternion());
+							LocationnAndDimensions.SetScale3D(Request.ThingVector2);
+							inv->CreateQueuedTriggerOnVerifiedFrame(LocationnAndDimensions);
+						}
+						else
+						{
+							//no-op. the request gets repeated over and over, since we know we CANNOT presim it.
+						}
+					}
+					break;
+				default:
+					UE_LOG(
+						LogTemp,
+						Fatal,
+						TEXT("ArtilleryDispatch::ProcessRequestRouterGameThread: Received Request Router request for unimplemented request type: [%d]"),
+						Request.GetType());
 				}
 			}
 		}

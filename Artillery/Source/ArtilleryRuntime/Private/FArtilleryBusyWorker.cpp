@@ -6,16 +6,13 @@
 #include "ArtilleryBPLibs.h"
 #include "ArtilleryGameSim.h"
 #include "ArtilleryGunBlueprint.h"
-#include "ArtilleryRuntimeModule.h"
 #include "BarrageDispatch.h"
 #include "SkeletonTypes.h"
-#include "TransformDispatch.h"
 #include "Containers/TripleBuffer.h"
 
 FArtilleryBusyWorker::FArtilleryBusyWorker()
 {
 	UE_LOG(LogTemp, Display, TEXT("Artillery:BusyWorker: Constructing Artillery"));
-	TagRollbackManagement = FTMap();
 }
 
 FArtilleryBusyWorker::~FArtilleryBusyWorker()
@@ -38,289 +35,135 @@ void FArtilleryBusyWorker::RunStandardFrameSim(bool& missedPrior, uint64_t& curr
                                                bool& RemoteInput)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(FArtilleryBusyWorker::RunStandardFrameSim)
-	Game->RunEventsRequiringVerifiedTicks(currentIndexCabling-1, true);//run the events from the previous verified frame.
 	
-	//this is an odd thing to do, I know, but we have some book-keeping we want to reserve for each code path.
-	//once this settles a little, I'll refactor, but I'm going to end up reworking this next weekend.
-	if (InputRingBuffer != nullptr && !InputRingBuffer.Get()->IsEmpty())
+	auto InputFunction = [&]()
 	{
-		while (InputRingBuffer != nullptr && !InputRingBuffer.Get()->IsEmpty())
+		//this is an odd thing to do, I know, but we have some book-keeping we want to reserve for each code path.
+		//once this settles a little, I'll refactor, but I'm going to end up reworking this next weekend.
+		if (InputRingBuffer != nullptr && !InputRingBuffer.Get()->IsEmpty())
 		{
-			const Packet_tpl* packedInput = InputRingBuffer.Get()->Peek();
-			const long indexInput = packedInput->GetCycleMeta() + 3; //faster than 3xabs or a branch.
-			//unlike the old design, we use an array of inputs from first -> current
-			//so we want to add oldest first, then next, then next.
-			//we'll need to amend this to handle correct defaulting of missing input,
-			//which we can detect by both cycle skips and arrival window misses.
-			//we then need a way, during rollbacks, to perform the rewrite.
-			//right now, we just wait until we get the remote input.
-			if (missedPrior)
+			while (InputRingBuffer != nullptr && !InputRingBuffer.Get()->IsEmpty())
+			{
+				const Packet_tpl* packedInput = InputRingBuffer.Get()->Peek();
+				const long indexInput = packedInput->GetCycleMeta() + 3; //faster than 3xabs or a branch.
+				//unlike the old design, we use an array of inputs from first -> current
+				//so we want to add oldest first, then next, then next.
+				//we'll need to amend this to handle correct defaulting of missing input,
+				//which we can detect by both cycle skips and arrival window misses.
+				//we then need a way, during rollbacks, to perform the rewrite.
+				//right now, we just wait until we get the remote input.
+				if (missedPrior)
+				{
+					if (burstDropDetected)
+					{
+						BristleconeControlStream->Add(*const_cast<Packet_tpl*>(packedInput)->GetPointerToElement((indexInput - 2) % 3),
+						                              packedInput->GetTransferTime());
+					}
+
+					BristleconeControlStream->Add(*const_cast<Packet_tpl*>(packedInput)->GetPointerToElement((indexInput - 1) % 3),
+					                              packedInput->GetTransferTime());
+				}
+				BristleconeControlStream->Add(*const_cast<Packet_tpl*>(packedInput)->GetPointerToElement(indexInput % 3),
+				                              packedInput->GetTransferTime());
+
+				RemoteInput = true; //we check for empty at the start of the while. no need to check again.
+				InputRingBuffer.Get()->Dequeue();
+			}
+
+			if (RemoteInput == true)
+			{
+				missedPrior = false;
+				burstDropDetected = false;
+			}
+			else
 			{
 				if (burstDropDetected)
 				{
-					BristleconeControlStream->Add(
-						*const_cast<Packet_tpl*>(packedInput)->GetPointerToElement((indexInput - 2) % 3),
-						packedInput->GetTransferTime());
+					//add rolling average switch-over here
 				}
-					
-				BristleconeControlStream->Add(
-					*const_cast<Packet_tpl*>(packedInput)->GetPointerToElement((indexInput - 1) % 3),
-					packedInput->GetTransferTime());
+				if (missedPrior)
+				{
+					burstDropDetected = true;
+				}
+				missedPrior = true;
 			}
-			BristleconeControlStream->Add(
-				*const_cast<Packet_tpl*>(packedInput)->GetPointerToElement(indexInput % 3),
-				packedInput->GetTransferTime());
-
-			RemoteInput = true; //we check for empty at the start of the while. no need to check again.
-			InputRingBuffer.Get()->Dequeue();
 		}
-
-		if (RemoteInput == true)
+		else if (InputSwapSlot != nullptr && !InputSwapSlot.Get()->IsEmpty())
 		{
-			missedPrior = false;
-			burstDropDetected = false;
+			//though it's probably more elegant and faster to index over the control streams
+			while (InputSwapSlot != nullptr && !InputSwapSlot.Get()->IsEmpty())
+			{
+				current = *InputSwapSlot.Get()->Peek();
+				CablingControlStream->Add(current);
+
+				InputSwapSlot.Get()->Dequeue();
+			}
 		}
 		else
 		{
-			if (burstDropDetected)
-			{
-				//add rolling average switch-over here
-			}
-			if (missedPrior)
-			{
-				burstDropDetected = true;
-			}
-			missedPrior = true;
-		}
-	}
-	else if (InputSwapSlot != nullptr && !InputSwapSlot.Get()->IsEmpty())
-	{
-		//though it's probably more elegant and faster to index over the control streams
-		while (InputSwapSlot != nullptr && !InputSwapSlot.Get()->IsEmpty())
-		{
-			current = *InputSwapSlot.Get()->Peek();
-			CablingControlStream->Add(current);
+			//----------------------------------
+			//if we got nothing, repeat prior.
+			//0000000000000000000000000000000000
 
-			InputSwapSlot.Get()->Dequeue();
+			CablingControlStream->Add(CablingControlStream->get(CablingControlStream->highestInput - 1)->MyInputActions, TickliteNow);
 		}
-	}
-	else
-	{
-		//----------------------------------
-		//if we got nothing, repeat prior.
-		//0000000000000000000000000000000000
-
-		CablingControlStream->Add(CablingControlStream->get(CablingControlStream->highestInput - 1)->MyInputActions,
-		                          TickliteNow);
-	}
 #define ARTILLERY_FIRE_CONTROL_MACHINE_HANDLING (false)
-	//First, locomotions are pushed. Patterns run here. The thread queues the locomotions and fires.
-	//the dispatch fires guns via the machines on the gamethread.
+		//First, locomotions are pushed. Patterns run here. The thread queues the locomotions and fires.
+		//the dispatch fires guns via the machines on the gamethread.
 
-	//Pattern matchers match, set events, and then those events are handed to the dispatch for now.
-	//gradually, we'll be able to run more and more of them on this thread, freeing us from the tyranny.
-	//Per input stream, run their patterns here. god in heaven.
-	EventBuffer& refDangerous_LifeCycleManaged_Abilities_TripleBuffered = RequestorQueue_Abilities_TripleBuffer->GetWriteBuffer();
+		//Pattern matchers match, set events, and then those events are handed to the dispatch for now.
+		//gradually, we'll be able to run more and more of them on this thread, freeing us from the tyranny.
+		//Per input stream, run their patterns here. god in heaven.
+		EventBuffer& refDangerous_LifeCycleManaged_Abilities_TripleBuffered = RequestorQueue_Abilities_TripleBuffer->GetWriteBuffer();
 
-	if (currentIndexCabling < CablingControlStream->highestInput)
-	{
-		//today's sin is PRIDE, bigbird!
-		for (int i = currentIndexCabling; i < CablingControlStream->highestInput; ++i)
+		if (currentIndexCabling < CablingControlStream->highestInput)
 		{
-			//TODO: does this leak memory?
-			ActorKey StreamActorKey = CablingControlStream->GetActorByInputStream();
-			if (StreamActorKey)
+			//today's sin is PRIDE, bigbird!
+			for (int i = currentIndexCabling; i < CablingControlStream->highestInput; ++i)
 			{
-				Locomos_BufferNotThreadSafe->Add(
-					LocomotionParams(
-						CablingControlStream->peek(i)->SentAt,
-						StreamActorKey,
-						*CablingControlStream->peek(i - 1),
-						*CablingControlStream->peek(i)));
-
-				// this looks wrong but I'm pretty sure it ain' since we reserve highest.
-				CablingControlStream->MyPatternMatcher->runOneFrameWithSideEffects(
-					true,
-					0,
-					0,
-					i,
-					refDangerous_LifeCycleManaged_Abilities_TripleBuffered); 
-			}
-			//even if this doesn't get played for some reason, this is the last chance we've got to make a
-			//truly informed decision about the matter. By the time we reach the dispatch system, that chance is gone.
-			//Better to skip a cosmetic once in a while than crash the game.
-			CablingControlStream->get(CablingControlStream->highestInput - 1)->RunAtLeastOnce = true;
-		}
-	}
-
-	Locomos_BufferNotThreadSafe->Sort();
-	refDangerous_LifeCycleManaged_Abilities_TripleBuffered.Sort();
-	if (RequestorQueue_Abilities_TripleBuffer->IsDirty() == false)
-	{
-		RequestorQueue_Abilities_TripleBuffer->SwapWriteBuffers();
-	}
-}
-
-//THIS VIOLATES DETERMINISM REQUIREMENTS
-//TODO right now, this incurs two serious determinism risks:
-//The order that threads get queues is random, so if you just go down the line, that won't produce a deterministic execution order.
-//Even if you fix that, you still need to order the requests as a gestalt, and now you have a problem where you don't know the
-//correct\true order to run things with the same timestamp in. This is fixable but it's gonna need to wait.
-void FArtilleryBusyWorker::ProcessRequestRouterBusyWorkerThread(UArtilleryDispatch* MyDispatch)
-{
-	TRACE_CPUPROFILER_EVENT_SCOPE(FArtilleryBusyWorker::ProcessRequestRouterBusyWorkerThread)
-	
-	if (RequestRouter)
-	{
-		for (FRequestRouter::FeedMap& WorkerFeedMap : RequestRouter->BusyWorkerAcc)
-		{
-			TSharedPtr<FRequestRouter::ThreadFeed> HoldOpen;
-			if (WorkerFeedMap.Queue && ((HoldOpen = WorkerFeedMap.Queue)) && WorkerFeedMap.That != std::thread::id()) //if there IS a thread.
-			{
-				FRequestThing Request;
-				while (HoldOpen->Dequeue(Request))
+				//TODO: does this leak memory?
+				ActorKey StreamActorKey = CablingControlStream->GetActorByInputStream();
+				if (StreamActorKey)
 				{
-					//PINPOINT: YABUSYTHREADBOYRUNNETHREQUESTSHERE
-					switch (Request.GetType())
-					{
-					case ArtilleryRequestType::FireAGun:
-					// Guns fired from the artillery thread is brand new, this mapping mighg not mean as much now
-					{
-						TSharedPtr<FArtilleryGun> GunHoldOpen = MyDispatch->GunByKey->FindRef(Request.Gun);
-						TDelegate<void(TSharedPtr<FArtilleryGun>, bool, EventBufferInfo)>* FireFunction =
-							MyDispatch->GunToFiringFunctionMapping->Find(Request.Gun);
+					Locomos_BufferNotThreadSafe->Add(LocomotionParams(CablingControlStream->peek(i)->SentAt,
+					                                                  StreamActorKey,
+					                                                  *CablingControlStream->peek(i - 1),
+					                                                  *CablingControlStream->peek(i)));
 
-						if (FireFunction != nullptr && GunHoldOpen)
-						{
-							EventBufferInfo def = EventBufferInfo::Default();
-							def.Action = ArtIPMKey::InternallyStateless;
-							UArtilleryDispatch::TotalFirings += FireFunction->ExecuteIfBound(GunHoldOpen, false, def);
-						}
-						else
-						{
-							// TODO - we are absolutely going to want to turn this and things like it into a periodic
-							//		  log call to avoid clogging log files
-							UE_LOG(
-								LogArtillery,
-								Error,
-								TEXT(
-									"FArtilleryBusyWorker::ProcessRequestRouterBusyWorkerThread: Error processing FireGun request with gun key [id: %llu, name: %s]"
-								),
-								Request.Gun.GunInstanceID.Obj,
-								*Request.Gun.GunDefinitionID.ToString());
-						}
-					}
-					break;
-						
-					case ArtilleryRequestType::GetAnUnboundGun:
-					{
-						IdMapPtr WordsOfPower = MyDispatch->GetRelationships(Request.SourceOrSelf);
-						FGunKey Gun = MyDispatch->GetGun(Request.Gun.GunDefinitionID, ActorKey(Request.SourceOrSelf));
-						FGunInstanceKey BANG = Gun.GunInstanceID;
-						if (WordsOfPower)
-						{
-							TSharedPtr<FConservedAttributeKey> MaterialComponent = WordsOfPower.Get()->FindOrAdd(
-								Request.Relationship);
-							if (MaterialComponent)
-							{
-								MaterialComponent.Get()->SetCurrentValue(BANG);
-							}
-							else
-							{
-								TSharedPtr<FConservedAttributeKey> PowerWordGun = MakeShareable(
-									new FConservedAttributeKey);
-								PowerWordGun->SetBaseValue(BANG);
-								PowerWordGun->SetCurrentValue(BANG);
-								WordsOfPower.Get()->Add(Request.Relationship, PowerWordGun);
-							}
-						}
-						else
-						{
-							TSharedPtr<TMap<Ident, IdentPtr>> RelationshipMap = MakeShareable(new IdentityMap());
-
-							//TODO: swap this to loading values from a data table, and REMOVE this fallback.
-							//If we want defaults, those defaults should ALSO live in a data table, that way when a defaulting bug screws us
-							//maybe we can fix it without going through a full cert using a data only update.
-							TSharedPtr<FConservedAttributeKey> PowerWordGun = MakeShareable(
-								new FConservedAttributeKey);
-							RelationshipMap->Add(Request.Relationship, PowerWordGun);
-							PowerWordGun->SetBaseValue(BANG);
-							PowerWordGun->SetCurrentValue(BANG);
-							MyDispatch->RegisterOrAddRelationships(Request.SourceOrSelf, RelationshipMap);
-						}
-					}
-					break;
-					case ArtilleryRequestType::TagReferenceModel:
-						{
-							if (TagRollbackManagement.Find(Request.SourceOrSelf) == nullptr)
-							{
-								TagRollbackManagement.Add(Request.SourceOrSelf, Request.ConservedTags);
-							}
-							else
-							{
-								//CustomTimer<"ReferenceInitAttemptedOnInited"> RateCheck;
-							}
-						}
-						break;
-					case ArtilleryRequestType::NoTagReferenceModel:
-						{
-							TagRollbackManagement.Remove(Request.SourceOrSelf);
-						}
-						break;
-					case ArtilleryRequestType::FakeTransformUpdate:
-						{
-							if (ContingentPhysicsLinkage && UTransformLink &&
-								UTransformLink->GetKineByObjectKey(Request.SourceOrSelf))
-							{
-								TSharedPtr<TransformUpdatesForGameThread> HoldOpenTransformPump =  ContingentPhysicsLinkage->GameTransformPump;
-								if (HoldOpenTransformPump)	
-								{
-									HoldOpenTransformPump->AddMove(
-										Request.SourceOrSelf,
-										Request.Stamp,
-										FQuat4f(Request.ThingRotator.Quaternion()),
-										FVector3f(Request.ThingVector));
-								}
-							}
-						}
-						break;
-					case ArtilleryRequestType::CreateTriggerOnVerifiedTick:
-						{
-							if (ContingentPhysicsLinkage 
-								&& Game
-								&& SeqNumber <= Game->GetLastVerifiedSequence()) //more than one frame might become verified at once in some scenarios.
-							{
-								auto inv = MyDispatch->GetWorld()->GetSubsystem<UInventoryDispatch>();
-								FTransform LocationnAndDimensions;
-								LocationnAndDimensions.SetIdentityZeroScale();
-								LocationnAndDimensions.SetLocation(Request.ThingVector);
-								LocationnAndDimensions.SetRotation(Request.ThingRotator.Quaternion());
-								LocationnAndDimensions.SetScale3D(Request.ThingVector2);
-								inv->CreateQueuedTriggerOnVerifiedFrame(LocationnAndDimensions);
-							}
-							else
-							{
-								//no-op. the request gets repeated over and over, since we know we CANNOT presim it.
-							}
-						}
-						break;
-					default:
-						UE_LOG(
-							LogTemp,
-							Fatal,
-							TEXT("ArtilleryDispatch::ProcessRequestRouterGameThread: Received Request Router request for unimplemented request type: [%d]"),
-							Request.GetType());
-					}
+					// this looks wrong but I'm pretty sure it ain' since we reserve highest.
+					CablingControlStream->MyPatternMatcher->runOneFrameWithSideEffects(true,
+					                                                                   0,
+					                                                                   0,
+					                                                                   i,
+					                                                                   refDangerous_LifeCycleManaged_Abilities_TripleBuffered);
 				}
+				//even if this doesn't get played for some reason, this is the last chance we've got to make a
+				//truly informed decision about the matter. By the time we reach the dispatch system, that chance is gone.
+				//Better to skip a cosmetic once in a while than crash the game.
+				CablingControlStream->get(CablingControlStream->highestInput - 1)->RunAtLeastOnce = true;
 			}
 		}
-	}
+	};
+	
+	FArtillerySimContext Context;
+	Context.bIsVerified = true;
+	Context.Tick = currentIndexCabling-1;
+	Context.InputGatherFunction = InputFunction;
+	// Not used here because we use InputFunction instead but I am going to leave these here because otherwise I would forget
+	Context.PrevInputs = {};
+	Context.Inputs = {};
+
+	Game->Simulate(Context);
 }
 
 void FArtilleryBusyWorker::RunFrameProcessingLoop(bool missedPrior, uint64_t currentIndexCabling, bool burstDropDetected, bool sent, uint32_t LastIncrementWindow, uint32_t lsbTime, const uint32_t SendHertzFactor, const uint32_t Period, const std::chrono::microseconds HalfStep, UArtilleryDispatch* ArtilleryDispatch)
 {
 	timeBeginPeriod(1);
-	Game = MakeShared<FArtilleryGameSim>(); //create the game now that we're processing da frame
+	
+	//create the game now that we're processing da frame
+	GetOrCreateGameSim();
+	Game->Initialize(ArtilleryDispatch->GetWorld());
+	
 	while (bRunning)
 	{
 		if (!sent &&
@@ -343,60 +186,14 @@ void FArtilleryBusyWorker::RunFrameProcessingLoop(bool missedPrior, uint64_t cur
 			bool RemoteInput = false;
 			RunStandardFrameSim(missedPrior, currentIndexCabling, burstDropDetected, current, RemoteInput);
 			
-			//@todo should be in the frame sim itself I think, but this is the fastest way to see if it works easily
-			ArtilleryDispatch->RunGuns();  // ALL THIS WORK. FOR THIS?! (Okay, that's really cool)
-
-			
 			/*
 			* Note: We also have Iris performing intermittent state stomps to recover from more serious desyncs.
 			* Ultimately, rollback can never solve everything. The windows just get too wide.
 			*/
 			sent = true;
 			TickliteNow = ContingentInputECSLinkage->Now(); // this updates ONCE PER CYCLE. ONCE. THIS IS INTENDED.
-			ProcessRequestRouterBusyWorkerThread(ArtilleryDispatch);
-			//tag container save-off currently happens before player and player-like locomotion.
-			//this SHOULD be the right place, by my limited reasoning, but I could be wrong.
-			// for (auto TagSet : TagRollbackManagement) // do not change to ref.
-			// {
-			// 	if (TagSet.Value)
-			// 	{
-			// 		TagSet.Value->CacheLayer();	
-			// 	}
-			// }
-			ArtilleryDispatch->RunLocomotions();
-			//such a simple thing, after all this work.
-			if (ContingentPhysicsLinkage == nullptr) 
-			{
-				//TODO: do we need to trigger this here????
-				//StartTicklitesApply->Trigger();
-			}
-			else // yeah, I know it's optional, but stylistically, it's important.
-			{
-				{
-					ContingentPhysicsLinkage->StackUp();
-					StartTicklitesApply->Trigger();
-					StartRunAhead->Trigger();
-					{
-						ContingentPhysicsLinkage->StepWorld(TickliteNow, SeqNumber);
-					}
-				}
-				// ReSharper disable once CppExpressionWithoutSideEffects (it has _ rather a lot _ of side-effects)
-				ContingentPhysicsLinkage->BroadcastContactEvents();
-				if (ParticleSystemPointer)
-				{
-					ParticleSystemPointer->ArtilleryTick(); 
-				}
-
-				if (ProjectileSystemPointer)
-				{
-					ProjectileSystemPointer->ArtilleryTick();
-				}
-				if (EventLogSystemPointer)
-				{
-					EventLogSystemPointer->ArtilleryTick();
-				}
-			}
-
+			
+			
 			
 			// Manage stuff added from QueueFunctionFromAnyThreadAndWait
 			PostRunFrameProcessingLoop->Trigger();
@@ -521,6 +318,18 @@ bool FArtilleryBusyWorker::QueueFunctionFromAnyThreadAndWait(TFunction<void()> C
 	NewEventForArtilleryThread->Trigger();
 	
 	return bWaitComplete;
+}
+
+TSharedPtr<FArtilleryGameSim> FArtilleryBusyWorker::GetOrCreateGameSim()
+{
+	// Shameful bandaid fix to init order being weird. We definitely do not want to make thjis kind of vibes-based
+	if (Game)
+	{
+		return Game;
+	}
+	
+	Game = MakeShared<FArtilleryGameSim>();
+	return Game;
 }
 
 void FArtilleryBusyWorker::Cleanup()

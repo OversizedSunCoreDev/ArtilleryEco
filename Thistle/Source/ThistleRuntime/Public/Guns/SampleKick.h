@@ -71,6 +71,7 @@ public:
 		bool RerunDueToReconcile, bool VerifiedFrame = false, const EventBufferInfo FireAction = EventBufferInfo::Default())
 		override
 	{
+		Super::PreFireGun(OutcomeStates, DallyFramesToOmit, RerunDueToReconcile, VerifiedFrame, FireAction);
 		AttrMapPtr attribMap = MyDispatch->GetAttribMap(MyGunKey);
 		if (attribMap == nullptr)
 		{
@@ -103,6 +104,7 @@ virtual void FireGun(
 		int DallyFramesToOmit,
 		bool RerunDueToReconcile) override
 	{
+		Super::FireGun(OutcomeStates, DallyFramesToOmit, RerunDueToReconcile);
 		FBLet GameSimPhysicsObject = this->MyDispatch->GetFBLetByObjectKey(
 			MyProbableOwner, this->MyDispatch->GetShadowNow());
 		FVector ForwardInitial;
@@ -154,6 +156,7 @@ virtual void FireGun(
 		int DallyFramesToOmit,
 		bool RerunDueToReconcile)  override
 	{
+		Super::PostFireGun(OutcomeStates, DallyFramesToOmit, RerunDueToReconcile);
 		AttrMapPtr MyAttribs = MyDispatch->GetAttribMap(MyGunKey);
 		AttrPtr AmmoPtr = MyAttribs->FindRef(AMMO);
 		AmmoPtr->SetCurrentValue(AmmoPtr->GetCurrentValue() - 1);

@@ -51,6 +51,7 @@ public:
 		bool RerunDueToReconcile, bool VerifiedFrame = false, const EventBufferInfo FireAction = EventBufferInfo::Default())
 		override
 	{
+		Super::PreFireGun(OutcomeStates, DallyFramesToOmit, RerunDueToReconcile, VerifiedFrame, FireAction);
 		AttrPtr CooldownRemainingPtr = MyDispatch->GetAttrib(MyGunKey, COOLDOWN_REMAINING);
 		if (!CooldownRemainingPtr.IsValid() || CooldownRemainingPtr->GetCurrentValue() > 0.f)
 		{
@@ -70,6 +71,7 @@ virtual void FireGun(
 		int DallyFramesToOmit,
 		bool RerunDueToReconcile) override
 	{
+		Super::FireGun(OutcomeStates, DallyFramesToOmit, RerunDueToReconcile);
 		UArtilleryProjectileDispatch* ProjectileDispatch = MyDispatch->GetWorld()->GetSubsystem<UArtilleryProjectileDispatch>();
 		if (ProjectileDispatch)
 		{
@@ -92,6 +94,7 @@ virtual void FireGun(
 		int DallyFramesToOmit,
 		bool RerunDueToReconcile)  override
 	{
+		Super::PostFireGun(OutcomeStates, DallyFramesToOmit, RerunDueToReconcile);
 		AttrMapPtr MyAttribs = MyDispatch->GetAttribMap(MyGunKey);
 		AttrPtr CooldownPtr = MyAttribs->FindRef(COOLDOWN);
 		AttrPtr CooldownRemainingPtr = MyAttribs->FindRef(COOLDOWN_REMAINING);

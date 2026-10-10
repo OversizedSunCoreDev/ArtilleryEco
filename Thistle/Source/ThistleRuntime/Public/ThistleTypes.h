@@ -7,6 +7,7 @@
 #include "GameplayTagContainer.h"
 #include "SkeletonTypes.h"
 #include "StateTreeExecutionContext.h"
+#include "ArtilleryDispatch.h"
 #include "ThistleTypes.generated.h"
 
 namespace ThistleTypes

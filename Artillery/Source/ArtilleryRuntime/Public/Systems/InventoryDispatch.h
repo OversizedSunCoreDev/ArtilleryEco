@@ -10,9 +10,6 @@
 #include "FBarrageKey.h"
 #include "seq/SeqU64Prefix.hpp"
 	
-#include "EdGraphUtilities.h"
-#include "SlateFwd.h"
-
 #include "BarrageDispatch.h"
 #include "FArtilleryGun.h"
 #include "FlattenedBodyBox.h"
@@ -20,9 +17,6 @@
 #include "Subsystems/WorldSubsystem.h"
 
 #include "InventoryDispatch.generated.h"
-
-
-class AUInventoryTriggerProxy;
 
 USTRUCT(BlueprintType)
 struct FSoundPinBag

@@ -41,7 +41,9 @@ void FInputRollback::Initialize(UWorld* World)
     NetworkDispatch = World->GetSubsystem<UBristleconeWorldSubsystem>();
     bIsServer = World->GetGameInstance()->IsDedicatedServerInstance();
     UCablingWorldSubsystem* DirectLocalInputSystem = World->GetSubsystem<UCablingWorldSubsystem>();
-    DirectLocalInputSystem->DestructiveChangeLocalOutboundQueue(InputSwapSlot);
+    
+    // @fixme is this seems to eat local input! Requesting Jake assistance
+    // DirectLocalInputSystem->DestructiveChangeLocalOutboundQueue(InputSwapSlot);
 }
 
 void FInputRollback::ProcessPredictiveInputs(uint32 Sequence, ArtilleryTime TickliteNow)

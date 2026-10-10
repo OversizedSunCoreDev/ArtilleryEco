@@ -7,41 +7,17 @@ JPH_NAMESPACE_BEGIN
 //factored this out just in bloody time. ffs. :/
 struct BodyBoxFlatCopy
 		{
-			///////////////////
-			///The Path to 16b or less
-			///////////////////
-			//technically, you can save 2 bits per float from the exponent, since we don't want fractions of a centimeter
-			//and 2 bits from the mantissa and still get basically the same precision, since we're going to use a minimum stride
-			//That'll let you make this godforsaken thing really small using something like
-			/*	    
-			 *		0xZZ ZZ ZZ ZY YY YY YY XX XX XX XA BC
-			 *		unsigned char xBound;
-			 *		unsigned char yBound;
-			 *		unsigned char zBound;
-			 *		
-			 *		where A, B, and C are used as exponents for xB, yB, and zB like this:
-			 *		xBound * (1 << (A+1)). You can raise 1 if you need to, or structure things more like A*A*A or something.
-			 *		Whatever you do, this allows you to get size classes that feel pretty okay for your stride if you fiddle.
-			 *		
-			 *		Layer is then defined by the _array_ the shadow is stored in.
-			 *		This results in a fairly high precision, fairly accurate 16b bounding box shadow.
-			 *		
-			 *		However, that's pretty fiddly, unintuitive, and yields some pretty weird limits on how big objects can be.
-			 *		I went ahead and just used the jolt half floats. This yields a BB of about 20b. If that turns out to be
-			 *		too big or Jolt's packing takes that up to 32, I guess I'll implement the above. However, if you need to
-			 *		improve cache perf, 16b is the magic number for an extra bb per 64b cache line fill,
-			 *		so the above strat might be really powerful.
-			 *
-			 *		Here's hoping we never need it. --JMK
-			 */
 #define ___LOCO_CHAOSDUNK Vec3Arg{x  +  xBound, y  +  yBound, z + zBound }
 			float x; //switching this to center would improve our ability to express large volumes
 			float y;
-			float z;
+			float z; //could go to a half float here? get it to 24 bytes if you dropped the padding. tbh, could get it to 20 bytes if you tried but
 			HalfFloat xBound;
 			HalfFloat yBound;
 			HalfFloat zBound;
 			unsigned char layer;
+			unsigned char Unused; // this
+			unsigned short material;
+			unsigned char Padding; //and this would be unused space at our alignments.
 			//good chance we'll need everything from the JPH enum class EFlags
 			//also this bitpacking style isn't ACTUALLY platform agnostic, sadly, so when we go to prod, we'll need to actually pack manually.
 			//TODO: before prod, pack manually.
@@ -111,9 +87,11 @@ struct BodyBoxFlatCopy
 			                                                     meta(0)
 			{
 			}
-
+			
 			explicit BodyBoxFlatCopy(Body& body): HumsInstrumentsOfSurrender(true) //baaaa da daaaaaaaaaa ba da da daaaaaaaaa daa daa badaaaaaaaaa
 			{
+				SubShapeID emptyDefaultID;
+				auto shp = body.GetShape()->GetMaterial(emptyDefaultID);
 				auto& a = body.GetWorldSpaceBounds();
 				auto Cent = a.GetCenter();
 				auto Extt = a.GetExtent();
@@ -124,6 +102,7 @@ struct BodyBoxFlatCopy
 				yBound = Extt.GetY() + 1;
 				zBound = Extt.GetZ() + 1;
 				layer = body.GetObjectLayer();
+				material = MashFunctions::lowerbias3216(shp->GetDebugColor().GetUInt32());
 				IsKinematic =
 					body.IsKinematic();
 				IsDynamic =
@@ -142,7 +121,7 @@ struct BodyBoxFlatCopy
 			}
 
 			BodyBoxFlatCopy(float X, float Y, float Z, HalfFloat XBound, HalfFloat YBound, HalfFloat ZBound,
-			                unsigned char Layer, bool bIsKinematic, bool bIsDynamic, bool bIsSensor, bool bIsRigid,
+			                unsigned char Layer, unsigned short Material, bool bIsKinematic, bool bIsDynamic, bool bIsSensor, bool bIsRigid,
 			                bool bIsStatic, bool bIsActive, bool bGetCollideKinematicVsNonDynamic,
 			                const BodyID& Meta)
 				: x(X),
@@ -152,6 +131,7 @@ struct BodyBoxFlatCopy
 				  yBound(YBound),
 				  zBound(ZBound),
 				  layer(Layer),
+	              material(Material),
 				  IsKinematic(bIsKinematic),
 				  IsDynamic(bIsDynamic),
 				  IsSensor(bIsSensor),

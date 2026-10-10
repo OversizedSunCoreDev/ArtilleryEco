@@ -7,6 +7,8 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "UCablingWorldSubsystem.h"
 #include "ArtilleryCommonTypes.h"
+#include "ArtilleryGameSim.h"
+#include "ArtilleryObject.h"
 #include "AtomicTagArray.h"
 #include "FArtilleryStateTreesThread.h"
 #include "Containers/TripleBuffer.h"
@@ -15,6 +17,7 @@
 #include "FArtilleryTicklitesThread.h"
 #include "FJThread.h"
 #include "GameplayTagContainer.h"
+#include "StateContainer.h"
 #include "TransformDispatch.h"
 #include "Engine/Engine.h"
 #if WITH_EDITOR
@@ -89,9 +92,26 @@ namespace Arty
 	typedef TSharedPtr<FGameplayTagContainer> GameplayTagContainerPtrInternal;
 }
 
+
+using MachineLet = IArtilleryControllite*;
+using Machlet = MachineLet;
+
+USTRUCT()
+struct FArtilleryDispatchState : public FArtilleryGenericData
+{
+	GENERATED_BODY()
+
+	TMap<FGunKey, FArtilleryFireGunFromDispatch> GunToFiringFunctionMapping;
+	AttrCuckoo AttributeSetToDataMapping;
+	TMap<FSkeletonKey, Machlet> KeyToControlliteMapping;
+	IdentCuckoo IdentSetToDataMapping;
+	TMap<FSkeletonKey, Attr3MapPtr> VectorSetToDataMapping;
+	TMap<FSkeletonKey, TSharedPtr<ArtilleryControlStream>> PlayersControlStreamMap;
+};
+
 class UCanonicalInputStreamECS;
 UCLASS()
-class ARTILLERYRUNTIME_API UArtilleryDispatch : public UTickableWorldSubsystem, public ICanReady, public ISkeletonLord
+class ARTILLERYRUNTIME_API UArtilleryDispatch : public UTickableWorldSubsystem, public ICanReady, public ISkeletonLord, public IArtilleryObject
 {
 	GENERATED_BODY()
 
@@ -150,18 +170,20 @@ public:
 	TObjectPtr<UInventoryDispatch> Inventory;
 	UPROPERTY()
 	TObjectPtr<UCanonicalInputStreamECS> InputStreamECS;
-	
-	
-	using MachineLet = IArtilleryControllite*;
-	using Machlet = MachineLet;
+
 #if WITH_EDITOR
 	TSharedPtr<ArtilleryDebugger> ArtilleryDebugger;
 #endif
-	UArtilleryDispatch();;
+	
+	UArtilleryDispatch();
 	
 	// dependencies expressed: ALL(transform pillar, cabling, bristlecone, input pillar, barrage) -> this.
 	constexpr static int OrdinateSeqKey = ORDIN::ArtilleryOnline;
 	virtual bool RegistrationImplementation() override;
+	
+	virtual void StoreArtilleryState(FArtilleryDataBuffer& State) override;
+	virtual void LoadArtilleryState(const FArtilleryDataBuffer& State) override;
+	
 	void SetupNewPlayer(AActor* Player);
 
 	OnArtilleryActivated BindToArtilleryActivated;
@@ -185,26 +207,14 @@ public:
 		return TransformECSPillar ? TransformECSPillar->CopyOfTransformByObjectKey(Target) : TOptional<FTransform>();
 	}
 
-	void SetProjectileDispatch(ITickHeavy* ReferenceToSubsystem)
-	{
-		ArtilleryAsyncWorldSim.ProjectileSystemPointer = ReferenceToSubsystem;
-	}
-	
-	void SetParticleDispatch(ITickHeavy* ReferenceToSubsystem)
-	{
-		ArtilleryAsyncWorldSim.ParticleSystemPointer = ReferenceToSubsystem;
-	}
-	
-	void SetSkeletalMeshDispatch(ITickHeavy* ReferenceToSubsystem)
-	{
-		ArtilleryTicklitesWorker_LockstepToWorldSim.SkeletalMeshSystemPointer = ReferenceToSubsystem;
-	}
+	void SetProjectileDispatch(ITickHeavy* ReferenceToSubsystem);
 
-	void SetEventLogSystem(ITickHeavy* ReferenceToSubsystem)
-	{
-		ArtilleryAsyncWorldSim.EventLogSystemPointer = ReferenceToSubsystem;
-	}
-	
+	void SetParticleDispatch(ITickHeavy* ReferenceToSubsystem);
+
+	void SetSkeletalMeshDispatch(ITickHeavy* ReferenceToSubsystem);
+
+	void SetEventLogSystem(ITickHeavy* ReferenceToSubsystem);
+
 	FBLet GetFBLetByObjectKey(FSkeletonKey Target, ArtilleryTime Now);
 
 	//Executes necessary preconfiguration for threads owned by this dispatch. Likely going to be factored into the
@@ -476,6 +486,8 @@ public:
 	bool burstDropDetected = false;
 
 	bool ShouldProcessInputs() const { return bProcessInputs; }
+	
+
 
 	static inline long long monotonkey = 0;
 	//If you're trying to figure out how artillery works, read the busy worker knowing it's a single thread coming off of Dispatch.

@@ -1,21 +1,20 @@
 ﻿#pragma once
-#include "FArtilleryGun.h"
+
 #include "SkeletonTypes.h"
 #include "Skeletonize.h"
 #include "Templates/TypeHash.h"
 #include "DataTableEditorUtils.h"
-#include "Engine/DataTable.h"
+
 #include "SGraphPinNameList.h"
-#include "UObject/SoftObjectPtr.h"
-#include "Widgets/DeclarativeSyntaxSupport.h"
+
 THIRD_PARTY_INCLUDES_START
 #include "seq/ordered_map.hpp"
-#include "seq/concurrent_map.hpp"
-#include "seq/radix_hash_map.hpp"
+
 #include "seq/SeqU64Prefix.hpp"
 #include "seq/flat_map.hpp"
 #include "Structures/ApproximateMembership/FLargeGate.h"
 THIRD_PARTY_INCLUDES_END
+#include "FArtilleryGun.h"
 #include "InventoryEssentialTypes.generated.h"
 #define Inventory_VERIFIEDFRAMETESTMODE true
 
@@ -506,7 +505,7 @@ struct ARTILLERYRUNTIME_API FEventedInventoryData : public FInventoryData
 
 
 
-USTRUCT()
+	USTRUCT()
 	struct FSimpleTriggerGun : public FArtilleryGun
 	{
 		

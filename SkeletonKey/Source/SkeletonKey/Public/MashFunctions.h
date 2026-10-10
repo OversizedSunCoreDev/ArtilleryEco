@@ -19,6 +19,10 @@ public:
 	static inline uint64 FastHash64(uint64 inValue);
 	static inline uint32 FastHash32(uint32 key);
 	static inline uint32 FastHash6432(uint64 key);
+	static inline uint8_t lowerbias328(uint32_t x);
+	static inline uint16_t lowerbias3216(uint32_t x);
+	static inline uint16_t hash16_s6(uint16_t x);
+	static inline uint8_t hash16_s6M8(uint16_t x);
 
 	static FString WhyDoIExist();
 };
@@ -59,8 +63,8 @@ uint32 FMMM::FastHash6432(uint64 key)
 	return key;
 }
 
-//past here, these are drawn from hash inspector then borked.
-inline uint8_t lowerbias328(uint32_t x)
+//past here, these are drawn from hash-prospector then borked.
+inline uint8_t FMMM::lowerbias328(uint32_t x)
 {
 	x ^= x >> 16;
 	x *= 0xa812d533;
@@ -72,7 +76,18 @@ inline uint8_t lowerbias328(uint32_t x)
 	return x;
 }
 
-inline uint16_t hash16_s6(uint16_t x)
+inline uint16_t FMMM::lowerbias3216(uint32_t x)
+{
+	x ^= x >> 16;
+	x *= 0xa812d533;
+	x ^= x >> 15;
+	x *= 0xb278e4ad;
+	x ^= x >> 23;
+	x *= 0xd533a813;
+	return (x * 2654435769U) >> 16;
+}
+
+inline uint16_t FMMM::hash16_s6(uint16_t x)
 {
 	x += x << 7; x ^= x >> 8;
 	x += x << 3; x ^= x >> 2;
@@ -80,7 +95,7 @@ inline uint16_t hash16_s6(uint16_t x)
 	return x;
 }
 
-inline uint8_t hash16_s6M8(uint16_t x)
+inline uint8_t FMMM::hash16_s6M8(uint16_t x)
 {
 	x += x << 7; x ^= x >> 8;
 	x += x << 3; x ^= x >> 2;

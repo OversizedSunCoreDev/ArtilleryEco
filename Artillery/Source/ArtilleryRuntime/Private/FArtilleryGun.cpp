@@ -2,6 +2,15 @@
 #include "ArtilleryBPLibs.h"
 
 
+FArtilleryGun::FArtilleryGun(const FGunKey& KeyFromDispatch, UArtilleryDispatch* Dispatch)
+{
+	MyDispatch = Dispatch;
+	MyProjectileDispatch = nullptr;
+	MyTransformDispatch = nullptr;
+	MyGunKey = KeyFromDispatch;
+	MyTransformDispatch = MyDispatch->GetWorld()->GetSubsystem<UTransformDispatch>();
+	MyProjectileDispatch = MyDispatch->GetWorld()->GetSubsystem<UArtilleryProjectileDispatch>();
+}
 
 FArtilleryGun::~FArtilleryGun()
 {
@@ -50,6 +59,15 @@ void FArtilleryGun::FireGun(
 	if(!ReadyToFire)
 	{
 		return; //your gun is broken. if you don't like this, override this function.
+	}
+	
+	// Confirmed we can fire, 
+	ArtilleryTime now = MyDispatch->GetShadowNow();
+	AttrMapPtr AttrMap = MyDispatch->GetAttribMap(MyGunKey);
+	AttrPtr StartFireTimePtr = AttrMap->FindRef(AttribKey::StartFiredTimestamp);
+	if (now >= StartFireTimePtr->GetCurrentValue() + AttrMap->FindRef(AttribKey::RefireTickCount)->GetCurrentValue())
+	{
+		StartFireTimePtr->SetCurrentValue(MyDispatch->GetShadowNow());
 	}
 		
 	if (OutcomeStates == FArtilleryStates::Fired)
@@ -109,6 +127,8 @@ bool FArtilleryGun::Initialize(const FGunKey& KeyFromDispatch, const bool MyCode
 	InitialGunAttributes.Add(RELOAD, ReloadTime);
 	InitialGunAttributes.Add(RELOAD_REMAINING, 0);
 	InitialGunAttributes.Add(TICKS_SINCE_GUN_LAST_FIRED, 0);
+	InitialGunAttributes.Add(AttribKey::RefireTickCount, 12);
+	InitialGunAttributes.Add(AttribKey::StartFiredTimestamp, 0);
 	InitialGunAttributes.Add(AttribKey::LastFiredTimestamp, 0);
 	InitialGunAttributes.Add(TRIGGER_PULLED, 0);
 	MyAttributes = MakeShareable(new FAttributeMap(MyGunKey, MyDispatch, InitialGunAttributes));

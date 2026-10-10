@@ -53,7 +53,7 @@ protected:
 	bool Erase(FSkeletonKey Top);
 	
 private:
-	bool AddImpl(uint32_t Key, FGameplayTag Bot);
+	bool AddImpl(uint32_t Key, FGameplayTag Tag);
 
 	unsigned short Counter = 1; //magicify 0.
 	TagsSeen SeenT;

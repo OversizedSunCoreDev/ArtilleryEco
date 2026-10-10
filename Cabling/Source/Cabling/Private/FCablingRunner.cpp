@@ -213,10 +213,10 @@ struct SwapBitHandler
 	//the indexes should always be the same.
 	//we track them separately for debug purposes only.
 	
-	uint64 StateBufferC[8];
-	uint8 indexC = 0;
-	uint64 StateBufferK[8];
-	uint8 indexK = 0;
+	uint64 StateBufferC[8] = {0};
+	int64 indexC = 0;
+	uint64 StateBufferK[8] = {0};
+	int64 indexK = 0;
 	void AddController(uint64_t ControllerByValue)
 	{
 		StateBufferC[indexC] = ControllerByValue;
@@ -229,33 +229,41 @@ struct SwapBitHandler
 		indexK = (indexK + 1) % 8;
 	}
 	
-	uint64_t ApplySwapBitRules(uint64_t ControllerByValue)
+	uint64_t ApplySwapBitRulesController(uint64_t ControllerByValue)
 	{
 		
-		auto CurC = StateBufferC[indexC];
-		auto CurK = StateBufferK[indexK];
 		//cur not currently used... but may need.
 		
 		auto C1 = StateBufferC[
-			(indexC - 1) % 8
+			(indexC + 7)  % 8
 			];
 		auto C2 = StateBufferC[
-			(indexC - 2) % 8
+			(indexC + 6)  % 8
 			];
 		
-		auto K1 = StateBufferK[
-			(indexK - 1) % 8
-			];
-		auto K2 = StateBufferK[
-			(indexK - 2) % 8
-			];
-		auto TK = (K1 ^ K2);
 		auto TC = (C1 ^ C2);
-		auto truth = (TK | TC) & 0x0000000000000000000000000000000F;
+		auto truth =  TC & 0x00000000000F0000;
 		
 		return ControllerByValue | truth; // effectively, if only one was set over the last two, we'll set next.
 	}
-	
+
+	uint64_t ApplySwapBitRulesKeyboard(uint64_t ControllerByValue)
+	{
+		
+		//cur not currently used... but may need.
+		
+		auto K1 = StateBufferC[
+			(indexC + 7)  % 8
+			];
+		auto K2 = StateBufferC[
+			(indexC + 6)  % 8
+			];
+		
+		auto TK = (K1 ^ K2);
+		auto truth =  TK & 0x00000000000F0000;
+		
+		return ControllerByValue | truth; // effectively, if only one was set over the last two, we'll set next.
+	}
 };
 
 
@@ -351,6 +359,11 @@ uint32 FCabling::Run()
 
 				reading->Release();
 			}
+			else if (Mouse != nullptr)
+			{
+				Mouse->Release();
+				Mouse = nullptr;
+			}
 
 			//get the keeb...
 			if (g_gameInput && !Sent &&
@@ -363,6 +376,12 @@ uint32 FCabling::Run()
 
 				KeyboardCurrentRead = FromKeyboardAndMouseState(keyCount, states, mouseState.buttons, MouseXDelta,
 				                                                MouseYDelta);
+				
+			}
+			else if (keyboard != nullptr)
+			{
+				keyboard->Release();
+				keyboard = nullptr;
 			}
 			// AND get the gamepad... we need both inputs to check which has data.
 			if (g_gameInput &&
@@ -384,8 +403,8 @@ uint32 FCabling::Run()
 			}
 			TwiddleForHeld.AddController(GamepadCurrentRead);
 			TwiddleForHeld.AddKeyboard(KeyboardCurrentRead);
-			GamepadCurrentRead = TwiddleForHeld.ApplySwapBitRules(GamepadCurrentRead);
-			KeyboardCurrentRead = TwiddleForHeld.ApplySwapBitRules(KeyboardCurrentRead);
+			GamepadCurrentRead = TwiddleForHeld.ApplySwapBitRulesController(GamepadCurrentRead);
+			KeyboardCurrentRead = TwiddleForHeld.ApplySwapBitRulesKeyboard(KeyboardCurrentRead);
 			Sent = SendNew(Sent, PriorReadingGamepad, GamepadCurrentRead);
 			Sent = SendNew(Sent, PriorReadingKeyboard, KeyboardCurrentRead);
 			if (GamepadCurrentRead != BlankGamepad)

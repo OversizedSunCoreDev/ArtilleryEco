@@ -2,13 +2,10 @@
 
 #include <atomic>
 #include <memory>
-#include <utility>
 #include "NativeGameplayTags.h"
 
 #include "CoreMinimal.h"
-#include "Templates/SubclassOf.h"
-#include "UObject/UnrealType.h"
-#include "Engine/DataTable.h"
+#include "ArtilleryCommonTypes.h"
 #include "Containers/CircularBuffer.h"
 
 struct FConservedTagContainer;
@@ -25,11 +22,10 @@ THIRD_PARTY_INCLUDES_END
 
 #include "ConservedTagContainer.generated.h"
 
-struct FConservedTagContainer;
 typedef TSharedPtr<FGameplayTagContainer> FS_GameplayTagPtr;
 typedef TArray<FGameplayTag> UnderlyingFTL;
 typedef TSharedPtr<UnderlyingFTL> FTagLayer;
-#define FAST_TAG_MAX_C 30
+
 typedef TMap<FGameplayTag, uint16_t> UnderlyingTagMapping;
 typedef TMap<uint16_t, FGameplayTag> UnderlyingTagReverse;
 typedef TSharedPtr<TMap<FGameplayTag, uint16_t>> TagsSeen;
@@ -78,7 +74,7 @@ struct ARTILLERYRUNTIME_API FConservedTagContainer
 	
 	friend class UArtilleryDispatch;
 	friend class AtomicTagArray;
-	friend class FArtilleryBusyWorker;
+	friend class FArtilleryGameSim;
 	FConservedTagContainer() = default;
 	virtual ~FConservedTagContainer() = default;
 	friend class AtomicTagArray;

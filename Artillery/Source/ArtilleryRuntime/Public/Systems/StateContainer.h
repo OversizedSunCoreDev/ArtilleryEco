@@ -8,22 +8,35 @@
 
 #include "ArtilleryShell.h"
 #include "SkeletonTypes.h"
-
+#include "StructUtils/InstancedStruct.h"
+#include "StateContainer.generated.h"
 // Forward declarations
 class UBarrageDispatch;
 class UArtilleryDispatch;
 
+
+USTRUCT()
+struct FArtilleryGenericData
+{
+    GENERATED_BODY()
+};
+
+
+// Stores the entire predicted state of one frame for rollback
+USTRUCT()
 struct FArtilleryDataBuffer
 {
+    GENERATED_BODY()
+    
     //relies on the JPH::StateRecorderImpl operator= added in
     //RollbackBundle/JoltPatches/StateRecorderImpl.h.patch.
     FArtilleryDataBuffer() = default;
     FArtilleryDataBuffer(const FArtilleryDataBuffer& Other) noexcept
         : SequenceNumber(Other.SequenceNumber),
           bIsValid(Other.bIsValid),
-          Inputs(Other.Inputs),
+          bIsVerified(Other.bIsVerified),
           TimeStamp(Other.TimeStamp),
-          bIsVerified(Other.bIsVerified)
+          Inputs(Other.Inputs)
     {
         PhysicsData.Clear();
         /* TODO(#3, DEFERRED per JMK 2026-06-25): copy the physics snapshot via Jolt's public
@@ -50,14 +63,26 @@ struct FArtilleryDataBuffer
         return *this;
     }
 
-    uint32_t SequenceNumber = 0;
+    UPROPERTY()
+    uint32 SequenceNumber = 0;
+    UPROPERTY()
     bool bIsValid = false;
+    UPROPERTY()
     bool bIsVerified = false;
+    
     ArtilleryTime TimeStamp = 0;
     TMap<PlayerKey, FArtilleryShell> Inputs;
+    
+    
     JPH::StateRecorderImpl PhysicsData;
-    // Game-state snapshot lived here as a TArray<uint8> blob, never populated or
-    // consumed. Removed; re-add a typed hook when an actual owner exists.
+    
+    // Allows users to provide their own structs for serializing data in a more unreal-friendly manner
+    UPROPERTY()
+    TArray<TInstancedStruct<FArtilleryGenericData>> GenericData;
+    
+    // Raw bytes that can be used by any Artillery Object. Warning: mismatched offsets WILL explode upon read/write
+    UPROPERTY()
+    TArray<uint8> RawBytes;
 };
 
 class FArtilleryStateManager
@@ -131,6 +156,7 @@ public:
 
     bool HasVerifiedFrame() const { return VerifiedTick.bIsValid; }
     uint32 GetLastVerifiedSequence() const { return LastVerifiedTick; }
+    uint32 GetOldestSequence() const { return OldestSequence; }
 
 private:
     TArray<FArtilleryDataBuffer> Ticks;

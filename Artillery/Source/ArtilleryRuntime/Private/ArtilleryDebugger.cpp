@@ -1,6 +1,7 @@
 #include "ArtilleryRuntime/Public/Debugging/ArtilleryDebugger.h"
 
 #include "ABarragePlayerController.h"
+#include "ArtilleryGameSim.h"
 #include "FArtilleryGun.h"
 #include "imgui.h"
 
@@ -22,6 +23,13 @@ static TAutoConsoleVariable<int32> CVarEnableImGuiArtilleryNetwork(
 	TEXT("imgui.Enable.Artillery.Network"),
 	0,
 	TEXT("Enable or Disable ImGui Rendering.\n0: Off\n1: On"),
+	ECVF_Default
+);
+
+static TAutoConsoleVariable<int32> CVarEnableImGuiArtilleryMemoryRollbackDebug(
+	TEXT("imgui.Enable.Artillery.RollbackDebug"),
+	0,
+	TEXT(""),
 	ECVF_Default
 );
 
@@ -170,6 +178,22 @@ void ArtilleryDebugger::DrawImGuiOverview()
 
 	DispatchOwnerPtr->ArtilleryAsyncWorldSim.QueueFunctionFromAnyThreadAndWait([=]
 	{
+		TSharedPtr<FArtilleryGameSim> GameSim = DispatchOwnerPtr->ArtilleryAsyncWorldSim.GetOrCreateGameSim();
+		if (GameSim)
+		{
+			auto OldestSequence = GameSim->GetOldestStoredSequence();
+			ImGui::Text("Current sequence: %ul", OldestSequence);
+			ImGui::SameLine();
+			int32 RollbackTo = OldestSequence; 
+			ImGui::InputInt("Rollback to: ", &RollbackTo);
+			ImGui::SameLine();
+			if (ImGui::Button("Rollback"))
+			{
+				GameSim->RollbackAndResimulate(RollbackTo);
+			}	
+		}
+		
+		
 		TSharedPtr<const AttrCuckoo> AttributeMapping = DispatchOwnerPtr->GetAttributeSetToDataMapping();
 
 		TSharedPtr<const TMap<FSkeletonKey, TSharedPtr<FArtilleryGun>>> GunsByKey = DispatchOwnerPtr->GetGunByKeyMap();

@@ -257,8 +257,7 @@ void AThistleInject::HandleIdleState()
 	FVector PhysVelocity = FVector(FBarragePrimitive::GetVelocity(BarragePhysicsAgent->MyBarrageBody));
 	if (!PhysVelocity.IsNearlyZero())
 	{
-		FVector BrakingForce = -PhysVelocity * 0.8f; // Strong braking
-		BrakingForce.Z *= 0.1;
+		FVector BrakingForce = -PhysVelocity * 0.01f; // weak braking
 		FBarragePrimitive::ApplyForce(BrakingForce, BarragePhysicsAgent->MyBarrageBody, AIMovement);
 		auto relmap = ArtilleryStateMachine->MyDispatch->GetRelationships(GetMyKey());
 		if (relmap->Contains(E_IdentityAttrib::Target))
@@ -275,8 +274,8 @@ void AThistleInject::HandleIdleState()
 					FVector PhysPosition = FVector(FBarragePrimitive::GetPosition(BarragePhysicsAgent->MyBarrageBody));	
 					
 					auto PhysRot = FBarragePrimitive::OptimisticGetAbsoluteRotation(BarragePhysicsAgent->MyBarrageBody);	
-					FRotator LookRot = UKismetMathLibrary::FindLookAtRotation(PhysPosition, loc);
-					FQuat TargetRotation = FMath::QInterpTo(PhysRot, FRotator(LookRot.Pitch,LookRot.Yaw,0).Quaternion(), 1/ArtilleryTickHertz, 5);
+					FRotator LookRot = UKismetMathLibrary::FindLookAtRotation(PhysRot.ToRotationVector(), loc);
+					FQuat TargetRotation = FMath::QInterpTo(PhysRot.GetNormalized(), FRotator(LookRot.Pitch,LookRot.Yaw,LookRot.Roll).Quaternion().GetNormalized(), 100.0f / ArtilleryTickHertz, RotationSpeed);
 					FBarragePrimitive::ApplyRotation(TargetRotation, BarragePhysicsAgent->MyBarrageBody);
 				}
 			}
@@ -335,19 +334,18 @@ void AThistleInject::HandleMovingState()
 	
 	//float NavHeight = CompareNavMeshHeight();
 	FVector PhysVelocity = FVector(FBarragePrimitive::GetVelocity(BarragePhysicsAgent->MyBarrageBody));
-	FQuat   PhysRotation = FBarragePrimitive::OptimisticGetAbsoluteRotation(BarragePhysicsAgent->MyBarrageBody);
+	FQuat   CurPhysicsRot = FBarragePrimitive::OptimisticGetAbsoluteRotation(BarragePhysicsAgent->MyBarrageBody);
 
 	FVector PhysPosition = FVector(FBarragePrimitive::GetPosition(BarragePhysicsAgent->MyBarrageBody));	
 	FVector SteerCombinedPosition = SteeringForce + PhysPosition;
 	if (!PhysVelocity.IsNearlyZero())
 	{
-		FRotator LookRot = UKismetMathLibrary::FindLookAtRotation(PhysPosition, SteerCombinedPosition);
-		FRotator PhysRot = PhysRotation.Rotator();
+		FRotator SteeringRotation = UKismetMathLibrary::FindLookAtRotation(PhysPosition, SteerCombinedPosition);
 		//GetRotation on the physics object does not do the right thing. gonna guess we've got a conversion issue in our from jolt rotation.
-		FQuat TargetRotation = FMath::QInterpTo(PhysRotation.GetNormalized(), FRotator(PhysRot.Pitch,LookRot.Yaw,0).Quaternion(), 1/ArtilleryTickHertz, 5);
+		FQuat TargetRotation = FMath::QInterpTo(CurPhysicsRot.GetNormalized(), FRotator(SteeringRotation.Pitch,SteeringRotation.Yaw,SteeringRotation.Roll).Quaternion().GetNormalized(), ArtilleryDeltaTime, RotationSpeed);
 		//it is numerically stable to simply average quaternions when they are within a certain closeness and a certain precision.
 		FBarragePrimitive::ApplyRotation(TargetRotation, BarragePhysicsAgent->MyBarrageBody);
-		FBarragePrimitive::ApplyForce( -1*PhysRotation.GetAxisZ()*5, BarragePhysicsAgent->MyBarrageBody, OtherForce);
+		FBarragePrimitive::ApplyForce( -1*CurPhysicsRot.GetAxisZ()*5, BarragePhysicsAgent->MyBarrageBody, OtherForce);
 	}
 	//Unstuck bypasses terrain difficulties by setting the position directly without forces for a short duration.
 	if (UnStuckTimer > 0.f)
@@ -391,7 +389,7 @@ bool AThistleInject::CheckStuck(float DeltaSeconds)
 		StuckTimer = 0.f;
 		MinStuckVelocity = 0.f;
 		//Step the steer interp back down so we have time to properly overcome obstacle.
-		SteerInterp = FMath::FInterpConstantTo(SteerInterp, 10.f, ArtilleryTickHertz, 0.1);
+		SteerInterp = FMath::FInterpConstantTo(SteerInterp, 10.f, DeltaSeconds, 0.1);
 	}
 	return false;
 }
