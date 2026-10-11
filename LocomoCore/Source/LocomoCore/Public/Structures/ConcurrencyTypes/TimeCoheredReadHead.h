@@ -36,7 +36,7 @@ struct FTimedArray
     static constexpr uint64_t CheckSource16 = 0x001fffe000000000ull;
     static constexpr uint32_t CheckShift16  = 11;
 
-    struct alignas(32) Heads
+    struct alignas(32) RWHeads
     {// Preserve 32 B/head
         double Value = 0.0;
         uint64 TSC = 0;
@@ -44,30 +44,28 @@ struct FTimedArray
         uint64 Pad1 = 0;
     };
 
-    alignas(64) Heads BandedHeads[MaxWriters];
-    static_assert(sizeof(Heads) == 32, "FTimeBandedArray::Heads must stay 32 bytes");
-    static_assert(alignof(Heads) == 32, "FTimeBandedArray::Heads must stay 32-byte aligned");
+    alignas(64) RWHeads BandedHeads[MaxWriters];
+    static_assert(sizeof(RWHeads) == 32, "FTimeBandedArray::Heads must stay 32 bytes");
+    static_assert(alignof(RWHeads) == 32, "FTimeBandedArray::Heads must stay 32-byte aligned");
 
     FORCEINLINE void Write(const double& In, const uint8& MyID)
     {
         const uint64 Band = __rdtsc() >> BandShift;
-        Heads& Head = BandedHeads[MyID];
+        RWHeads& Head = BandedHeads[MyID];
         Head.Value = In;
         Head.TSC = (Band & MaskTop16) | ((BitCast<uint64_t>(In) & CheckSource16) << CheckShift16);
     }
 
-    FORCEINLINE double Candidate(const Heads& Head, uint64& Newest) const
+    FORCEINLINE double Candidate(const RWHeads& Head, uint64& Newest) const
     {
         const uint64 Packed = Head.TSC;
-        const uint64 Band = Packed & MaskTop16;
+        Newest = Packed & MaskTop16;
         const double Value = Head.Value;
         const bool bValid =
             (((BitCast<uint64_t>(Value) & CheckSource16) << CheckShift16)
              == (Packed & ExtractTop16));
 
-        Newest = std::max(Newest, Band);
-
-        if (Band + 1 < Newest || !bValid)
+        if (!bValid)
         {
             return DOUBLE_BIG_NUMBER;
         }
@@ -79,7 +77,10 @@ struct FTimedArray
     // I couldn't find a way to early out in case of just one candidate that was actually faster.
     FORCEINLINE double Read() const
     {
-        uint64 Newest[6] = {}; //this MAY be able to move to the data structure level. MAY MAY MAY
+        //I'd swear this wasn't necessary but I can no longer remember WHY
+        //we do actually save a max call and an assignment by doing it this way,
+        //but I think this might be slow. if so, hinting and restructuring the tournament can fix that.
+        uint64 Newest[6] = {}; 
         double V0 = Candidate(BandedHeads[0], Newest[0]);
         double V1 = Candidate(BandedHeads[1], Newest[1]);
         double V2 = Candidate(BandedHeads[2], Newest[2]);
@@ -87,12 +88,12 @@ struct FTimedArray
         double V4 = Candidate(BandedHeads[4], Newest[4]);
         double V5 = Candidate(BandedHeads[5], Newest[5]);
 
-        if (V1 < V0 && Newest[1] < Newest[0]) V0 = V1;
-        if (V3 < V2 && Newest[3] < Newest[2]) V2 = V3;
-        if (V5 < V4 && Newest[5] < Newest[4]) V4 = V5;
+        if (V1 < V0 && Newest[1] >= Newest[0]) V0 = V1;
+        if (V3 < V2 && Newest[3] >= Newest[2]) V2 = V3;
+        if (V5 < V4 && Newest[5] >= Newest[4]) V4 = V5;
 
-        if (V2 < V0 && Newest[2] < Newest[0]) V0 = V2;
-        if (V4 < V0 && Newest[4] < Newest[0]) V0 = V4;
+        if (V2 < V0 && Newest[2] >= Newest[0]) V0 = V2;
+        if (V4 < V0 && Newest[4] >= Newest[0]) V0 = V4;
 
         return V0;
     }
